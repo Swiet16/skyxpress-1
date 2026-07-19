@@ -7,11 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { LogOut, Package, FileText, Shield, User } from "lucide-react";
+import { LogOut, Package, FileText, Shield, User, Send, ArrowRight, Inbox } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { UserRequestForm } from "@/components/UserRequestForm";
-import { Download, Send } from "lucide-react";
 import { UserPaymentInvoice } from "@/components/UserPaymentInvoice";
 
 const Dashboard = () => {
@@ -28,7 +27,7 @@ const Dashboard = () => {
 
   const checkAuth = async () => {
     const { data: { session } } = await supabase.auth.getSession();
-    
+
     if (!session) {
       navigate('/auth');
       return;
@@ -41,7 +40,6 @@ const Dashboard = () => {
 
   const fetchUserData = async (userId: string) => {
     try {
-      // Fetch user profile
       const { data: profileData } = await supabase
         .from('profiles')
         .select('*')
@@ -50,7 +48,6 @@ const Dashboard = () => {
 
       setProfile(profileData);
 
-      // Fetch recent parcels for regular users (not admin or staff)
       if (profileData?.role === 'user' || !profileData?.role) {
         const { data: parcelsData } = await supabase
           .from('parcels')
@@ -75,8 +72,11 @@ const Dashboard = () => {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Loading...</p>
+          <div className="relative h-16 w-16 mx-auto">
+            <div className="absolute inset-0 rounded-full border-4 border-primary/20"></div>
+            <div className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
+          </div>
+          <p className="mt-4 text-sm text-muted-foreground">Loading your dashboard…</p>
         </div>
       </div>
     );
@@ -84,42 +84,57 @@ const Dashboard = () => {
 
   const isAdminOrStaff = profile?.role === 'admin' || profile?.role === 'staff';
 
+  const statusStyles: Record<string, string> = {
+    approved: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20",
+    rejected: "bg-red-100 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20",
+    pending: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20",
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
       <main>
-        {/* Hero Section */}
-        <section className="py-16 bg-gradient-to-r from-primary/10 to-primary/5">
-          <div className="container mx-auto px-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center mb-4">
-                  <div className="bg-primary p-3 rounded-full mr-4">
-                    {isAdminOrStaff ? (
-                      <Shield className="h-8 w-8 text-primary-foreground" />
-                    ) : (
-                      <User className="h-8 w-8 text-primary-foreground" />
-                    )}
-                  </div>
-                  <div>
-                    <h1 className="text-4xl font-bold text-foreground">
-                      {isAdminOrStaff ? `${profile?.role === 'admin' ? 'Admin' : 'Staff'} Dashboard` : 'Dashboard'}
-                    </h1>
-                    <p className="text-muted-foreground">
+        {/* Hero */}
+        <section className="relative overflow-hidden border-b bg-gradient-to-br from-primary/10 via-primary/5 to-transparent">
+          <div
+            className="pointer-events-none absolute inset-0 opacity-[0.15]"
+            style={{
+              backgroundImage:
+                "radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0)",
+              backgroundSize: "24px 24px",
+            }}
+          />
+          <div className="container relative mx-auto px-4 py-10 sm:py-14 md:py-16">
+            <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-4">
+                <div className="shrink-0 rounded-2xl bg-primary p-3.5 shadow-lg shadow-primary/20 sm:p-4">
+                  {isAdminOrStaff ? (
+                    <Shield className="h-7 w-7 text-primary-foreground sm:h-8 sm:w-8" />
+                  ) : (
+                    <User className="h-7 w-7 text-primary-foreground sm:h-8 sm:w-8" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl md:text-4xl">
+                    {isAdminOrStaff ? `${profile?.role === 'admin' ? 'Admin' : 'Staff'} Dashboard` : 'Your Dashboard'}
+                  </h1>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <p className="truncate text-sm text-muted-foreground sm:text-base">
                       Welcome back, {user?.email}
-                      {profile?.role && profile?.role !== 'user' && (
-                        <Badge variant="secondary" className="ml-2">
-                          {profile?.role.toUpperCase()}
-                        </Badge>
-                      )}
                     </p>
+                    {profile?.role && profile?.role !== 'user' && (
+                      <Badge variant="secondary" className="shrink-0">
+                        {profile?.role.toUpperCase()}
+                      </Badge>
+                    )}
                   </div>
                 </div>
               </div>
-              <Button 
+
+              <Button
                 onClick={handleLogout}
                 variant="outline"
-                className="flex items-center gap-2"
+                className="w-full gap-2 self-start bg-background/60 backdrop-blur sm:w-auto sm:self-auto"
               >
                 <LogOut className="h-4 w-4" />
                 Logout
@@ -128,28 +143,36 @@ const Dashboard = () => {
           </div>
         </section>
 
-        {/* Dashboard Content */}
-        <section className="py-16">
+        {/* Content */}
+        <section className="py-10 sm:py-12 md:py-16">
           <div className="container mx-auto px-4">
             {isAdminOrStaff ? (
               <AdminDashboard user={user} profile={profile} />
             ) : (
-              <div className="max-w-6xl mx-auto space-y-6">
-                {/* User Actions */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="mx-auto max-w-6xl space-y-6 sm:space-y-8">
+                {/* Actions */}
+                <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
                   <Dialog>
                     <DialogTrigger asChild>
-                      <Card className="cursor-pointer hover:shadow-lg transition-shadow">
-                        <CardContent className="flex flex-col items-center justify-center p-8 space-y-4">
-                          <div className="bg-primary/10 p-6 rounded-full">
-                            <Send className="h-12 w-12 text-primary" />
+                      <Card className="group relative cursor-pointer overflow-hidden border-primary/20 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-primary/10">
+                        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+                        <CardContent className="relative flex flex-col items-center gap-4 p-6 text-center sm:p-8">
+                          <div className="rounded-full bg-primary/10 p-5 transition-transform group-hover:scale-110 sm:p-6">
+                            <Send className="h-10 w-10 text-primary sm:h-12 sm:w-12" />
                           </div>
-                          <h3 className="text-xl font-semibold">Submit Shipment Request</h3>
-                          <p className="text-muted-foreground text-center">Request a new shipment and get it approved by admin</p>
+                          <div>
+                            <h3 className="text-lg font-semibold sm:text-xl">Submit Shipment Request</h3>
+                            <p className="mt-1 text-sm text-muted-foreground sm:text-base">
+                              Request a new shipment and get it approved by admin
+                            </p>
+                          </div>
+                          <span className="flex items-center gap-1 text-sm font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
+                            Get started <ArrowRight className="h-4 w-4" />
+                          </span>
                         </CardContent>
                       </Card>
                     </DialogTrigger>
-                    <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                    <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
                       <DialogHeader>
                         <DialogTitle>Submit Shipment Request</DialogTitle>
                       </DialogHeader>
@@ -159,81 +182,100 @@ const Dashboard = () => {
                     </DialogContent>
                   </Dialog>
 
-                  <Card className="cursor-pointer hover:shadow-lg transition-shadow">
-                    <CardContent className="flex flex-col items-center justify-center p-8 space-y-4">
-                      <div className="bg-green-500/10 p-6 rounded-full">
-                        <FileText className="h-12 w-12 text-green-600" />
+                  <Card className="group relative cursor-pointer overflow-hidden border-emerald-500/20 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-emerald-500/10">
+                    <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+                    <CardContent className="relative flex flex-col items-center gap-4 p-6 text-center sm:p-8">
+                      <div className="rounded-full bg-emerald-500/10 p-5 transition-transform group-hover:scale-110 sm:p-6">
+                        <FileText className="h-10 w-10 text-emerald-600 sm:h-12 sm:w-12" />
                       </div>
-                      <h3 className="text-xl font-semibold">View My Invoices</h3>
-                      <p className="text-muted-foreground text-center">Download payment invoices anytime</p>
+                      <div>
+                        <h3 className="text-lg font-semibold sm:text-xl">View My Invoices</h3>
+                        <p className="mt-1 text-sm text-muted-foreground sm:text-base">
+                          Download payment invoices anytime
+                        </p>
+                      </div>
                     </CardContent>
                   </Card>
                 </div>
 
-                {/* User's Parcels */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Your Shipment Requests</CardTitle>
+                {/* Shipment requests */}
+                <Card className="overflow-hidden">
+                  <CardHeader className="border-b bg-muted/30">
+                    <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                      <Package className="h-5 w-5 text-primary" />
+                      Your Shipment Requests
+                    </CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {recentParcels.length === 0 ? (
-                        <p className="text-muted-foreground text-center py-8">
-                          No requests yet. Submit your first shipment request!
-                        </p>
-                      ) : (
-                        recentParcels.map((parcel) => (
-                          <div key={parcel.id} className="border rounded-lg p-4">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <p className="font-mono font-semibold text-primary">{parcel.tracking_id}</p>
-                                <p className="text-sm text-muted-foreground">
-                                  {parcel.from_country} → {parcel.to_country}
-                                </p>
-                                <p className="text-sm text-muted-foreground">
-                                  To: {parcel.receiver_name}
-                                </p>
-                              </div>
-                              <div className="text-right space-y-2">
-                                <div>
-                                  <Badge 
-                                    variant={
-                                      parcel.request_status === 'approved' ? 'default' : 
-                                      parcel.request_status === 'rejected' ? 'destructive' : 
-                                      'secondary'
-                                    }
-                                  >
-                                    {parcel.request_status?.toUpperCase()}
-                                  </Badge>
+                  <CardContent className="p-4 sm:p-6">
+                    {recentParcels.length === 0 ? (
+                      <div className="flex flex-col items-center gap-3 py-12 text-center">
+                        <div className="rounded-full bg-muted p-4">
+                          <Inbox className="h-8 w-8 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground">No requests yet</p>
+                          <p className="text-sm text-muted-foreground">
+                            Submit your first shipment request to see it here.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3 sm:space-y-4">
+                        {recentParcels.map((parcel) => {
+                          const status = parcel.request_status as string | undefined;
+                          const statusClass =
+                            status && statusStyles[status] ? statusStyles[status] : statusStyles.pending;
+
+                          return (
+                            <div
+                              key={parcel.id}
+                              className="rounded-xl border bg-card p-4 transition-colors hover:bg-muted/30 sm:p-5"
+                            >
+                              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="min-w-0 space-y-1">
+                                  <p className="truncate font-mono text-sm font-semibold text-primary sm:text-base">
+                                    {parcel.tracking_id}
+                                  </p>
+                                  <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                                    <span className="font-medium text-foreground">{parcel.from_country}</span>
+                                    <ArrowRight className="h-3.5 w-3.5" />
+                                    <span className="font-medium text-foreground">{parcel.to_country}</span>
+                                  </p>
+                                  <p className="text-sm text-muted-foreground">
+                                    To: <span className="text-foreground">{parcel.receiver_name}</span>
+                                  </p>
                                 </div>
-                                {parcel.request_status === 'approved' && (
-                                  <div>
+
+                                <div className="flex flex-row flex-wrap items-center gap-2 sm:flex-col sm:items-end">
+                                  <span
+                                    className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${statusClass}`}
+                                  >
+                                    {status?.toUpperCase()}
+                                  </span>
+                                  {status === 'approved' && (
                                     <Badge variant="outline">
                                       {parcel.shipping_status?.replace('_', ' ').toUpperCase()}
                                     </Badge>
-                                  </div>
-                                )}
-                                {parcel.payment_amount && (
-                                  <div className="mt-2">
-                                    <UserPaymentInvoice parcel={parcel} />
-                                  </div>
-                                )}
-                                <p className="text-sm text-muted-foreground mt-1">
-                                  {new Date(parcel.created_at).toLocaleDateString()}
-                                </p>
+                                  )}
+                                  {parcel.payment_amount && <UserPaymentInvoice parcel={parcel} />}
+                                  <p className="text-xs text-muted-foreground">
+                                    {new Date(parcel.created_at).toLocaleDateString()}
+                                  </p>
+                                </div>
                               </div>
+
+                              {parcel.rejection_reason && (
+                                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-500/20 dark:bg-red-500/10">
+                                  <p className="text-sm text-red-800 dark:text-red-400">
+                                    <strong>Rejection Reason:</strong> {parcel.rejection_reason}
+                                  </p>
+                                </div>
+                              )}
                             </div>
-                            {parcel.rejection_reason && (
-                              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded">
-                                <p className="text-sm text-red-800">
-                                  <strong>Rejection Reason:</strong> {parcel.rejection_reason}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        ))
-                      )}
-                    </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
