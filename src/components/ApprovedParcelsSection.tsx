@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, Package, Truck, FileText, X, Edit, Check, ChevronsUpDown } from "lucide-react";
+import { Search, Package, Truck, FileText, X, Edit, Check, ChevronsUpDown, Layers } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
@@ -103,6 +104,11 @@ export const ApprovedParcelsSection = () => {
   const [statusDateTime, setStatusDateTime] = useState(new Date().toISOString().slice(0, 16));
   const { toast } = useToast();
 
+  // Multi-select for bulk status updates
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+
   useEffect(() => {
     fetchApprovedParcels();
 
@@ -146,6 +152,16 @@ export const ApprovedParcelsSection = () => {
         if (parcel.to_country) uniqueCountries.add(parcel.to_country);
       });
       setCountries(Array.from(uniqueCountries).sort());
+
+      // Drop any selections for parcels that no longer exist / are no longer approved
+      setSelectedIds((prev) => {
+        const validIds = new Set((data || []).map((p: ApprovedParcel) => p.id));
+        const next = new Set<string>();
+        prev.forEach((id) => {
+          if (validIds.has(id)) next.add(id);
+        });
+        return next;
+      });
     } catch (error: any) {
       console.error('Error fetching approved parcels:', error);
       toast({
@@ -159,6 +175,7 @@ export const ApprovedParcelsSection = () => {
   };
 
   const openStatusDialog = (parcel: ApprovedParcel) => {
+    setIsBulkMode(false);
     setSelectedParcel(parcel);
     setNewStatus(parcel.shipping_status);
     setStatusLocation("");
@@ -167,9 +184,94 @@ export const ApprovedParcelsSection = () => {
     setStatusDialogOpen(true);
   };
 
+  const openBulkStatusDialog = () => {
+    if (selectedIds.size === 0) return;
+    setIsBulkMode(true);
+    setSelectedParcel(null);
+    setNewStatus("");
+    setStatusLocation("");
+    setAdminComment("");
+    setStatusDateTime(new Date().toISOString().slice(0, 16));
+    setStatusDialogOpen(true);
+  };
+
+  const toggleSelectOne = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllFiltered = (checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        filteredParcels.forEach((p) => next.add(p.id));
+      } else {
+        filteredParcels.forEach((p) => next.delete(p.id));
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
   const handleStatusUpdate = async () => {
+    if (!newStatus) {
+      toast({
+        title: "Error",
+        description: "Please choose a status",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (isBulkMode) {
+      const ids = Array.from(selectedIds);
+      if (ids.length === 0) return;
+
+      setBulkUpdating(true);
+      try {
+        const results = await Promise.allSettled(
+          ids.map((id) =>
+            supabase.rpc('update_parcel_status_enhanced', {
+              parcel_id_param: id,
+              new_status: newStatus,
+              location_param: statusLocation,
+              comment_param: adminComment,
+              custom_datetime: statusDateTime,
+            })
+          )
+        );
+
+        const failedCount = results.filter(
+          (r) => r.status === "rejected" || (r.status === "fulfilled" && (r.value as any)?.error)
+        ).length;
+        const successCount = ids.length - failedCount;
+
+        toast({
+          title: failedCount === 0 ? "Status Updated" : "Partially Updated",
+          description:
+            failedCount === 0
+              ? `${successCount} parcel${successCount === 1 ? "" : "s"} updated to ${newStatus.replace('_', ' ')}`
+              : `${successCount} updated, ${failedCount} failed. Check console for details.`,
+          variant: failedCount === 0 ? undefined : "destructive",
+        });
+
+        setStatusDialogOpen(false);
+        clearSelection();
+        setIsBulkMode(false);
+        fetchApprovedParcels();
+      } finally {
+        setBulkUpdating(false);
+      }
+      return;
+    }
+
     if (!selectedParcel) return;
-    
+
     setUpdatingStatus(selectedParcel.id);
     try {
       const { error } = await supabase.rpc('update_parcel_status_enhanced', {
@@ -214,6 +316,10 @@ export const ApprovedParcelsSection = () => {
     
     return matchesSearch && matchesCountry;
   });
+
+  const allFilteredSelected =
+    filteredParcels.length > 0 && filteredParcels.every((p) => selectedIds.has(p.id));
+  const someFilteredSelected = filteredParcels.some((p) => selectedIds.has(p.id));
 
   if (loading) {
     return (
@@ -287,12 +393,37 @@ export const ApprovedParcelsSection = () => {
             </PopoverContent>
           </Popover>
         </div>
+
+        {/* Bulk action bar - shown once at least one parcel is selected */}
+        {selectedIds.size > 0 && (
+          <div className="flex items-center justify-between gap-3 mt-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
+            <div className="text-sm font-medium">
+              {selectedIds.size} parcel{selectedIds.size === 1 ? "" : "s"} selected
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={clearSelection}>
+                Clear
+              </Button>
+              <Button size="sm" onClick={openBulkStatusDialog}>
+                <Layers className="h-4 w-4 mr-1" />
+                Update Status for Selected
+              </Button>
+            </div>
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={allFilteredSelected ? true : someFilteredSelected ? "indeterminate" : false}
+                    onCheckedChange={(checked) => toggleSelectAllFiltered(checked === true)}
+                    aria-label="Select all filtered parcels"
+                  />
+                </TableHead>
                 <TableHead>Tracking ID</TableHead>
                 <TableHead>Sender</TableHead>
                 <TableHead>Receiver</TableHead>
@@ -305,7 +436,14 @@ export const ApprovedParcelsSection = () => {
             </TableHeader>
             <TableBody>
               {filteredParcels.map((parcel) => (
-                <TableRow key={parcel.id}>
+                <TableRow key={parcel.id} data-state={selectedIds.has(parcel.id) ? "selected" : undefined}>
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedIds.has(parcel.id)}
+                      onCheckedChange={(checked) => toggleSelectOne(parcel.id, checked === true)}
+                      aria-label={`Select parcel ${parcel.tracking_id}`}
+                    />
+                  </TableCell>
                   <TableCell>
                     <div className="font-mono font-semibold text-primary">
                       {parcel.tracking_id}
@@ -359,9 +497,13 @@ export const ApprovedParcelsSection = () => {
       <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Update Parcel Status</DialogTitle>
+            <DialogTitle>
+              {isBulkMode ? "Update Status for Selected Parcels" : "Update Parcel Status"}
+            </DialogTitle>
             <DialogDescription>
-              Update status for tracking ID: {selectedParcel?.tracking_id}
+              {isBulkMode
+                ? `This will update shipping status for ${selectedIds.size} selected parcel${selectedIds.size === 1 ? "" : "s"}.`
+                : `Update status for tracking ID: ${selectedParcel?.tracking_id}`}
             </DialogDescription>
           </DialogHeader>
           
@@ -370,7 +512,7 @@ export const ApprovedParcelsSection = () => {
               <label className="text-sm font-medium">Status</label>
               <Select value={newStatus} onValueChange={setNewStatus}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="created">Created</SelectItem>
@@ -455,11 +597,24 @@ export const ApprovedParcelsSection = () => {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setStatusDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setStatusDialogOpen(false)}
+              disabled={bulkUpdating || !!updatingStatus}
+            >
               Cancel
             </Button>
-            <Button onClick={handleStatusUpdate} disabled={!!updatingStatus}>
-              {updatingStatus ? "Updating..." : "Update Status"}
+            <Button
+              onClick={handleStatusUpdate}
+              disabled={isBulkMode ? bulkUpdating || !newStatus : !!updatingStatus}
+            >
+              {isBulkMode
+                ? bulkUpdating
+                  ? `Updating ${selectedIds.size}...`
+                  : `Update ${selectedIds.size} Parcel${selectedIds.size === 1 ? "" : "s"}`
+                : updatingStatus
+                ? "Updating..."
+                : "Update Status"}
             </Button>
           </DialogFooter>
         </DialogContent>
