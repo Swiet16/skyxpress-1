@@ -9,7 +9,6 @@ import {
   FileText,
   Settings,
   Plus,
-  Shield,
   DollarSign,
   Radio,
   Activity,
@@ -198,44 +197,6 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
 
   return (
     <div className="space-y-6">
-      {/* ---------- Control tower header ---------- */}
-      <div className="relative overflow-hidden rounded-2xl bg-[#0B1220] text-white px-6 py-8 md:px-10 md:py-10">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-[0.12]"
-          style={{
-            backgroundImage: "radial-gradient(circle at 1px 1px, white 1px, transparent 0)",
-            backgroundSize: "18px 18px",
-          }}
-        />
-        <div className="relative flex flex-col md:flex-row md:items-end md:justify-between gap-5">
-          <div>
-            <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.2em] text-white/50">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              </span>
-              Live ·{" "}
-              {new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}
-            </div>
-            <h1 className="mt-2 text-3xl md:text-4xl font-semibold tracking-tight">
-              {theme.label} Control Tower
-            </h1>
-            <p className="mt-1 text-sm text-white/60 max-w-md">{theme.tagline}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${theme.badgeClass}`}>
-              <Shield className="h-3.5 w-3.5" />
-              {theme.label.toUpperCase()}
-            </div>
-            <div className="text-right">
-              <p className="text-sm font-medium">{user?.email}</p>
-              <p className="text-xs text-white/50 font-mono">{(profile?.role || role).toUpperCase()}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="w-full h-auto flex-wrap justify-start gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
