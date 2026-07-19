@@ -291,6 +291,7 @@ async function generateManifestPDF(data: ManifestData) {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 type View = "editor" | "search-results";
+type MobilePanel = "list" | "bill";
 
 export default function Manifest() {
   const [parcels, setParcels] = useState<Parcel[]>([]);
@@ -304,6 +305,9 @@ export default function Manifest() {
   const [generating, setGenerating] = useState(false);
   const [tableError, setTableError] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>();
+
+  // Mobile: show either parcel list or the bill form
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("list");
 
   // Reference search
   const [view, setView] = useState<View>("editor");
@@ -341,6 +345,7 @@ export default function Manifest() {
     setSelectedId(p.id);
     setSaved(false);
     setTableError(false);
+    setMobilePanel("bill"); // auto-navigate to bill on mobile
 
     // Try to load existing saved manifest
     try {
@@ -478,35 +483,204 @@ export default function Manifest() {
     return <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${colors[status] || "bg-slate-100 text-slate-600"}`}>{status?.replace(/_/g, " ")}</span>;
   };
 
+  // Shared manifest document (used in both editor and search results)
+  const ManifestDocument = () => (
+    <div ref={printRef} className="bg-white rounded-2xl border border-slate-200 shadow-lg overflow-hidden print:shadow-none">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 px-4 sm:px-6 py-4 sm:py-5 flex items-center justify-between">
+        <img src={logoUrl} alt="SkyXpress" className="h-10 sm:h-14 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        <div className="text-right">
+          <p className="text-white font-bold text-base sm:text-lg tracking-wide">AIR WAYBILL</p>
+          <p className="text-blue-300 text-[10px] sm:text-xs font-medium tracking-widest">SHIPMENT MANIFEST</p>
+          <p className="text-slate-400 text-[9px] sm:text-[10px] mt-0.5">skyxpress.site</p>
+        </div>
+      </div>
+      <div className="h-1 bg-gradient-to-r from-orange-500 via-orange-400 to-blue-600" />
+
+      <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
+        {/* Reference bar */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 rounded-xl p-3 border border-slate-100">
+          {[{label:"Manifest Date",key:"manifestDate" as const,type:"date"},{label:"Reference No",key:"referenceNo" as const},{label:"Tracking No",key:"trackingNo" as const}].map(({label,key,type})=>(
+            <Field key={key} label={label} value={manifest[key] as string} onChange={(v)=>setField(key,v)} type={type} />
+          ))}
+        </div>
+
+        {/* Shipper / Consignee */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-xl border border-slate-100 overflow-hidden">
+            <div className="bg-blue-700 px-4 py-2">
+              <span className="text-white font-bold text-xs uppercase tracking-widest">Shipper / Sender</span>
+            </div>
+            <div className="p-4 space-y-3">
+              <Field label="Full Name" value={manifest.shipperName} onChange={(v)=>setField("shipperName",v)} />
+              <Field label="CNIC / Passport / ID No" value={manifest.shipperCnic} onChange={(v)=>setField("shipperCnic",v)} placeholder="e.g. 42101-1234567-8" />
+              <Field label="Address" value={manifest.shipperAddress} onChange={(v)=>setField("shipperAddress",v)} />
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Phone" value={manifest.shipperPhone} onChange={(v)=>setField("shipperPhone",v)} />
+                <Field label="Country" value={manifest.shipperCountry} onChange={(v)=>setField("shipperCountry",v)} />
+              </div>
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-100 overflow-hidden">
+            <div className="bg-orange-500 px-4 py-2">
+              <span className="text-white font-bold text-xs uppercase tracking-widest">Consignee / Receiver</span>
+            </div>
+            <div className="p-4 space-y-3">
+              <Field label="Full Name" value={manifest.consigneeName} onChange={(v)=>setField("consigneeName",v)} />
+              <div className="h-2 sm:h-8" />
+              <Field label="Address" value={manifest.consigneeAddress} onChange={(v)=>setField("consigneeAddress",v)} />
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Phone" value={manifest.consigneePhone} onChange={(v)=>setField("consigneePhone",v)} />
+                <Field label="Country" value={manifest.consigneeCountry} onChange={(v)=>setField("consigneeCountry",v)} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Items table */}
+        <div className="rounded-xl border border-slate-100 overflow-hidden">
+          <div className="bg-slate-800 px-4 py-2 flex items-center justify-between">
+            <span className="text-white font-bold text-xs uppercase tracking-widest">Shipment Details / Items</span>
+            {editMode && (
+              <button onClick={addItem} className="flex items-center gap-1 text-blue-300 hover:text-white text-xs font-medium transition-colors">
+                <PlusCircle className="h-3.5 w-3.5" /> Add Item
+              </button>
+            )}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[420px]">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  <th className="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wide w-[45%]">Description</th>
+                  <th className="px-3 py-2 text-center text-xs font-bold text-blue-700 uppercase tracking-wide">Pcs</th>
+                  <th className="px-3 py-2 text-center text-xs font-bold text-blue-700 uppercase tracking-wide">Wt (kg)</th>
+                  <th className="px-3 py-2 text-right text-xs font-bold text-blue-700 uppercase tracking-wide">Value</th>
+                  {editMode && <th className="w-8" />}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {manifest.items.map((item, idx) => (
+                  <tr key={item.id} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                    <td className="px-3 py-2">
+                      {editMode ? <Input value={item.description} onChange={(e)=>setItemField(item.id,"description",e.target.value)} placeholder="e.g. Electronics…" className="h-7 text-sm border-slate-200" /> : <span className="text-slate-800">{item.description||"—"}</span>}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {editMode ? <Input type="number" min={1} value={item.pieces} onChange={(e)=>setItemField(item.id,"pieces",Number(e.target.value))} className="h-7 text-sm text-center w-14 mx-auto border-slate-200" /> : <span className="font-semibold">{item.pieces}</span>}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {editMode ? <Input type="number" min={0} step={0.01} value={item.weight} onChange={(e)=>setItemField(item.id,"weight",Number(e.target.value))} className="h-7 text-sm text-center w-18 mx-auto border-slate-200" /> : <span>{item.weight} kg</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {editMode ? <Input type="number" min={0} step={0.01} value={item.value} onChange={(e)=>setItemField(item.id,"value",Number(e.target.value))} className="h-7 text-sm text-right w-20 ml-auto border-slate-200" /> : <span>{manifest.currency} {(item.value||0).toFixed(2)}</span>}
+                    </td>
+                    {editMode && (
+                      <td className="px-2 py-2">
+                        {manifest.items.length > 1 && (
+                          <button onClick={()=>removeItem(item.id)} className="text-slate-300 hover:text-red-400 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gradient-to-r from-orange-500 to-orange-600 text-white">
+                  <td className="px-3 py-2 font-bold text-sm">TOTALS</td>
+                  <td className="px-3 py-2 font-bold text-center">{totalPieces(manifest.items)}</td>
+                  <td className="px-3 py-2 font-bold text-center">{totalWeight(manifest.items)} kg</td>
+                  <td className="px-3 py-2 font-bold text-right">{manifest.currency} {totalValue(manifest.items)}</td>
+                  {editMode && <td />}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        {/* Service info */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Service Type</Label>
+            {editMode ? (
+              <Select value={manifest.serviceType} onValueChange={(v)=>setField("serviceType",v)}>
+                <SelectTrigger className="h-8 text-sm border-slate-200"><SelectValue placeholder="Select service" /></SelectTrigger>
+                <SelectContent>{["Express","Standard","Economy","Same Day","Next Day","Freight"].map(s=><SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+              </Select>
+            ) : <div className="min-h-[32px] px-2 py-1.5 text-sm text-slate-800 border-b border-slate-200">{manifest.serviceType||<span className="text-slate-300">—</span>}</div>}
+          </div>
+          <Field label="Declared Value" value={manifest.declaredValue} onChange={(v)=>setField("declaredValue",v)} type="number" placeholder="0.00" />
+          <div className="space-y-1">
+            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Currency</Label>
+            {editMode ? (
+              <Select value={manifest.currency} onValueChange={(v)=>setField("currency",v)}>
+                <SelectTrigger className="h-8 text-sm border-slate-200"><SelectValue /></SelectTrigger>
+                <SelectContent>{["USD","EUR","GBP","PKR","AED","SAR","CAD","AUD"].map(c=><SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+              </Select>
+            ) : <div className="min-h-[32px] px-2 py-1.5 text-sm border-b border-slate-200">{manifest.currency}</div>}
+          </div>
+        </div>
+
+        {/* Special instructions */}
+        <div className="space-y-1">
+          <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Special Instructions</Label>
+          {editMode ? (
+            <Textarea value={manifest.specialInstructions} onChange={(e)=>setField("specialInstructions",e.target.value)}
+              placeholder="Fragile items, handling instructions, customs declarations…" rows={2} className="text-sm border-slate-200 resize-none" />
+          ) : (
+            <div className="min-h-[60px] px-3 py-2 text-sm text-slate-800 border border-slate-100 rounded-lg bg-slate-50">
+              {manifest.specialInstructions||<span className="text-slate-400">None</span>}
+            </div>
+          )}
+        </div>
+
+        {/* Signature area */}
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 pt-2">
+          {["Shipper's Signature & Date","Carrier's Signature & Date"].map(label=>(
+            <div key={label} className="border border-dashed border-slate-200 rounded-xl p-3 sm:p-4 bg-slate-50/50">
+              <p className="text-[10px] sm:text-xs font-bold text-blue-700 uppercase tracking-wide mb-4 sm:mb-6">{label}</p>
+              <div className="border-b border-slate-300 mt-2" />
+              <p className="text-[10px] sm:text-xs text-slate-400 mt-1">Authorized signature</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="bg-gradient-to-r from-slate-900 to-blue-950 rounded-xl px-4 sm:px-5 py-3 flex items-center justify-between">
+          <span className="text-slate-400 text-[10px] sm:text-xs">SkyXpress International Courier & Cargo</span>
+          <span className="text-orange-400 text-[10px] sm:text-xs font-semibold">skyxpress.site</span>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <Header />
-      <main className="flex-1 container mx-auto px-4 py-6 max-w-7xl">
+      <main className="flex-1 container mx-auto px-3 sm:px-4 py-4 sm:py-6 max-w-7xl">
 
         {/* Page title + Reference search */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
           <div className="flex items-center gap-2 flex-1">
-            <div className="w-1 h-8 bg-gradient-to-b from-orange-500 to-blue-600 rounded-full" />
+            <div className="w-1 h-8 bg-gradient-to-b from-orange-500 to-blue-600 rounded-full flex-shrink-0" />
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Shipment Manifest</h1>
-              <p className="text-xs text-slate-500">Select a parcel → fill shipper details → save & download PDF</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Shipment Manifest</h1>
+              <p className="text-xs text-slate-500 hidden sm:block">Select a parcel → fill shipper details → save & download PDF</p>
             </div>
           </div>
 
           {/* Reference / CNIC search bar */}
           <div className="flex gap-2 items-center">
-            <div className="relative">
+            <div className="relative flex-1 sm:flex-none">
               <ScanSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <Input
-                placeholder="Search by Reference, Tracking or CNIC…"
+                placeholder="Ref / Tracking / CNIC…"
                 value={refSearch}
                 onChange={(e) => setRefSearch(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleRefSearch()}
-                className="pl-9 h-9 w-72 text-sm bg-white border-slate-200 shadow-sm"
+                className="pl-9 h-9 w-full sm:w-64 text-sm bg-white border-slate-200 shadow-sm"
               />
             </div>
             <Button size="sm" onClick={handleRefSearch} disabled={searching}
-              className="bg-blue-700 hover:bg-blue-800 text-white h-9">
+              className="bg-blue-700 hover:bg-blue-800 text-white h-9 flex-shrink-0">
               {searching ? "…" : "Find"}
             </Button>
           </div>
@@ -518,7 +692,7 @@ export default function Manifest() {
             <AlertCircle className="h-5 w-5 text-amber-500 mt-0.5 flex-shrink-0" />
             <div>
               <p className="text-sm font-semibold text-amber-800">Manifests table not found in Supabase</p>
-              <p className="text-xs text-amber-700 mt-0.5">Go to <strong>Supabase → SQL Editor</strong> and run the <code>manifests</code> table SQL provided earlier. Once created, saving and searching will work.</p>
+              <p className="text-xs text-amber-700 mt-0.5">Go to <strong>Supabase → SQL Editor</strong> and run the <code>manifests</code> table SQL. Once created, saving and searching will work.</p>
             </div>
           </div>
         )}
@@ -537,7 +711,7 @@ export default function Manifest() {
             </div>
 
             {!searching && refResults.length === 0 && (
-              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 text-center">
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-10 text-center">
                 <ScanSearch className="h-10 w-10 text-slate-200 mx-auto mb-3" />
                 <p className="text-slate-500 font-medium">No manifests found</p>
                 <p className="text-sm text-slate-400 mt-1">Try a different reference number, tracking ID, or CNIC</p>
@@ -547,30 +721,28 @@ export default function Manifest() {
             <div className="space-y-4">
               {refResults.map((row) => (
                 <div key={row.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                  {/* Result header */}
-                  <div className="bg-gradient-to-r from-slate-900 to-blue-950 px-5 py-3 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <img src={logoUrl} alt="SkyXpress" className="h-7 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      <div>
+                  <div className="bg-gradient-to-r from-slate-900 to-blue-950 px-4 sm:px-5 py-3 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img src={logoUrl} alt="SkyXpress" className="h-7 object-contain flex-shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      <div className="min-w-0">
                         <p className="text-white font-bold text-sm">Shipment Manifest</p>
-                        <p className="text-blue-300 text-xs font-mono">{row.reference_no || row.tracking_no}</p>
+                        <p className="text-blue-300 text-xs font-mono truncate">{row.reference_no || row.tracking_no}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => { setManifest(dbToManifest(row)); setSelectedId(row.parcel_id); setSaved(true); setView("editor"); }}
-                        className="text-xs bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5">
-                        <Pencil className="h-3.5 w-3.5" /> Edit
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button onClick={() => { setManifest(dbToManifest(row)); setSelectedId(row.parcel_id); setSaved(true); setView("editor"); setMobilePanel("bill"); }}
+                        className="text-xs bg-white/10 hover:bg-white/20 text-white px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5">
+                        <Pencil className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Edit</span>
                       </button>
                       <button onClick={() => generateManifestPDF(dbToManifest(row))}
-                        className="text-xs bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5">
+                        className="text-xs bg-orange-500 hover:bg-orange-600 text-white px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5">
                         <FileDown className="h-3.5 w-3.5" /> PDF
                       </button>
                     </div>
                   </div>
                   <div className="h-0.5 bg-gradient-to-r from-orange-500 to-blue-600" />
 
-                  <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-5">
-                    {/* Shipper info */}
+                  <div className="p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
                     <div className="space-y-2">
                       <p className="text-[10px] font-bold text-blue-700 uppercase tracking-widest">Shipper / Sender</p>
                       <p className="font-bold text-slate-900 text-base">{row.shipper_name || "—"}</p>
@@ -584,7 +756,6 @@ export default function Manifest() {
                       <p className="text-sm text-slate-500">{row.shipper_phone} {row.shipper_country && `• ${row.shipper_country}`}</p>
                     </div>
 
-                    {/* Parcel / route info */}
                     <div className="space-y-2">
                       <p className="text-[10px] font-bold text-blue-700 uppercase tracking-widest">Parcel Details</p>
                       {row.parcel && (
@@ -605,8 +776,7 @@ export default function Manifest() {
                       )}
                     </div>
 
-                    {/* Items summary */}
-                    <div className="space-y-2">
+                    <div className="space-y-2 sm:col-span-2 md:col-span-1">
                       <p className="text-[10px] font-bold text-blue-700 uppercase tracking-widest">Shipment Items</p>
                       <div className="space-y-1.5">
                         {(Array.isArray(row.items) ? row.items : []).map((item: any, idx: number) => (
@@ -634,259 +804,123 @@ export default function Manifest() {
 
         {/* ── EDITOR VIEW ── */}
         {view === "editor" && (
-          <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6">
+          <div className="flex flex-col gap-4">
 
-            {/* LEFT: parcel selector */}
-            <aside className="space-y-3">
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="bg-gradient-to-r from-blue-800 to-blue-600 px-4 py-3 flex items-center gap-2">
-                  <Package className="h-4 w-4 text-white/80" />
-                  <span className="text-white font-semibold text-sm">Select Parcel</span>
-                </div>
-                <div className="p-3">
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                    <Input placeholder="Search tracking / name…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 h-8 text-sm" />
-                  </div>
-                </div>
-                <div className="max-h-[calc(100vh-380px)] overflow-y-auto divide-y divide-slate-100">
-                  {loadingParcels ? (
-                    <div className="p-4 text-center text-sm text-slate-400">Loading…</div>
-                  ) : filtered.length === 0 ? (
-                    <div className="p-4 text-center text-sm text-slate-400">No parcels found</div>
-                  ) : filtered.map((p) => (
-                    <button key={p.id} onClick={() => selectParcel(p)}
-                      className={`w-full text-left px-3 py-3 hover:bg-blue-50 transition-colors flex items-center justify-between gap-2 group ${selectedId === p.id ? "bg-blue-50 border-l-2 border-blue-600" : ""}`}>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-blue-700 font-mono truncate">{p.tracking_id}</p>
-                        <p className="text-sm font-medium text-slate-800 truncate">{p.sender_name}</p>
-                        <p className="text-xs text-slate-500 truncate">→ {p.receiver_name}</p>
-                        <div className="flex gap-1 mt-1 flex-wrap">
-                          <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-slate-200 text-slate-500">{p.from_country} → {p.to_country}</Badge>
-                          <StatusBadge status={p.current_status} />
-                        </div>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-blue-400 flex-shrink-0" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <button onClick={() => { setSelectedId(null); setManifest(emptyManifest()); setSaved(false); setEditMode(true); }}
-                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 border border-dashed border-slate-300 rounded-xl text-slate-500 hover:text-blue-600 hover:border-blue-400 text-sm transition-colors">
-                <PlusCircle className="h-3.5 w-3.5" /> New blank manifest
+            {/* ── MOBILE: tab switcher ── */}
+            <div className="flex lg:hidden rounded-xl overflow-hidden border border-slate-200 bg-white shadow-sm">
+              <button
+                onClick={() => setMobilePanel("list")}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold transition-colors ${mobilePanel === "list" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+                <Package className="h-4 w-4" /> Parcels
               </button>
-            </aside>
+              <button
+                onClick={() => setMobilePanel("bill")}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold transition-colors ${mobilePanel === "bill" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+                <Eye className="h-4 w-4" />
+                View Bill {selectedId && <span className="ml-1 w-2 h-2 rounded-full bg-orange-400 inline-block" />}
+              </button>
+            </div>
 
-            {/* RIGHT: manifest document */}
-            <section className="space-y-4">
-              {/* Toolbar */}
-              <div className="flex items-center justify-between bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-3 flex-wrap gap-3">
-                <div className="flex items-center gap-2">
-                  {[{val:true,icon:<Pencil className="h-3.5 w-3.5"/>,label:"Edit"},{val:false,icon:<Eye className="h-3.5 w-3.5"/>,label:"Preview"}].map(({val,icon,label})=>(
-                    <button key={String(val)} onClick={() => setEditMode(val)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${editMode===val?"bg-blue-600 text-white shadow":"text-slate-500 hover:bg-slate-100"}`}>
-                      {icon} {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex items-center gap-2">
-                  {/* Save status indicator */}
-                  {saved && (
-                    <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Saved
-                    </span>
-                  )}
-                  <Button size="sm" onClick={handleSave} disabled={saving || !selectedId}
-                    className={`h-8 ${saved ? "bg-green-600 hover:bg-green-700" : "bg-blue-700 hover:bg-blue-800"} text-white`}>
-                    <Save className="h-3.5 w-3.5 mr-1.5" />
-                    {saving ? "Saving…" : saved ? "Saved" : "Save Manifest"}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => window.print()} className="h-8 border-slate-200">
-                    <Printer className="h-3.5 w-3.5 mr-1.5" /> Print
-                  </Button>
-                  <Button size="sm" onClick={handleGeneratePDF} disabled={generating}
-                    className="h-8 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-sm">
-                    <FileDown className="h-3.5 w-3.5 mr-1.5" />
-                    {generating ? "…" : "PDF"}
-                  </Button>
-                </div>
-              </div>
+            <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4 sm:gap-6">
 
-              {/* No parcel selected hint */}
-              {!selectedId && (
-                <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-center gap-3">
-                  <Package className="h-5 w-5 text-blue-400 flex-shrink-0" />
-                  <p className="text-sm text-blue-700">Select a parcel on the left — its details will auto-fill the manifest. You can then edit the shipper CNIC and items before saving.</p>
-                </div>
-              )}
-
-              {/* Manifest document */}
-              <div ref={printRef} className="bg-white rounded-2xl border border-slate-200 shadow-lg overflow-hidden print:shadow-none">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 px-6 py-5 flex items-center justify-between">
-                  <img src={logoUrl} alt="SkyXpress" className="h-14 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                  <div className="text-right">
-                    <p className="text-white font-bold text-lg tracking-wide">AIR WAYBILL</p>
-                    <p className="text-blue-300 text-xs font-medium tracking-widest">SHIPMENT MANIFEST</p>
-                    <p className="text-slate-400 text-[10px] mt-0.5">skyxpress.site</p>
+              {/* LEFT: parcel selector */}
+              <aside className={`space-y-3 ${mobilePanel === "bill" ? "hidden lg:block" : "block"}`}>
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-blue-800 to-blue-600 px-4 py-3 flex items-center gap-2">
+                    <Package className="h-4 w-4 text-white/80" />
+                    <span className="text-white font-semibold text-sm">Select Parcel</span>
                   </div>
-                </div>
-                <div className="h-1 bg-gradient-to-r from-orange-500 via-orange-400 to-blue-600" />
-
-                <div className="p-6 space-y-5">
-                  {/* Reference bar */}
-                  <div className="grid grid-cols-3 gap-3 bg-slate-50 rounded-xl p-3 border border-slate-100">
-                    {[{label:"Manifest Date",key:"manifestDate" as const,type:"date"},{label:"Reference No",key:"referenceNo" as const},{label:"Tracking No",key:"trackingNo" as const}].map(({label,key,type})=>(
-                      <Field key={key} label={label} value={manifest[key] as string} onChange={(v)=>setField(key,v)} type={type} />
+                  <div className="p-3">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                      <Input placeholder="Search tracking / name…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 h-8 text-sm" />
+                    </div>
+                  </div>
+                  <div className="max-h-[50vh] lg:max-h-[calc(100vh-380px)] overflow-y-auto divide-y divide-slate-100">
+                    {loadingParcels ? (
+                      <div className="p-4 text-center text-sm text-slate-400">Loading…</div>
+                    ) : filtered.length === 0 ? (
+                      <div className="p-4 text-center text-sm text-slate-400">No parcels found</div>
+                    ) : filtered.map((p) => (
+                      <button key={p.id} onClick={() => selectParcel(p)}
+                        className={`w-full text-left px-3 py-3 hover:bg-blue-50 transition-colors flex items-center justify-between gap-2 group ${selectedId === p.id ? "bg-blue-50 border-l-2 border-blue-600" : ""}`}>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-blue-700 font-mono truncate">{p.tracking_id}</p>
+                          <p className="text-sm font-medium text-slate-800 truncate">{p.sender_name}</p>
+                          <p className="text-xs text-slate-500 truncate">→ {p.receiver_name}</p>
+                          <div className="flex gap-1 mt-1 flex-wrap">
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-slate-200 text-slate-500">{p.from_country} → {p.to_country}</Badge>
+                            <StatusBadge status={p.current_status} />
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-blue-400 flex-shrink-0" />
+                      </button>
                     ))}
                   </div>
+                </div>
+                <button onClick={() => { setSelectedId(null); setManifest(emptyManifest()); setSaved(false); setEditMode(true); }}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 border border-dashed border-slate-300 rounded-xl text-slate-500 hover:text-blue-600 hover:border-blue-400 text-sm transition-colors">
+                  <PlusCircle className="h-3.5 w-3.5" /> New blank manifest
+                </button>
+              </aside>
 
-                  {/* Shipper / Consignee */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="rounded-xl border border-slate-100 overflow-hidden">
-                      <div className="bg-blue-700 px-4 py-2">
-                        <span className="text-white font-bold text-xs uppercase tracking-widest">Shipper / Sender</span>
-                      </div>
-                      <div className="p-4 space-y-3">
-                        <Field label="Full Name" value={manifest.shipperName} onChange={(v)=>setField("shipperName",v)} />
-                        <Field label="CNIC / Passport / ID No" value={manifest.shipperCnic} onChange={(v)=>setField("shipperCnic",v)} placeholder="e.g. 42101-1234567-8" />
-                        <Field label="Address" value={manifest.shipperAddress} onChange={(v)=>setField("shipperAddress",v)} />
-                        <div className="grid grid-cols-2 gap-3">
-                          <Field label="Phone" value={manifest.shipperPhone} onChange={(v)=>setField("shipperPhone",v)} />
-                          <Field label="Country" value={manifest.shipperCountry} onChange={(v)=>setField("shipperCountry",v)} />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-slate-100 overflow-hidden">
-                      <div className="bg-orange-500 px-4 py-2">
-                        <span className="text-white font-bold text-xs uppercase tracking-widest">Consignee / Receiver</span>
-                      </div>
-                      <div className="p-4 space-y-3">
-                        <Field label="Full Name" value={manifest.consigneeName} onChange={(v)=>setField("consigneeName",v)} />
-                        <div className="h-8" />
-                        <Field label="Address" value={manifest.consigneeAddress} onChange={(v)=>setField("consigneeAddress",v)} />
-                        <div className="grid grid-cols-2 gap-3">
-                          <Field label="Phone" value={manifest.consigneePhone} onChange={(v)=>setField("consigneePhone",v)} />
-                          <Field label="Country" value={manifest.consigneeCountry} onChange={(v)=>setField("consigneeCountry",v)} />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+              {/* RIGHT: manifest document */}
+              <section className={`space-y-3 sm:space-y-4 ${mobilePanel === "list" ? "hidden lg:block" : "block"}`}>
 
-                  {/* Items table */}
-                  <div className="rounded-xl border border-slate-100 overflow-hidden">
-                    <div className="bg-slate-800 px-4 py-2 flex items-center justify-between">
-                      <span className="text-white font-bold text-xs uppercase tracking-widest">Shipment Details / Items</span>
-                      {editMode && (
-                        <button onClick={addItem} className="flex items-center gap-1 text-blue-300 hover:text-white text-xs font-medium transition-colors">
-                          <PlusCircle className="h-3.5 w-3.5" /> Add Item
+                {/* Toolbar */}
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-3 sm:px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Edit / Preview toggle */}
+                    <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                      {[{val:true,icon:<Pencil className="h-3.5 w-3.5"/>,label:"Edit"},{val:false,icon:<Eye className="h-3.5 w-3.5"/>,label:"Preview"}].map(({val,icon,label})=>(
+                        <button key={String(val)} onClick={() => setEditMode(val)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${editMode===val?"bg-white text-blue-700 shadow-sm":"text-slate-500 hover:text-slate-700"}`}>
+                          {icon} {label}
                         </button>
-                      )}
+                      ))}
                     </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-100">
-                            <th className="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wide w-[45%]">Description / Contents</th>
-                            <th className="px-3 py-2 text-center text-xs font-bold text-blue-700 uppercase tracking-wide">Pieces</th>
-                            <th className="px-3 py-2 text-center text-xs font-bold text-blue-700 uppercase tracking-wide">Weight (kg)</th>
-                            <th className="px-3 py-2 text-right text-xs font-bold text-blue-700 uppercase tracking-wide">Value</th>
-                            {editMode && <th className="w-8" />}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                          {manifest.items.map((item, idx) => (
-                            <tr key={item.id} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
-                              <td className="px-3 py-2">
-                                {editMode ? <Input value={item.description} onChange={(e)=>setItemField(item.id,"description",e.target.value)} placeholder="e.g. Electronics, Clothing…" className="h-7 text-sm border-slate-200" /> : <span className="text-slate-800">{item.description||"—"}</span>}
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                {editMode ? <Input type="number" min={1} value={item.pieces} onChange={(e)=>setItemField(item.id,"pieces",Number(e.target.value))} className="h-7 text-sm text-center w-16 mx-auto border-slate-200" /> : <span className="font-semibold">{item.pieces}</span>}
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                {editMode ? <Input type="number" min={0} step={0.01} value={item.weight} onChange={(e)=>setItemField(item.id,"weight",Number(e.target.value))} className="h-7 text-sm text-center w-20 mx-auto border-slate-200" /> : <span>{item.weight} kg</span>}
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                {editMode ? <Input type="number" min={0} step={0.01} value={item.value} onChange={(e)=>setItemField(item.id,"value",Number(e.target.value))} className="h-7 text-sm text-right w-24 ml-auto border-slate-200" /> : <span>{manifest.currency} {(item.value||0).toFixed(2)}</span>}
-                              </td>
-                              {editMode && (
-                                <td className="px-2 py-2">
-                                  {manifest.items.length > 1 && (
-                                    <button onClick={()=>removeItem(item.id)} className="text-slate-300 hover:text-red-400 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
-                                  )}
-                                </td>
-                              )}
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="bg-gradient-to-r from-orange-500 to-orange-600 text-white">
-                            <td className="px-3 py-2 font-bold text-sm">TOTALS</td>
-                            <td className="px-3 py-2 font-bold text-center">{totalPieces(manifest.items)}</td>
-                            <td className="px-3 py-2 font-bold text-center">{totalWeight(manifest.items)} kg</td>
-                            <td className="px-3 py-2 font-bold text-right">{manifest.currency} {totalValue(manifest.items)}</td>
-                            {editMode && <td />}
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  </div>
 
-                  {/* Service info */}
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Service Type</Label>
-                      {editMode ? (
-                        <Select value={manifest.serviceType} onValueChange={(v)=>setField("serviceType",v)}>
-                          <SelectTrigger className="h-8 text-sm border-slate-200"><SelectValue placeholder="Select service" /></SelectTrigger>
-                          <SelectContent>{["Express","Standard","Economy","Same Day","Next Day","Freight"].map(s=><SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-                        </Select>
-                      ) : <div className="min-h-[32px] px-2 py-1.5 text-sm text-slate-800 border-b border-slate-200">{manifest.serviceType||<span className="text-slate-300">—</span>}</div>}
-                    </div>
-                    <Field label="Declared Value" value={manifest.declaredValue} onChange={(v)=>setField("declaredValue",v)} type="number" placeholder="0.00" />
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Currency</Label>
-                      {editMode ? (
-                        <Select value={manifest.currency} onValueChange={(v)=>setField("currency",v)}>
-                          <SelectTrigger className="h-8 text-sm border-slate-200"><SelectValue /></SelectTrigger>
-                          <SelectContent>{["USD","EUR","GBP","PKR","AED","SAR","CAD","AUD"].map(c=><SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                        </Select>
-                      ) : <div className="min-h-[32px] px-2 py-1.5 text-sm border-b border-slate-200">{manifest.currency}</div>}
-                    </div>
-                  </div>
+                    <div className="flex-1" />
 
-                  {/* Special instructions */}
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Special Instructions</Label>
-                    {editMode ? (
-                      <Textarea value={manifest.specialInstructions} onChange={(e)=>setField("specialInstructions",e.target.value)}
-                        placeholder="Fragile items, handling instructions, customs declarations…" rows={2} className="text-sm border-slate-200 resize-none" />
-                    ) : (
-                      <div className="min-h-[60px] px-3 py-2 text-sm text-slate-800 border border-slate-100 rounded-lg bg-slate-50">
-                        {manifest.specialInstructions||<span className="text-slate-400">None</span>}
-                      </div>
+                    {/* Save status */}
+                    {saved && (
+                      <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+                      </span>
                     )}
-                  </div>
 
-                  {/* Signature area */}
-                  <div className="grid grid-cols-2 gap-4 pt-2">
-                    {["Shipper's Signature & Date","Carrier's Signature & Date"].map(label=>(
-                      <div key={label} className="border border-dashed border-slate-200 rounded-xl p-4 bg-slate-50/50">
-                        <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-6">{label}</p>
-                        <div className="border-b border-slate-300 mt-2" />
-                        <p className="text-xs text-slate-400 mt-1">Authorized signature</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Footer */}
-                  <div className="bg-gradient-to-r from-slate-900 to-blue-950 rounded-xl px-5 py-3 flex items-center justify-between">
-                    <span className="text-slate-400 text-xs">SkyXpress International Courier & Cargo</span>
-                    <span className="text-orange-400 text-xs font-semibold">skyxpress.site</span>
+                    {/* Action buttons */}
+                    <Button size="sm" onClick={handleSave} disabled={saving || !selectedId}
+                      className={`h-8 ${saved ? "bg-green-600 hover:bg-green-700" : "bg-blue-700 hover:bg-blue-800"} text-white`}>
+                      <Save className="h-3.5 w-3.5 sm:mr-1.5" />
+                      <span className="hidden sm:inline">{saving ? "Saving…" : saved ? "Saved" : "Save"}</span>
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => window.print()} className="h-8 border-slate-200">
+                      <Printer className="h-3.5 w-3.5 sm:mr-1.5" />
+                      <span className="hidden sm:inline">Print</span>
+                    </Button>
+                    <Button size="sm" onClick={handleGeneratePDF} disabled={generating}
+                      className="h-8 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-sm">
+                      <FileDown className="h-3.5 w-3.5 sm:mr-1.5" />
+                      {generating ? "…" : "PDF"}
+                    </Button>
                   </div>
                 </div>
-              </div>
-            </section>
+
+                {/* No parcel selected hint */}
+                {!selectedId && (
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-start gap-3">
+                    <Package className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-blue-700">
+                      <span className="lg:hidden">Tap <strong>Parcels</strong> above to choose a shipment — it will auto-fill the manifest.</span>
+                      <span className="hidden lg:inline">Select a parcel on the left — its details will auto-fill the manifest. You can then edit the shipper CNIC and items before saving.</span>
+                    </p>
+                  </div>
+                )}
+
+                <ManifestDocument />
+              </section>
+            </div>
           </div>
         )}
       </main>
