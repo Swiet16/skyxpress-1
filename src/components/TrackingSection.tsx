@@ -16,6 +16,7 @@ import {
   MapPin,
   Plane,
   XCircle,
+  MessageSquareText,
 } from "lucide-react";
 
 interface TrackingResult {
@@ -464,12 +465,23 @@ export const TrackingSection = () => {
                                       {formatStatusLabel(event.status)}
                                     </p>
                                     {event.location && (
-                                      <p className="text-sm text-[#5B6B82]">{event.location}</p>
+                                      <p className="flex items-center gap-1.5 text-sm text-[#5B6B82]">
+                                        <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-[#2E86FF]" />
+                                        {event.location}
+                                      </p>
                                     )}
                                     {event.admin_comment && (
-                                      <p className="mt-2 rounded-lg border border-[#0B2545]/10 bg-white p-3 text-sm text-[#0B2545]/80">
-                                        {event.admin_comment}
-                                      </p>
+                                      <div className="mt-2 flex items-start gap-2 rounded-lg border border-[#FF6A1A]/20 bg-[#FF6A1A]/5 p-3">
+                                        <MessageSquareText className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#FF6A1A]" />
+                                        <div>
+                                          <p className="text-xs font-semibold uppercase tracking-wide text-[#FF6A1A]">
+                                            Admin Note
+                                          </p>
+                                          <p className="mt-0.5 text-sm text-[#0B2545]/80">
+                                            {event.admin_comment}
+                                          </p>
+                                        </div>
+                                      </div>
                                     )}
                                   </div>
                                 </div>
