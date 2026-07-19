@@ -57,6 +57,39 @@ const safeText = (value: any, fallback: string = 'N/A'): string => {
   return String(value);
 };
 
+// Map country names (full or partial) to ISO 2-letter codes
+const countryNameToCode = (name: string): string => {
+  const n = name.trim().toUpperCase();
+  const map: Record<string, string> = {
+    'UNITED KINGDOM': 'GB', 'GREAT BRITAIN': 'GB', 'UK': 'GB', 'ENGLAND': 'GB',
+    'SCOTLAND': 'GB', 'WALES': 'GB', 'NORTHERN IRELAND': 'GB',
+    'UNITED STATES': 'US', 'USA': 'US', 'UNITED STATES OF AMERICA': 'US',
+    'PAKISTAN': 'PK', 'UNITED ARAB EMIRATES': 'AE', 'UAE': 'AE',
+    'SAUDI ARABIA': 'SA', 'KSA': 'SA', 'GERMANY': 'DE', 'FRANCE': 'FR',
+    'ITALY': 'IT', 'SPAIN': 'ES', 'NETHERLANDS': 'NL', 'HOLLAND': 'NL',
+    'BELGIUM': 'BE', 'CANADA': 'CA', 'AUSTRALIA': 'AU', 'NEW ZEALAND': 'NZ',
+    'CHINA': 'CN', 'JAPAN': 'JP', 'INDIA': 'IN', 'BANGLADESH': 'BD',
+    'SRI LANKA': 'LK', 'NEPAL': 'NP', 'TURKEY': 'TR', 'TURKIYE': 'TR',
+    'SWEDEN': 'SE', 'NORWAY': 'NO', 'DENMARK': 'DK', 'FINLAND': 'FI',
+    'SWITZERLAND': 'CH', 'AUSTRIA': 'AT', 'PORTUGAL': 'PT', 'IRELAND': 'IE',
+    'POLAND': 'PL', 'CZECH REPUBLIC': 'CZ', 'CZECHIA': 'CZ', 'HUNGARY': 'HU',
+    'GREECE': 'GR', 'ROMANIA': 'RO', 'QATAR': 'QA', 'KUWAIT': 'KW',
+    'BAHRAIN': 'BH', 'OMAN': 'OM', 'JORDAN': 'JO', 'MALAYSIA': 'MY',
+    'SINGAPORE': 'SG', 'INDONESIA': 'ID', 'THAILAND': 'TH', 'PHILIPPINES': 'PH',
+    'SOUTH AFRICA': 'ZA', 'NIGERIA': 'NG', 'KENYA': 'KE', 'GHANA': 'GH',
+    'EGYPT': 'EG', 'MOROCCO': 'MA', 'BRAZIL': 'BR', 'MEXICO': 'MX',
+    'ARGENTINA': 'AR', 'CHILE': 'CL', 'RUSSIA': 'RU', 'UKRAINE': 'UA',
+  };
+  // Exact match first
+  if (map[n]) return map[n];
+  // Partial match
+  for (const [key, code] of Object.entries(map)) {
+    if (n.includes(key) || key.includes(n)) return code;
+  }
+  // Fallback: first 2 chars
+  return n.substring(0, 2);
+};
+
 type OutputMode = 'download' | 'preview' | 'print';
 
 const handlePDFOutput = (pdf: jsPDF, filename: string, mode: OutputMode = 'download') => {
@@ -391,30 +424,31 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   const items = parcel.items || [{ description: 'General Goods', quantity: 1, unit_price: parcel.total_price || 100 }];
   let grandTotal = 0;
   
+  // Scale row height and font size based on item count so everything fits
+  const itemCount1 = items.length;
+  const itemRowH = itemCount1 >= 6 ? 7 : 10;
+  const itemFontSize = itemCount1 >= 6 ? 6.5 : 8;
+
   items.forEach((item: any, index: number) => {
     const itemTotal = (item.quantity || 1) * (item.unit_price || 0);
     grandTotal += itemTotal;
     
     pdf.setFillColor(index % 2 === 0 ? 255 : 250, index % 2 === 0 ? 255 : 250, index % 2 === 0 ? 255 : 250);
-    pdf.rect(margin, yPos - 2, pageWidth - 2 * margin, 10, 'F');
+    pdf.rect(margin, yPos - 2, pageWidth - 2 * margin, itemRowH, 'F');
     pdf.setDrawColor(220, 220, 220);
-    pdf.rect(margin, yPos - 2, pageWidth - 2 * margin, 10);
+    pdf.rect(margin, yPos - 2, pageWidth - 2 * margin, itemRowH);
     
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8);
+    pdf.setFontSize(itemFontSize);
     const desc = safeText(item.description, 'Item');
     const descLines = pdf.splitTextToSize(desc, 95);
-    pdf.text(descLines[0], margin + 3, yPos + 3);
-    if (descLines[1]) {
-      pdf.setFontSize(7);
-      pdf.text(descLines[1], margin + 3, yPos + 6);
-    }
-    pdf.setFontSize(8);
-    pdf.text(String(item.quantity || 1), margin + 113, yPos + 4);
-    pdf.text(`$${(item.unit_price || 0).toFixed(2)}`, margin + 133, yPos + 4);
-    pdf.text(`$${itemTotal.toFixed(2)}`, pageWidth - margin - 17, yPos + 4);
+    pdf.text(descLines[0], margin + 3, yPos + (itemRowH / 2));
+    pdf.setFontSize(itemFontSize);
+    pdf.text(String(item.quantity || 1), margin + 113, yPos + (itemRowH / 2));
+    pdf.text(`${(item.unit_price || 0).toFixed(2)}`, margin + 133, yPos + (itemRowH / 2));
+    pdf.text(`${itemTotal.toFixed(2)}`, pageWidth - margin - 17, yPos + (itemRowH / 2));
     
-    yPos += 10;
+    yPos += itemRowH;
   });
   
   // Total row
@@ -728,7 +762,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.text('Ref:', headerX + 2, yPos + 17);
     
     pdf.setFont('helvetica', 'normal');
-    const destination = safeText(parcel.receiver_country, 'UK').substring(0, 2).toUpperCase();
+    const destination = countryNameToCode(safeText(parcel.receiver_country, 'UK'));
     const service = safeText(parcel.service_type, 'STANDARD').toUpperCase();
     
     pdf.text(destination, headerX + 25, yPos + 11);
@@ -1020,18 +1054,18 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.setTextColor(60, 60, 60);
   pdf.text('DESTINATION:', headerX + 2, yPos + 11);
   pdf.text('SERVICE:', headerX + 2, yPos + 14);
-  pdf.text('Tracking number:', headerX + 2, yPos + 17);
-  
+  pdf.text('REF#:', headerX + 2, yPos + 17);
+
   pdf.setFont('helvetica', 'normal');
-  const destination = safeText(parcel.receiver_country, 'UK').substring(0, 2).toUpperCase();
+  const destination = countryNameToCode(safeText(parcel.receiver_country, 'UK'));
   const service = safeText(parcel.service_type, 'STANDARD').toUpperCase();
-  
+
   pdf.text(destination, headerX + 25, yPos + 11);
   pdf.text(service, headerX + 20, yPos + 14);
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(220, 20, 60);
-  pdf.text(refNumber, headerX + 2, yPos + 17);
+  pdf.text(refNumber, headerX + 14, yPos + 17);
 
   // Wide barcode spanning most of the header box width (bottom section)
   await addBarcode(pdf, refNumber, headerX + 2, yPos + 20, 61, 10);
@@ -1197,32 +1231,33 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   
   const senderItems = parcel.items || [{ description: 'General Goods', quantity: 1, unit_price: parcel.total_price || 100 }];
   let senderGrandTotal = 0;
-  
+
+  // Scale row height and font size based on item count so everything fits
+  const senderItemCount = senderItems.length;
+  const senderItemRowH = senderItemCount >= 6 ? 7 : 10;
+  const senderItemFont = senderItemCount >= 6 ? 6.5 : 8;
+
   senderItems.forEach((item: any, index: number) => {
     const itemTotal = (item.quantity || 1) * (item.unit_price || 0);
     senderGrandTotal += itemTotal;
     
     pdf.setFillColor(index % 2 === 0 ? 255 : 252, index % 2 === 0 ? 252 : 250, index % 2 === 0 ? 252 : 248);
-    pdf.rect(10, yPos - 2, pageWidth - 20, 10, 'F');
+    pdf.rect(10, yPos - 2, pageWidth - 20, senderItemRowH, 'F');
     pdf.setDrawColor(230, 230, 230);
-    pdf.rect(10, yPos - 2, pageWidth - 20, 10);
+    pdf.rect(10, yPos - 2, pageWidth - 20, senderItemRowH);
     
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8);
+    pdf.setFontSize(senderItemFont);
     pdf.setTextColor(0, 0, 0);
     const desc = safeText(item.description, 'Item');
     const descLines = pdf.splitTextToSize(desc, 90);
-    pdf.text(descLines[0], 13, yPos + 3);
-    if (descLines[1]) {
-      pdf.setFontSize(7);
-      pdf.text(descLines[1], 13, yPos + 6);
-    }
-    pdf.setFontSize(8);
-    pdf.text(String(item.quantity || 1), 118, yPos + 4);
-    pdf.text(`$${(item.unit_price || 0).toFixed(2)}`, 138, yPos + 4);
-    pdf.text(`$${itemTotal.toFixed(2)}`, pageWidth - 19, yPos + 4);
+    pdf.text(descLines[0], 13, yPos + (senderItemRowH / 2));
+    pdf.setFontSize(senderItemFont);
+    pdf.text(String(item.quantity || 1), 118, yPos + (senderItemRowH / 2));
+    pdf.text(`${(item.unit_price || 0).toFixed(2)}`, 138, yPos + (senderItemRowH / 2));
+    pdf.text(`${itemTotal.toFixed(2)}`, pageWidth - 19, yPos + (senderItemRowH / 2));
     
-    yPos += 10;
+    yPos += senderItemRowH;
   });
   
   // Total row - USD only
