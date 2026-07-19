@@ -45,6 +45,13 @@ interface Parcel {
   created_at: string;
 }
 
+interface Country {
+  code: string;
+  name: string;
+}
+
+type EditableField = "reference_id" | "tracking_id";
+
 const statusColors = {
   created: "bg-yellow-100 text-yellow-800",
   picked_up: "bg-blue-100 text-blue-800",
@@ -66,8 +73,17 @@ export const ParcelManagement = () => {
   const [editingParcel, setEditingParcel] = useState<Parcel | null>(null);
   const { toast } = useToast();
 
+  // Country code -> full name lookup, pulled from Supabase
+  const [countryMap, setCountryMap] = useState<Record<string, string>>({});
+
+  // Inline editing state for Reference ID / Tracking ID cells
+  const [editingCell, setEditingCell] = useState<{ id: string; field: EditableField } | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [savingCell, setSavingCell] = useState(false);
+
   useEffect(() => {
     fetchParcels();
+    fetchCountries();
   }, []);
 
   const fetchParcels = async () => {
@@ -90,6 +106,28 @@ export const ParcelManagement = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchCountries = async () => {
+    const { data, error } = await supabase
+      .from('countries')
+      .select('code, name');
+
+    if (error) {
+      console.error('Error fetching countries:', error);
+      return;
+    }
+
+    const map: Record<string, string> = {};
+    (data as Country[] || []).forEach((c) => {
+      map[c.code] = c.name;
+    });
+    setCountryMap(map);
+  };
+
+  const getCountryName = (code: string) => {
+    if (!code) return "—";
+    return countryMap[code] || code;
   };
 
   const handleParcelCreated = () => {
@@ -145,10 +183,84 @@ export const ParcelManagement = () => {
     }
   };
 
+  // --- Inline editing for Reference ID / Tracking ID ---
+  const startEditingCell = (parcel: Parcel, field: EditableField) => {
+    setEditingCell({ id: parcel.id, field });
+    setEditValue((parcel[field] as string) || "");
+  };
+
+  const cancelEditingCell = () => {
+    setEditingCell(null);
+    setEditValue("");
+  };
+
+  const saveEditingCell = async () => {
+    if (!editingCell || savingCell) return;
+    const { id, field } = editingCell;
+    const trimmed = editValue.trim();
+
+    // Tracking ID shouldn't be left empty
+    if (field === "tracking_id" && !trimmed) {
+      toast({
+        title: "Error",
+        description: "Tracking ID cannot be empty",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const previousValue = parcels.find((p) => p.id === id)?.[field] || "";
+    if (trimmed === previousValue) {
+      cancelEditingCell();
+      return;
+    }
+
+    setSavingCell(true);
+    try {
+      const { error } = await supabase
+        .from('parcels')
+        .update({ [field]: field === "reference_id" ? (trimmed || null) : trimmed })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setParcels((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, [field]: trimmed } : p))
+      );
+
+      toast({
+        title: "Saved",
+        description: `${field === "tracking_id" ? "Tracking ID" : "Reference ID"} updated`,
+      });
+    } catch (error: any) {
+      console.error(`Error updating ${field}:`, error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update. It may already be in use.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingCell(false);
+      setEditingCell(null);
+      setEditValue("");
+    }
+  };
+
+  const handleEditKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      saveEditingCell();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancelEditingCell();
+    }
+  };
+
   const filteredParcels = parcels.filter(parcel => {
     const query = searchQuery.toLowerCase();
     return (
       parcel.tracking_id.toLowerCase().includes(query) ||
+      (parcel.reference_id || "").toLowerCase().includes(query) ||
       parcel.sender_name.toLowerCase().includes(query) ||
       parcel.receiver_name.toLowerCase().includes(query) ||
       parcel.sender_phone.toLowerCase().includes(query) ||
@@ -192,7 +304,7 @@ export const ParcelManagement = () => {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by tracking ID, name, or phone..."
+                placeholder="Search by tracking ID, reference ID, name, or phone..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10"
@@ -221,14 +333,46 @@ export const ParcelManagement = () => {
                 {filteredParcels.map((parcel) => (
                   <TableRow key={parcel.id}>
                     <TableCell>
-                      <div className="font-mono font-semibold text-blue-600">
-                        {parcel.reference_id || 'N/A'}
-                      </div>
+                      {editingCell?.id === parcel.id && editingCell.field === "reference_id" ? (
+                        <Input
+                          autoFocus
+                          value={editValue}
+                          disabled={savingCell}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={saveEditingCell}
+                          onKeyDown={handleEditKeyDown}
+                          className="h-8 font-mono w-32"
+                        />
+                      ) : (
+                        <div
+                          className="font-mono font-semibold text-blue-600 cursor-pointer hover:underline decoration-dashed underline-offset-4"
+                          onClick={() => startEditingCell(parcel, "reference_id")}
+                          title="Click to edit"
+                        >
+                          {parcel.reference_id || 'N/A'}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
-                      <div className="font-mono font-semibold text-primary">
-                        {parcel.tracking_id}
-                      </div>
+                      {editingCell?.id === parcel.id && editingCell.field === "tracking_id" ? (
+                        <Input
+                          autoFocus
+                          value={editValue}
+                          disabled={savingCell}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={saveEditingCell}
+                          onKeyDown={handleEditKeyDown}
+                          className="h-8 font-mono w-32"
+                        />
+                      ) : (
+                        <div
+                          className="font-mono font-semibold text-primary cursor-pointer hover:underline decoration-dashed underline-offset-4"
+                          onClick={() => startEditingCell(parcel, "tracking_id")}
+                          title="Click to edit"
+                        >
+                          {parcel.tracking_id}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div>
@@ -244,7 +388,7 @@ export const ParcelManagement = () => {
                     </TableCell>
                     <TableCell>
                       <div className="text-sm">
-                        {parcel.from_country} → {parcel.to_country}
+                        {getCountryName(parcel.from_country)} → {getCountryName(parcel.to_country)}
                       </div>
                     </TableCell>
                     <TableCell>
