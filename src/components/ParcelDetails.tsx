@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Package, User, MapPin, Clock, Truck, CheckCircle, Plane, AlertCircle } from "lucide-react";
+import { Package, User, MapPin, Clock, Truck, CheckCircle, Plane, AlertCircle, Pencil, Save, X } from "lucide-react";
 import { BillDownloader } from "./BillDownloader";
 
 interface ParcelDetailsProps {
@@ -49,6 +49,40 @@ const statusColors = {
   cancelled: "bg-red-100 text-red-800",
 };
 
+const parcelTypeOptions = [
+  { value: "box", label: "Box" },
+  { value: "envelope", label: "Envelope" },
+  { value: "pallet", label: "Pallet" },
+  { value: "other", label: "Other" },
+];
+
+const serviceTypeOptions = [
+  { value: "standard", label: "Standard" },
+  { value: "express", label: "Express" },
+  { value: "overnight", label: "Overnight" },
+  { value: "economic", label: "Economic" },
+  { value: "priority", label: "Priority" },
+];
+
+const documentTypeOptions = [
+  { value: "document", label: "Document" },
+  { value: "non-document", label: "Non-Document" },
+];
+
+interface InfoForm {
+  parcel_type: string;
+  service_type: string;
+  document_type: string;
+  weight: string;
+  length: string;
+  width: string;
+  height: string;
+  declared_value: string;
+  total_price: string;
+  currency: string;
+  special_instructions: string;
+}
+
 export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps) => {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState(parcel.current_status);
@@ -58,6 +92,108 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps)
     new Date().toISOString().slice(0, 16)
   );
   const { toast } = useToast();
+
+  // Local overrides so edits made here show immediately without waiting on the
+  // parent list refetch (the parent doesn't re-pass a fresh `parcel` prop into
+  // this already-open modal).
+  const [localOverrides, setLocalOverrides] = useState<Record<string, any>>({});
+  const displayParcel = { ...parcel, ...localOverrides };
+
+  // Inline "Parcel Information" editing
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [savingInfo, setSavingInfo] = useState(false);
+  const [infoForm, setInfoForm] = useState<InfoForm>({
+    parcel_type: displayParcel.parcel_type || "box",
+    service_type: displayParcel.service_type || "standard",
+    document_type: displayParcel.document_type || "document",
+    weight: displayParcel.weight?.toString() || "",
+    length: displayParcel.length?.toString() || "",
+    width: displayParcel.width?.toString() || "",
+    height: displayParcel.height?.toString() || "",
+    declared_value: displayParcel.declared_value?.toString() || "",
+    total_price: displayParcel.total_price?.toString() || "",
+    currency: displayParcel.currency || "USD",
+    special_instructions: displayParcel.special_instructions || "",
+  });
+
+  const startEditingInfo = () => {
+    setInfoForm({
+      parcel_type: displayParcel.parcel_type || "box",
+      service_type: displayParcel.service_type || "standard",
+      document_type: displayParcel.document_type || "document",
+      weight: displayParcel.weight?.toString() || "",
+      length: displayParcel.length?.toString() || "",
+      width: displayParcel.width?.toString() || "",
+      height: displayParcel.height?.toString() || "",
+      declared_value: displayParcel.declared_value?.toString() || "",
+      total_price: displayParcel.total_price?.toString() || "",
+      currency: displayParcel.currency || "USD",
+      special_instructions: displayParcel.special_instructions || "",
+    });
+    setEditingInfo(true);
+  };
+
+  const cancelEditingInfo = () => {
+    setEditingInfo(false);
+  };
+
+  const handleInfoFieldChange = (field: keyof InfoForm, value: string) => {
+    setInfoForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const saveInfo = async () => {
+    const weight = parseFloat(infoForm.weight);
+    const length = parseFloat(infoForm.length);
+    const width = parseFloat(infoForm.width);
+    const height = parseFloat(infoForm.height);
+
+    if ([weight, length, width, height].some((n) => isNaN(n) || n <= 0)) {
+      toast({
+        title: "Error",
+        description: "Weight and dimensions must be positive numbers",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingInfo(true);
+    try {
+      const payload = {
+        parcel_type: infoForm.parcel_type,
+        service_type: infoForm.service_type,
+        document_type: infoForm.document_type,
+        weight,
+        length,
+        width,
+        height,
+        declared_value: parseFloat(infoForm.declared_value || "0") || 0,
+        total_price: parseFloat(infoForm.total_price || "0") || 0,
+        currency: infoForm.currency || "USD",
+        special_instructions: infoForm.special_instructions,
+      };
+
+      const { error } = await supabase.from("parcels").update(payload).eq("id", parcel.id);
+
+      if (error) throw error;
+
+      setLocalOverrides((prev) => ({ ...prev, ...payload }));
+      toast({
+        title: "Saved",
+        description: "Parcel information updated",
+      });
+      setEditingInfo(false);
+      onUpdate();
+    } catch (error: any) {
+      console.error("Error updating parcel information:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update parcel information",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingInfo(false);
+    }
+  };
 
   const updateParcelStatus = async () => {
     if (!selectedStatus) {
@@ -176,56 +312,236 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps)
       {/* Parcel Information */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5" />
-            Parcel Information
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Parcel Information
+            </CardTitle>
+            {editingInfo ? (
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={cancelEditingInfo} disabled={savingInfo}>
+                  <X className="h-4 w-4 mr-1" />
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={saveInfo} disabled={savingInfo}>
+                  <Save className="h-4 w-4 mr-1" />
+                  {savingInfo ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            ) : (
+              <Button variant="ghost" size="sm" onClick={startEditingInfo}>
+                <Pencil className="h-4 w-4 mr-1" />
+                Edit
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <p className="text-sm font-medium">Type:</p>
-              <p className="text-sm text-muted-foreground capitalize">{parcel.parcel_type}</p>
+          {editingInfo ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit_parcel_type">Type</Label>
+                  <Select
+                    value={infoForm.parcel_type}
+                    onValueChange={(value) => handleInfoFieldChange("parcel_type", value)}
+                  >
+                    <SelectTrigger id="edit_parcel_type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {parcelTypeOptions.map((type) => (
+                        <SelectItem key={type.value} value={type.value}>
+                          {type.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_service_type">Service</Label>
+                  <Select
+                    value={infoForm.service_type}
+                    onValueChange={(value) => handleInfoFieldChange("service_type", value)}
+                  >
+                    <SelectTrigger id="edit_service_type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {serviceTypeOptions.map((type) => (
+                        <SelectItem key={type.value} value={type.value}>
+                          {type.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_document_type">Document Type</Label>
+                  <Select
+                    value={infoForm.document_type}
+                    onValueChange={(value) => handleInfoFieldChange("document_type", value)}
+                  >
+                    <SelectTrigger id="edit_document_type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {documentTypeOptions.map((type) => (
+                        <SelectItem key={type.value} value={type.value}>
+                          {type.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit_weight">Weight (kg)</Label>
+                  <Input
+                    id="edit_weight"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={infoForm.weight}
+                    onChange={(e) => handleInfoFieldChange("weight", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_length">Length (cm)</Label>
+                  <Input
+                    id="edit_length"
+                    type="number"
+                    step="0.01"
+                    min="1"
+                    value={infoForm.length}
+                    onChange={(e) => handleInfoFieldChange("length", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_width">Width (cm)</Label>
+                  <Input
+                    id="edit_width"
+                    type="number"
+                    step="0.01"
+                    min="1"
+                    value={infoForm.width}
+                    onChange={(e) => handleInfoFieldChange("width", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_height">Height (cm)</Label>
+                  <Input
+                    id="edit_height"
+                    type="number"
+                    step="0.01"
+                    min="1"
+                    value={infoForm.height}
+                    onChange={(e) => handleInfoFieldChange("height", e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit_declared_value">Declared Value (USD)</Label>
+                  <Input
+                    id="edit_declared_value"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={infoForm.declared_value}
+                    onChange={(e) => handleInfoFieldChange("declared_value", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_total_price">Price</Label>
+                  <Input
+                    id="edit_total_price"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={infoForm.total_price}
+                    onChange={(e) => handleInfoFieldChange("total_price", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_currency">Currency</Label>
+                  <Input
+                    id="edit_currency"
+                    value={infoForm.currency}
+                    onChange={(e) => handleInfoFieldChange("currency", e.target.value.toUpperCase())}
+                    maxLength={3}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit_special_instructions">Special Instructions</Label>
+                <Textarea
+                  id="edit_special_instructions"
+                  value={infoForm.special_instructions}
+                  onChange={(e) => handleInfoFieldChange("special_instructions", e.target.value)}
+                  rows={2}
+                />
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-medium">Service:</p>
-              <p className="text-sm text-muted-foreground capitalize">{parcel.service_type}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium">Document Type:</p>
-              <p className="text-sm text-muted-foreground capitalize">{parcel.document_type || 'Document'}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium">Weight:</p>
-              <p className="text-sm text-muted-foreground">{parcel.weight} kg</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium">Dimensions:</p>
-              <p className="text-sm text-muted-foreground">
-                {parcel.length}×{parcel.width}×{parcel.height} cm
-              </p>
-            </div>
-            <div>
-              <p className="text-sm font-medium">Chargeable Weight:</p>
-              <p className="text-sm text-muted-foreground">
-                {parcel.chargeable_weight || parcel.weight} kg
-              </p>
-            </div>
-            <div>
-              <p className="text-sm font-medium">Price:</p>
-              <p className="text-sm font-semibold text-primary">
-                {parcel.currency} {parcel.total_price?.toFixed(2)}
-              </p>
-            </div>
-          </div>
-          
-          {parcel.declared_value > 0 && (
-            <div className="mt-4">
-              <p className="text-sm font-medium">Declared Value:</p>
-              <p className="text-sm text-muted-foreground">
-                USD {parcel.declared_value.toFixed(2)}
-              </p>
-            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <p className="text-sm font-medium">Type:</p>
+                  <p className="text-sm text-muted-foreground capitalize">{displayParcel.parcel_type}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Service:</p>
+                  <p className="text-sm text-muted-foreground capitalize">{displayParcel.service_type}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Document Type:</p>
+                  <p className="text-sm text-muted-foreground capitalize">{displayParcel.document_type || 'Document'}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Weight:</p>
+                  <p className="text-sm text-muted-foreground">{displayParcel.weight} kg</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Dimensions:</p>
+                  <p className="text-sm text-muted-foreground">
+                    {displayParcel.length}×{displayParcel.width}×{displayParcel.height} cm
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Chargeable Weight:</p>
+                  <p className="text-sm text-muted-foreground">
+                    {displayParcel.chargeable_weight || displayParcel.weight} kg
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Price:</p>
+                  <p className="text-sm font-semibold text-primary">
+                    {displayParcel.currency} {displayParcel.total_price?.toFixed(2)}
+                  </p>
+                </div>
+              </div>
+
+              {displayParcel.declared_value > 0 && (
+                <div className="mt-4">
+                  <p className="text-sm font-medium">Declared Value:</p>
+                  <p className="text-sm text-muted-foreground">
+                    USD {displayParcel.declared_value.toFixed(2)}
+                  </p>
+                </div>
+              )}
+
+              {displayParcel.special_instructions && (
+                <div className="mt-4">
+                  <p className="text-sm font-medium">Special Instructions:</p>
+                  <p className="text-sm text-muted-foreground">{displayParcel.special_instructions}</p>
+                </div>
+              )}
+            </>
           )}
 
           {parcel.items && parcel.items.length > 0 && (
@@ -242,13 +558,6 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps)
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-
-          {parcel.special_instructions && (
-            <div className="mt-4">
-              <p className="text-sm font-medium">Special Instructions:</p>
-              <p className="text-sm text-muted-foreground">{parcel.special_instructions}</p>
             </div>
           )}
         </CardContent>
