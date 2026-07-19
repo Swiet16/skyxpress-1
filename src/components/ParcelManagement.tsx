@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,7 +53,7 @@ interface Country {
 
 type EditableField = "reference_id" | "tracking_id";
 
-const statusColors = {
+const statusColors: Record<string, string> = {
   created: "bg-yellow-100 text-yellow-800",
   picked_up: "bg-blue-100 text-blue-800",
   in_transit: "bg-purple-100 text-purple-800",
@@ -84,6 +84,9 @@ export const ParcelManagement = () => {
   const [editValue, setEditValue] = useState("");
   const [savingCell, setSavingCell] = useState(false);
 
+  // Guards against double-submit (mobile keyboards can fire onKeyDown + onBlur back to back)
+  const isSavingRef = useRef(false);
+
   useEffect(() => {
     fetchParcels();
     fetchCountries();
@@ -92,15 +95,15 @@ export const ParcelManagement = () => {
   const fetchParcels = async () => {
     try {
       const { data, error } = await supabase
-        .from('parcels')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .from("parcels")
+        .select("*")
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
 
       setParcels(data || []);
     } catch (error: any) {
-      console.error('Error fetching parcels:', error);
+      console.error("Error fetching parcels:", error);
       toast({
         title: "Error",
         description: "Failed to load parcels",
@@ -112,12 +115,10 @@ export const ParcelManagement = () => {
   };
 
   const fetchCountries = async () => {
-    const { data, error } = await supabase
-      .from('countries')
-      .select('code, name');
+    const { data, error } = await supabase.from("countries").select("code, name");
 
     if (error) {
-      console.error('Error fetching countries:', error);
+      console.error("Error fetching countries:", error);
       return;
     }
 
@@ -168,10 +169,7 @@ export const ParcelManagement = () => {
     }
 
     try {
-      const { error } = await supabase
-        .from('parcels')
-        .delete()
-        .eq('id', parcelId);
+      const { error } = await supabase.from("parcels").delete().eq("id", parcelId);
 
       if (error) throw error;
 
@@ -182,7 +180,7 @@ export const ParcelManagement = () => {
 
       fetchParcels();
     } catch (error: any) {
-      console.error('Error deleting parcel:', error);
+      console.error("Error deleting parcel:", error);
       toast({
         title: "Error",
         description: error.message || "Failed to delete parcel",
@@ -193,6 +191,7 @@ export const ParcelManagement = () => {
 
   // --- Inline editing for Reference ID / Tracking ID ---
   const startEditingCell = (parcel: Parcel, field: EditableField) => {
+    if (savingCell) return;
     setEditingCell({ id: parcel.id, field });
     setEditValue((parcel[field] as string) || "");
   };
@@ -202,8 +201,13 @@ export const ParcelManagement = () => {
     setEditValue("");
   };
 
+  const friendlyFieldName = (field: EditableField) =>
+    field === "tracking_id" ? "Tracking ID" : "Reference ID";
+
   const saveEditingCell = async () => {
-    if (!editingCell || savingCell) return;
+    if (!editingCell || isSavingRef.current) return;
+    isSavingRef.current = true;
+
     const { id, field } = editingCell;
     const trimmed = editValue.trim();
 
@@ -214,11 +218,13 @@ export const ParcelManagement = () => {
         description: "Tracking ID cannot be empty",
         variant: "destructive",
       });
+      isSavingRef.current = false;
       return;
     }
 
     const previousValue = parcels.find((p) => p.id === id)?.[field] || "";
     if (trimmed === previousValue) {
+      isSavingRef.current = false;
       cancelEditingCell();
       return;
     }
@@ -226,9 +232,9 @@ export const ParcelManagement = () => {
     setSavingCell(true);
     try {
       const { error } = await supabase
-        .from('parcels')
+        .from("parcels")
         .update({ [field]: field === "reference_id" ? (trimmed || null) : trimmed })
-        .eq('id', id);
+        .eq("id", id);
 
       if (error) throw error;
 
@@ -238,19 +244,23 @@ export const ParcelManagement = () => {
 
       toast({
         title: "Saved",
-        description: `${field === "tracking_id" ? "Tracking ID" : "Reference ID"} updated`,
+        description: `${friendlyFieldName(field)} updated`,
       });
     } catch (error: any) {
       console.error(`Error updating ${field}:`, error);
+      const isDuplicate = error?.code === "23505";
       toast({
         title: "Error",
-        description: error.message || "Failed to update. It may already be in use.",
+        description: isDuplicate
+          ? `That ${friendlyFieldName(field)} is already in use.`
+          : error.message || "Failed to update",
         variant: "destructive",
       });
     } finally {
       setSavingCell(false);
       setEditingCell(null);
       setEditValue("");
+      isSavingRef.current = false;
     }
   };
 
@@ -264,7 +274,7 @@ export const ParcelManagement = () => {
     }
   };
 
-  const filteredParcels = parcels.filter(parcel => {
+  const filteredParcels = parcels.filter((parcel) => {
     const query = searchQuery.toLowerCase();
     return (
       parcel.tracking_id.toLowerCase().includes(query) ||
@@ -357,7 +367,7 @@ export const ParcelManagement = () => {
                           onClick={() => startEditingCell(parcel, "reference_id")}
                           title="Click to edit"
                         >
-                          {parcel.reference_id || 'N/A'}
+                          {parcel.reference_id || "N/A"}
                         </div>
                       )}
                     </TableCell>
@@ -413,13 +423,11 @@ export const ParcelManagement = () => {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge className={statusColors[parcel.current_status as keyof typeof statusColors] || "bg-gray-100 text-gray-800"}>
-                        {parcel.current_status.replace('_', ' ').toUpperCase()}
+                      <Badge className={statusColors[parcel.current_status] || "bg-gray-100 text-gray-800"}>
+                        {parcel.current_status.replace("_", " ").toUpperCase()}
                       </Badge>
                     </TableCell>
-                    <TableCell>
-                      {new Date(parcel.created_at).toLocaleDateString()}
-                    </TableCell>
+                    <TableCell>{new Date(parcel.created_at).toLocaleDateString()}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Button
@@ -432,11 +440,7 @@ export const ParcelManagement = () => {
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => handleEditClick(parcel)}
-                        >
+                        <Button variant="ghost" size="sm" onClick={() => handleEditClick(parcel)}>
                           <Edit className="h-4 w-4" />
                         </Button>
                         <Button
@@ -450,8 +454,8 @@ export const ParcelManagement = () => {
                         <Button variant="ghost" size="sm">
                           <FileText className="h-4 w-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
+                        <Button
+                          variant="ghost"
                           size="sm"
                           onClick={() => handleDeleteParcel(parcel.id, parcel.tracking_id)}
                         >
@@ -480,8 +484,8 @@ export const ParcelManagement = () => {
             <DialogTitle>Parcel Details</DialogTitle>
           </DialogHeader>
           {selectedParcel && (
-            <ParcelDetails 
-              parcel={selectedParcel} 
+            <ParcelDetails
+              parcel={selectedParcel}
               onUpdate={fetchParcels}
               onClose={() => setShowDetailsModal(false)}
             />
@@ -490,26 +494,28 @@ export const ParcelManagement = () => {
       </Dialog>
 
       {/* Edit Parcel Modal */}
-      <Dialog open={showEditForm} onOpenChange={(open) => {
-        setShowEditForm(open);
-        if (!open) setEditingParcel(null);
-      }}>
+      <Dialog
+        open={showEditForm}
+        onOpenChange={(open) => {
+          setShowEditForm(open);
+          if (!open) setEditingParcel(null);
+        }}
+      >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Parcel - {editingParcel?.tracking_id}</DialogTitle>
           </DialogHeader>
-          {editingParcel && (
-            <ParcelForm 
-              parcel={editingParcel} 
-              onSuccess={handleParcelUpdated} 
-            />
-          )}
+          {editingParcel && <ParcelForm parcel={editingParcel} onSuccess={handleParcelUpdated} />}
         </DialogContent>
       </Dialog>
 
       {/* Attachments Modal */}
       <ParcelAttachmentsDialog
-        parcel={attachmentsParcel ? { id: attachmentsParcel.id, tracking_id: attachmentsParcel.tracking_id } : null}
+        parcel={
+          attachmentsParcel
+            ? { id: attachmentsParcel.id, tracking_id: attachmentsParcel.tracking_id }
+            : null
+        }
         open={showAttachments}
         onOpenChange={(open) => {
           setShowAttachments(open);
