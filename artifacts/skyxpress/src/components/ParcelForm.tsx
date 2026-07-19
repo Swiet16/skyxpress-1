@@ -30,6 +30,8 @@ interface FormData {
   sender_email: string;
   sender_cnic: string;
   sender_address: string;
+  sender_address_2: string;
+  sender_address_3: string;
   sender_city: string;
   sender_country: string;
   receiver_name: string;
@@ -37,6 +39,8 @@ interface FormData {
   receiver_email: string;
   receiver_phone: string;
   receiver_address: string;
+  receiver_address_2: string;
+  receiver_address_3: string;
   receiver_city: string;
   receiver_state: string;
   receiver_postal_code: string;
@@ -54,6 +58,8 @@ interface FormData {
   special_instructions: string;
   pieces: number;
   freight_amount_pkr: string;
+  dim_weight_override: string;
+  amount_override: string;
   items: Array<{
     description: string;
     quantity: number;
@@ -95,6 +101,8 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     sender_email: parcel?.sender_email || "",
     sender_cnic: parcel?.sender_cnic || "",
     sender_address: parcel?.sender_address || "",
+    sender_address_2: parcel?.sender_address_2 || "",
+    sender_address_3: parcel?.sender_address_3 || "",
     sender_city: parcel?.sender_city || "",
     sender_country: parcel?.sender_country || "",
     receiver_name: parcel?.receiver_name || "",
@@ -102,6 +110,8 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     receiver_email: parcel?.receiver_email || "",
     receiver_phone: parcel?.receiver_phone || "",
     receiver_address: parcel?.receiver_address || "",
+    receiver_address_2: parcel?.receiver_address_2 || "",
+    receiver_address_3: parcel?.receiver_address_3 || "",
     receiver_city: parcel?.receiver_city || "",
     receiver_state: parcel?.receiver_state || "",
     receiver_postal_code: parcel?.receiver_postal_code || "",
@@ -119,6 +129,8 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     special_instructions: parcel?.special_instructions || "",
     pieces: parcel?.pieces || 1,
     freight_amount_pkr: parcel?.freight_amount_pkr?.toString() || "",
+    dim_weight_override: parcel?.dim_weight_override?.toString() || "",
+    amount_override: parcel?.amount_override?.toString() || "",
     items: parcel?.items?.length
       ? parcel.items
       : [
@@ -368,6 +380,13 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
 
       const totalPrice = calculatePrice(weight, length, width, height);
 
+      const dimWeightOverride = formData.dim_weight_override.trim()
+        ? parseFloat(formData.dim_weight_override)
+        : null;
+      const amountOverride = formData.amount_override.trim()
+        ? parseFloat(formData.amount_override)
+        : null;
+
       const parcelData: Record<string, any> = {
         sender_name: formData.sender_name,
         sender_company: formData.sender_company,
@@ -375,6 +394,8 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
         sender_email: formData.sender_email,
         sender_cnic: formData.sender_cnic,
         sender_address: formData.sender_address,
+        sender_address_2: formData.sender_address_2 || null,
+        sender_address_3: formData.sender_address_3 || null,
         sender_city: formData.sender_city,
         sender_country: formData.sender_country,
         receiver_name: formData.receiver_name,
@@ -382,6 +403,8 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
         receiver_email: formData.receiver_email,
         receiver_phone: formData.receiver_phone,
         receiver_address: formData.receiver_address,
+        receiver_address_2: formData.receiver_address_2 || null,
+        receiver_address_3: formData.receiver_address_3 || null,
         receiver_city: formData.receiver_city,
         receiver_state: formData.receiver_state,
         receiver_postal_code: formData.receiver_postal_code,
@@ -401,6 +424,8 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
         items: formData.items,
         pieces: formData.pieces,
         freight_amount_pkr: freightAmountPkr,
+        dim_weight_override: dimWeightOverride,
+        amount_override: amountOverride,
       };
 
       // Only send reference_id if the admin actually typed one; otherwise let the DB default generate it
@@ -639,6 +664,26 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               required
             />
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="sender_address_2">Address Line 2</Label>
+              <Input
+                id="sender_address_2"
+                value={formData.sender_address_2}
+                onChange={(e) => handleInputChange("sender_address_2", e.target.value)}
+                placeholder="Optional (shown on bills)"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sender_address_3">Address Line 3</Label>
+              <Input
+                id="sender_address_3"
+                value={formData.sender_address_3}
+                onChange={(e) => handleInputChange("sender_address_3", e.target.value)}
+                placeholder="Optional (shown on bills)"
+              />
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -786,6 +831,26 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               onChange={(e) => handleInputChange("receiver_address", e.target.value)}
               required
             />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="receiver_address_2">Address Line 2</Label>
+              <Input
+                id="receiver_address_2"
+                value={formData.receiver_address_2}
+                onChange={(e) => handleInputChange("receiver_address_2", e.target.value)}
+                placeholder="Optional (shown on bills)"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="receiver_address_3">Address Line 3</Label>
+              <Input
+                id="receiver_address_3"
+                value={formData.receiver_address_3}
+                onChange={(e) => handleInputChange("receiver_address_3", e.target.value)}
+                placeholder="Optional (shown on bills)"
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -988,6 +1053,51 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
                 value={formData.freight_amount_pkr}
                 onChange={(e) => handleInputChange("freight_amount_pkr", e.target.value)}
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="dim_weight_override">
+                Dim Weight Override (kg)
+              </Label>
+              <Input
+                id="dim_weight_override"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.dim_weight_override}
+                onChange={(e) => handleInputChange("dim_weight_override", e.target.value)}
+                placeholder={
+                  formData.length && formData.width && formData.height
+                    ? `Auto: ${((parseFloat(formData.length || "0") * parseFloat(formData.width || "0") * parseFloat(formData.height || "0")) / 5000).toFixed(2)} kg`
+                    : "Leave blank to auto-calculate"
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave blank to use formula (L×W×H÷5000). Enter a value to override on all bills.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="amount_override">
+                Freight Amount Override (PKR)
+              </Label>
+              <Input
+                id="amount_override"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.amount_override}
+                onChange={(e) => handleInputChange("amount_override", e.target.value)}
+                placeholder={
+                  formData.freight_amount_pkr
+                    ? `Default: PKR ${formData.freight_amount_pkr}`
+                    : "Leave blank to use Freight Amount"
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave blank to use the Freight Amount field. Enter a value to override on the Sender Copy bill.
+              </p>
             </div>
           </div>
 

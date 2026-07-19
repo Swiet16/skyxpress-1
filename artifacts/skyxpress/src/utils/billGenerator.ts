@@ -1,5 +1,6 @@
 // @ts-nocheck
 import jsPDF from 'jspdf';
+import bwipjs from 'bwip-js';
 import { supabase } from '@/integrations/supabase/client';
 
 interface ParcelData {
@@ -8,6 +9,8 @@ interface ParcelData {
   sender_name: string;
   sender_company?: string;
   sender_address: string;
+  sender_address_2?: string;
+  sender_address_3?: string;
   sender_city: string;
   sender_country: string;
   sender_phone: string;
@@ -17,6 +20,8 @@ interface ParcelData {
   receiver_company?: string;
   receiver_email?: string;
   receiver_address: string;
+  receiver_address_2?: string;
+  receiver_address_3?: string;
   receiver_city: string;
   receiver_state: string;
   receiver_postal_code: string;
@@ -40,6 +45,8 @@ interface ParcelData {
   currency?: string;
   created_at?: string;
   freight_amount_pkr?: number;
+  dim_weight_override?: number | null;
+  amount_override?: number | null;
 }
 
 // Helper function to ensure valid text for jsPDF
@@ -123,98 +130,60 @@ const addLogo = async (pdf: jsPDF, x: number, y: number, width: number, height: 
     });
   } catch (error) {
     console.error('Error loading logo:', error);
-    // Don't throw - just continue without logo
     return Promise.resolve();
   }
 };
 
-// Load and add QR code to PDF using multiple APIs with fallback
-const addQRCode = async (pdf: jsPDF, referenceId: string, x: number, y: number, size: number = 25) => {
-  // Array of QR code API endpoints - will try each one until success
-  const qrApis = [
-    // API 1: QuickChart.io
-    `https://quickchart.io/qr?text=${encodeURIComponent(referenceId)}&size=300`,
-    
-    // API 2: QR Server
-    `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(referenceId)}`,
-    
-    // API 3: Google Charts (deprecated but still works)
-    `https://chart.googleapis.com/chart?chs=300x300&cht=qr&chl=${encodeURIComponent(referenceId)}`,
-    
-    // API 4: QR Code Generator
-    `https://qrcode.tec-it.com/API/QRCode?data=${encodeURIComponent(referenceId)}&size=medium`,
-    
-    // API 5: GoQR.me
-    `https://api.qrserver.com/v1/create-qr-code/?size=300x300&format=png&data=${encodeURIComponent(referenceId)}`
-  ];
-  
-  // Try each API in sequence
-  for (let i = 0; i < qrApis.length; i++) {
-    try {
-      console.log(`Trying QR API ${i + 1}/${qrApis.length}:`, qrApis[i]);
-      
-      const response = await fetch(qrApis[i]);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const blob = await response.blob();
-      
-      // Verify blob is valid
-      if (blob.size === 0) {
-        throw new Error('Empty response blob');
-      }
-      
-      const reader = new FileReader();
-      
-      return new Promise<void>((resolve, reject) => {
-        reader.onloadend = () => {
-          try {
-            const base64 = reader.result as string;
-            pdf.addImage(base64, 'PNG', x, y, size, size);
-            console.log(`✓ QR code generated successfully using API ${i + 1}`);
-            resolve();
-          } catch (err) {
-            reject(err);
-          }
-        };
-        reader.onerror = () => reject(new Error('FileReader error'));
-        reader.readAsDataURL(blob);
-      });
-      
-    } catch (error) {
-      console.warn(`QR API ${i + 1} failed:`, error);
-      
-      // If this was the last API, throw error
-      if (i === qrApis.length - 1) {
-        console.error('All QR code APIs failed. QR code will not be added.');
-        return; // Don't throw - just skip QR code
-      }
-      
-      // Otherwise, continue to next API
-      continue;
-    }
+// Generate barcode using bwip-js (Code128) — no external API needed
+const addBarcode = async (
+  pdf: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): Promise<void> => {
+  try {
+    const canvas = document.createElement('canvas');
+    bwipjs.toCanvas(canvas, {
+      bcid: 'code128',
+      text: text,
+      scale: 3,
+      height: 12,
+      includetext: false,
+    });
+    const dataUrl = canvas.toDataURL('image/png');
+    pdf.addImage(dataUrl, 'PNG', x, y, width, height);
+    console.log('✓ Barcode generated successfully');
+  } catch (err) {
+    console.error('Barcode generation failed:', err);
+    // Draw a placeholder rectangle if barcode fails
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.3);
+    pdf.rect(x, y, width, height);
+    pdf.setFontSize(6);
+    pdf.setTextColor(0, 0, 0);
+    pdf.text(text, x + width / 2, y + height / 2, { align: 'center' });
   }
 };
 
-// ===== 1. INVOICE (removed GIFT) =====
+// ===== 1. INVOICE =====
 export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'download'): Promise<void> => {
   const pdf = new jsPDF('p', 'mm', 'a4');
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const margin = 10;
-  let yPos = 6; // RESTORED to 6 from 5
+  let yPos = 6;
 
   // Professional border
   pdf.setDrawColor(30, 144, 255);
   pdf.setLineWidth(0.8);
   pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
 
-  // Add logo at top - UPDATED SIZE to 50x30
+  // Add logo at top
   await addLogo(pdf, margin, yPos, 50, 30);
 
-  // Contact info next to logo - 4 rows (matching Airway Bill 2)
+  // Contact info next to logo
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(80, 80, 80);
@@ -223,10 +192,10 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.text('WhatsApp: 0326 9422411', 60, yPos + 13);
   pdf.text('www.skyxpress.site', 60, yPos + 18);
 
-  // Right side: Header box
+  // Right side: Header box — extended to 32mm to fit barcode
   const rightBoxX = pageWidth - margin - 75;
   pdf.setFillColor(30, 144, 255);
-  pdf.rect(rightBoxX, yPos, 65, 20, 'F');
+  pdf.rect(rightBoxX, yPos, 65, 32, 'F');
   
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
@@ -238,21 +207,24 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setTextColor(255, 255, 255);
   pdf.text('INVOICE #:', rightBoxX + 2, yPos + 11);
 
-  pdf.setFont('helvetica', 'normal');
-  
   // USE REFERENCE_ID instead of tracking_id
   const refNumber = safeText(parcel.reference_id || parcel.tracking_id, '000000000');
-  pdf.setFontSize(10);
+  pdf.setFontSize(9);
   pdf.setFont('helvetica', 'bold');
-  pdf.text(refNumber, rightBoxX + 20, yPos + 15);
+  pdf.text(refNumber, rightBoxX + 2, yPos + 16);
 
-  // Add QR Code INSIDE the frame (matching Airway Bill 2)
-  await addQRCode(pdf, refNumber, rightBoxX + 43, yPos + 1, 18);
+  // Wide barcode spanning most of the header box width (bottom section)
+  await addBarcode(pdf, refNumber, rightBoxX + 2, yPos + 20, 61, 10);
 
-  yPos += 28; // UPDATED from 26 to 28 to match Airway Bills
+  yPos += 40; // 32mm box + 8mm gap
 
   // Shipper & Receiver sections
   const boxWidth = (pageWidth - 2 * margin - 3) / 2;
+
+  // Determine if extra address lines are present for shipper
+  const hasSenderExtra = !!(parcel.sender_address_2 || parcel.sender_address_3);
+  const senderFontSize = hasSenderExtra ? 7.5 : 9;
+  const senderLineGap = hasSenderExtra ? 4 : 5;
   
   // Shipper box
   pdf.setFillColor(30, 144, 255);
@@ -282,18 +254,24 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.sender_company, 'N/A'), margin + 20, shipperY);
   
-  shipperY += 5;
+  // Address block with optional extra lines
+  shipperY += senderLineGap;
+  pdf.setFontSize(senderFontSize);
   pdf.setFont('helvetica', 'bold');
   pdf.text('Address:', margin + 2, shipperY);
   pdf.setFont('helvetica', 'normal');
-  const shipperAddr = pdf.splitTextToSize(safeText(parcel.sender_address, 'N/A'), 70);
-  pdf.text(shipperAddr[0], margin + 18, shipperY);
-  if (shipperAddr[1]) {
-    shipperY += 4;
-    pdf.text(shipperAddr[1], margin + 2, shipperY);
+  pdf.text(safeText(parcel.sender_address, 'N/A'), margin + 18, shipperY);
+  if (parcel.sender_address_2) {
+    shipperY += senderLineGap - 1;
+    pdf.text(safeText(parcel.sender_address_2), margin + 2, shipperY);
   }
-  
-  shipperY += 5;
+  if (parcel.sender_address_3) {
+    shipperY += senderLineGap - 1;
+    pdf.text(safeText(parcel.sender_address_3), margin + 2, shipperY);
+  }
+  pdf.setFontSize(9);
+
+  shipperY += senderLineGap;
   pdf.text(`${safeText(parcel.sender_city, '')}, ${safeText(parcel.sender_country, 'Pakistan')}`, margin + 2, shipperY);
   
   shipperY += 5;
@@ -307,6 +285,11 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.text('CNIC:', margin + 2, shipperY);
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.sender_cnic, 'N/A'), margin + 13, shipperY);
+
+  // Determine if extra address lines are present for receiver
+  const hasReceiverExtra = !!(parcel.receiver_address_2 || parcel.receiver_address_3);
+  const receiverFontSize = hasReceiverExtra ? 7.5 : 9;
+  const receiverLineGap = hasReceiverExtra ? 4 : 5;
 
   // Receiver box
   const receiverX = pageWidth / 2 + 1.5;
@@ -337,18 +320,24 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.receiver_company, 'N/A'), receiverX + 20, receiverY);
   
-  receiverY += 5;
+  // Address block with optional extra lines
+  receiverY += receiverLineGap;
+  pdf.setFontSize(receiverFontSize);
   pdf.setFont('helvetica', 'bold');
   pdf.text('Address:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
-  const receiverAddr = pdf.splitTextToSize(`${safeText(parcel.receiver_address, '')} ${safeText(parcel.receiver_city, '')}`, 70);
-  pdf.text(receiverAddr[0], receiverX + 18, receiverY);
-  if (receiverAddr[1]) {
-    receiverY += 4;
-    pdf.text(receiverAddr[1], receiverX + 2, receiverY);
+  pdf.text(safeText(parcel.receiver_address, 'N/A'), receiverX + 18, receiverY);
+  if (parcel.receiver_address_2) {
+    receiverY += receiverLineGap - 1;
+    pdf.text(safeText(parcel.receiver_address_2), receiverX + 2, receiverY);
   }
-  
-  receiverY += 5;
+  if (parcel.receiver_address_3) {
+    receiverY += receiverLineGap - 1;
+    pdf.text(safeText(parcel.receiver_address_3), receiverX + 2, receiverY);
+  }
+  pdf.setFontSize(9);
+
+  receiverY += receiverLineGap;
   pdf.text(`${safeText(parcel.receiver_state, '')}, ${safeText(parcel.receiver_country, 'UK')}`, receiverX + 2, receiverY);
   
   receiverY += 5;
@@ -399,7 +388,6 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   
   yPos += 7;
   
-  // Table rows - REDUCED HEIGHT to 10mm
   const items = parcel.items || [{ description: 'General Goods', quantity: 1, unit_price: parcel.total_price || 100 }];
   let grandTotal = 0;
   
@@ -407,7 +395,6 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
     const itemTotal = (item.quantity || 1) * (item.unit_price || 0);
     grandTotal += itemTotal;
     
-    // Reduced row height to 10mm
     pdf.setFillColor(index % 2 === 0 ? 255 : 250, index % 2 === 0 ? 255 : 250, index % 2 === 0 ? 255 : 250);
     pdf.rect(margin, yPos - 2, pageWidth - 2 * margin, 10, 'F');
     pdf.setDrawColor(220, 220, 220);
@@ -460,11 +447,13 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   const length = parcel.length || 12;
   const width = parcel.width || 12;
   const height = parcel.height || 16;
-  const dimWeight = ((length * width * height) / 5000).toFixed(2);
+  const calcDimWeight = parseFloat(((length * width * height) / 5000).toFixed(2));
+  const dimWeight = parcel.dim_weight_override != null ? parcel.dim_weight_override : calcDimWeight;
+  const dimWeightStr = Number(dimWeight).toFixed(2);
   const pieces = parcel.pieces || 1;
   const documentType = (parcel.document_type || 'document').toUpperCase();
   const actualWeight = parcel.weight || 5;
-  const chargeableWeight = Math.max(parseFloat(dimWeight), actualWeight);
+  const chargeableWeight = Math.max(parseFloat(dimWeightStr), actualWeight);
   
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'bold');
@@ -479,12 +468,10 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(0, 0, 0);
   const bookingDate = parcel.created_at ? new Date(parcel.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB');
-  const service = safeText(parcel.service_type, 'STANDARD').toUpperCase();
   pdf.text(bookingDate, margin + 2, yPos + 8);
   pdf.text(`${length}x${width}x${height}`, margin + 95, yPos + 8);
   pdf.text(String(pieces), margin + 145, yPos + 8);
   
-  // WEIGHT VALUE - BIGGER AND BOLD
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.text(`${actualWeight} KG`, pageWidth - margin - 30, yPos + 8);
@@ -499,7 +486,8 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(0, 0, 0);
-  pdf.text(`${dimWeight} KG`, margin + 2, yPos + 18);
+  const dimLabel = parcel.dim_weight_override != null ? `${dimWeightStr} KG*` : `${dimWeightStr} KG`;
+  pdf.text(dimLabel, margin + 2, yPos + 18);
   pdf.text(`${chargeableWeight} KG`, margin + 95, yPos + 18);
   pdf.text(documentType, margin + 145, yPos + 18);
 
@@ -531,7 +519,6 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.sender_cnic, 'N/A'), margin + 28, yPos + 8);
   
-  // Signature box
   pdf.rect(pageWidth - margin - 40, yPos + 2, 38, 11);
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(8);
@@ -549,23 +536,18 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setTextColor(80, 80, 80);
   pdf.text('Email: skyxpress786@gmail.com | Phone: 042 999164619 | Mobile: 0321 4710522 | WhatsApp: 0326 9422411', pageWidth / 2, footerY, { align: 'center' });
 
-  // Check number of items to determine conditions placement
   const itemCount = items.length;
   
-  // If 8 or more items, add new page for conditions
   if (itemCount >= 8) {
-    // ADD NEW PAGE FOR STANDARD TRADING CONDITIONS
     pdf.addPage();
     yPos = 15;
     
-    // Add border on new page
     pdf.setDrawColor(30, 144, 255);
     pdf.setLineWidth(0.8);
     pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
 
-    // Standard Trading Conditions - FULL SIZE
     pdf.setFillColor(250, 250, 250);
-    const conditionsHeight = pageHeight - yPos - 25; // Increased space for footer
+    const conditionsHeight = pageHeight - yPos - 25;
     pdf.rect(10, yPos, pageWidth - 20, conditionsHeight, 'F');
     
     pdf.setFontSize(10);
@@ -611,7 +593,6 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
       conditionsY += lines.length * 3;
     });
 
-    // Footer on second page
     footerY = pageHeight - 10;
     pdf.setDrawColor(30, 144, 255);
     pdf.setLineWidth(0.5);
@@ -622,10 +603,8 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
     pdf.setTextColor(80, 80, 80);
     pdf.text('Email: skyxpress786@gmail.com | Phone: 042 999164619 | Mobile: 0321 4710522 | WhatsApp: 0326 9422411', pageWidth / 2, footerY, { align: 'center' });
   } else {
-    // 7 or fewer items - keep conditions on same page with smaller text
-    // Standard Trading Conditions - COMPACT SIZE
     pdf.setFillColor(250, 250, 250);
-    const availableHeight = pageHeight - yPos - 20; // Increased space for footer
+    const availableHeight = pageHeight - yPos - 20;
     pdf.rect(10, yPos, pageWidth - 20, availableHeight, 'F');
     
     pdf.setFontSize(8);
@@ -666,7 +645,6 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
       conditionsY += lines.length * 2.2;
     });
 
-    // Footer on same page
     footerY = pageHeight - 10;
     pdf.setDrawColor(30, 144, 255);
     pdf.setLineWidth(0.5);
@@ -687,19 +665,27 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   
-  // Calculate dimensional weight
   const length = parcel.length || 12;
   const width = parcel.width || 12;
   const height = parcel.height || 16;
-  const dimensionalWeight = ((height * width * length) / 5000).toFixed(2);
-  const dimWeightFor5000 = ((height * width * length) / 5000).toFixed(2);
+  const calcDimWeight = parseFloat(((height * width * length) / 5000).toFixed(2));
+  const dimWeight = parcel.dim_weight_override != null ? parcel.dim_weight_override : calcDimWeight;
+  const dimWeightStr = Number(dimWeight).toFixed(2);
   const actualWeight = parcel.weight || 5;
-  const chargeableWeight = Math.max(parseFloat(dimensionalWeight), actualWeight);
+  const chargeableWeight = Math.max(parseFloat(dimWeightStr), actualWeight);
   const pieces = parcel.pieces || 1;
   const documentType = (parcel.document_type || 'document').toUpperCase();
   
-  // USE REFERENCE_ID instead of tracking_id
   const refNumber = safeText(parcel.reference_id || parcel.tracking_id, '000000000');
+  const dimLabel = parcel.dim_weight_override != null ? `${dimWeightStr} KG*` : `${dimWeightStr} KG`;
+
+  // Determine extra address flags
+  const hasSenderExtra = !!(parcel.sender_address_2 || parcel.sender_address_3);
+  const hasReceiverExtra = !!(parcel.receiver_address_2 || parcel.receiver_address_3);
+  const senderFontSize = hasSenderExtra ? 7.5 : 8;
+  const senderLineGap = hasSenderExtra ? 4 : 5;
+  const receiverFontSize = hasReceiverExtra ? 7.5 : 8;
+  const receiverLineGap = hasReceiverExtra ? 4 : 5;
 
   // Function to generate one copy
   const generateCopy = async (startY: number, copyLabel: string) => {
@@ -710,10 +696,10 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setLineWidth(0.5);
     pdf.rect(5, startY - 2, pageWidth - 10, 140);
 
-    // Add logo - INCREASED SIZE to 50x30
+    // Add logo
     await addLogo(pdf, 10, yPos, 50, 30);
 
-    // Contact info next to logo
+    // Contact info
     pdf.setFontSize(8);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(80, 80, 80);
@@ -722,7 +708,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.text('Mobile: 0321 4710522', 65, yPos + 15);
     pdf.text('www.skyxpress.site', 65, yPos + 20);
 
-    // Right header
+    // Right header box (same 20mm height — compact barcode replaces QR)
     const headerX = pageWidth - 75;
     pdf.setFillColor(255, 248, 240);
     pdf.setDrawColor(255, 140, 0);
@@ -739,7 +725,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setTextColor(60, 60, 60);
     pdf.text('DESTINATION:', headerX + 2, yPos + 11);
     pdf.text('SERVICE:', headerX + 2, yPos + 14);
-    pdf.text('Tracking number:', headerX + 2, yPos + 17);
+    pdf.text('Ref:', headerX + 2, yPos + 17);
     
     pdf.setFont('helvetica', 'normal');
     const destination = safeText(parcel.receiver_country, 'UK').substring(0, 2).toUpperCase();
@@ -747,13 +733,13 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     
     pdf.text(destination, headerX + 25, yPos + 11);
     pdf.text(service, headerX + 20, yPos + 14);
-    pdf.setFontSize(10);
+    pdf.setFontSize(8);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(255, 100, 0);
-    pdf.text(refNumber, headerX + 28, yPos + 17);
+    pdf.text(refNumber, headerX + 12, yPos + 17);
 
-    // Add QR Code - MOVED to right side inside AIRWAY BILL border frame
-    await addQRCode(pdf, refNumber, headerX + 43, yPos + 1, 18);
+    // Compact barcode (20×12mm) replacing the QR code in right slot
+    await addBarcode(pdf, refNumber, headerX + 43, yPos + 2, 20, 14);
 
     yPos += 28;
 
@@ -771,7 +757,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setTextColor(255, 100, 0);
     pdf.text('SHIPPER', 12, yPos + 5);
     
-    pdf.setFontSize(8);
+    pdf.setFontSize(senderFontSize);
     pdf.setTextColor(0, 0, 0);
     let shipperY = yPos + 10;
     
@@ -780,33 +766,36 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setFont('helvetica', 'normal');
     pdf.text(safeText(parcel.sender_name, 'N/A'), 24, shipperY);
     
-    shipperY += 5;
+    shipperY += senderLineGap;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Company:', 12, shipperY);
     pdf.setFont('helvetica', 'normal');
     pdf.text(safeText(parcel.sender_company, 'N/A'), 28, shipperY);
     
-    shipperY += 5;
+    shipperY += senderLineGap;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Address:', 12, shipperY);
     pdf.setFont('helvetica', 'normal');
-    const shipperAddr = pdf.splitTextToSize(safeText(parcel.sender_address, 'N/A'), 70);
-    pdf.text(shipperAddr[0], 26, shipperY);
-    if (shipperAddr[1]) {
-      shipperY += 4;
-      pdf.text(shipperAddr[1], 12, shipperY);
+    pdf.text(safeText(parcel.sender_address, 'N/A'), 26, shipperY);
+    if (parcel.sender_address_2) {
+      shipperY += senderLineGap - 1;
+      pdf.text(safeText(parcel.sender_address_2), 12, shipperY);
+    }
+    if (parcel.sender_address_3) {
+      shipperY += senderLineGap - 1;
+      pdf.text(safeText(parcel.sender_address_3), 12, shipperY);
     }
     
-    shipperY += 5;
+    shipperY += senderLineGap;
     pdf.text(`${safeText(parcel.sender_city, '')}, ${safeText(parcel.sender_country, 'Pakistan')}`, 12, shipperY);
     
-    shipperY += 5;
+    shipperY += senderLineGap;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Phone:', 12, shipperY);
     pdf.setFont('helvetica', 'normal');
     pdf.text(safeText(parcel.sender_phone, 'N/A'), 24, shipperY);
     
-    shipperY += 5;
+    shipperY += senderLineGap;
     pdf.setFont('helvetica', 'bold');
     pdf.text('CNIC:', 12, shipperY);
     pdf.setFont('helvetica', 'normal');
@@ -819,7 +808,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setTextColor(255, 100, 0);
     pdf.text('RECEIVER', receiverX, yPos + 5);
     
-    pdf.setFontSize(8);
+    pdf.setFontSize(receiverFontSize);
     pdf.setTextColor(0, 0, 0);
     let receiverY = yPos + 10;
     
@@ -828,39 +817,42 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setFont('helvetica', 'normal');
     pdf.text(safeText(parcel.receiver_name, 'N/A'), receiverX + 12, receiverY);
     
-    receiverY += 5;
+    receiverY += receiverLineGap;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Company:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
     pdf.text(safeText(parcel.receiver_company, 'N/A'), receiverX + 20, receiverY);
     
-    receiverY += 5;
+    receiverY += receiverLineGap;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Address:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
-    const receiverAddr = pdf.splitTextToSize(`${safeText(parcel.receiver_address, '')} ${safeText(parcel.receiver_city, '')}`, 70);
-    pdf.text(receiverAddr[0], receiverX + 16, receiverY);
-    if (receiverAddr[1]) {
-      receiverY += 4;
-      pdf.text(receiverAddr[1], receiverX, receiverY);
+    pdf.text(safeText(parcel.receiver_address, 'N/A'), receiverX + 16, receiverY);
+    if (parcel.receiver_address_2) {
+      receiverY += receiverLineGap - 1;
+      pdf.text(safeText(parcel.receiver_address_2), receiverX, receiverY);
+    }
+    if (parcel.receiver_address_3) {
+      receiverY += receiverLineGap - 1;
+      pdf.text(safeText(parcel.receiver_address_3), receiverX, receiverY);
     }
     
-    receiverY += 5;
+    receiverY += receiverLineGap;
     pdf.text(`${safeText(parcel.receiver_state, '')}, ${safeText(parcel.receiver_country, 'UK')}`, receiverX, receiverY);
     
-    receiverY += 5;
+    receiverY += receiverLineGap;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Postal Code:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
     pdf.text(safeText(parcel.receiver_postal_code, 'N/A'), receiverX + 20, receiverY);
     
-    receiverY += 5;
+    receiverY += receiverLineGap;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Phone:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
     pdf.text(safeText(parcel.receiver_phone, 'N/A'), receiverX + 12, receiverY);
     
-    receiverY += 5;
+    receiverY += receiverLineGap;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Email:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
@@ -870,7 +862,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
 
     yPos += 45;
 
-    // Shipment details - UPDATED WITH DIMENSION CALCULATION AND PIECES
+    // Shipment details
     pdf.setFillColor(255, 140, 0);
     pdf.rect(10, yPos, pageWidth - 20, 7, 'F');
     pdf.setFontSize(9);
@@ -895,12 +887,10 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(0, 0, 0);
     const bookingDate = parcel.created_at ? new Date(parcel.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB');
-    const documentType = (parcel.document_type || 'document').toUpperCase();
     pdf.text(bookingDate, 12, yPos + 8);
     pdf.text(`${length}x${width}x${height}`, 95, yPos + 8);
     pdf.text(String(pieces), 145, yPos + 8);
 
-    // WEIGHT VALUE - BIGGER AND BOLD
     pdf.setFontSize(11);
     pdf.setFont('helvetica', 'bold');
     pdf.text(`${actualWeight} KG`, pageWidth - 30, yPos + 8);
@@ -915,13 +905,13 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(0, 0, 0);
-    pdf.text(`${dimWeightFor5000} KG`, 12, yPos + 18);
+    pdf.text(dimLabel, 12, yPos + 18);
     pdf.text(`${chargeableWeight} KG`, 95, yPos + 18);
     pdf.text(documentType, 145, yPos + 18);
 
     yPos += 21;
 
-    // Disclaimer in English - MOVED DOWN 3mm
+    // Disclaimer
     yPos += 3;
     pdf.setFontSize(5.5);
     pdf.setFont('helvetica', 'italic');
@@ -930,9 +920,9 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     const disclaimerLines = pdf.splitTextToSize(disclaimer, pageWidth - 20);
     pdf.text(disclaimerLines, 10, yPos);
 
-    yPos += 7; // Gap set to 7 (booking frame spacing)
+    yPos += 7;
 
-    // Signature section - REORGANIZED TO PREVENT OVERLAPPING
+    // Signature section
     pdf.setFillColor(255, 250, 245);
     pdf.rect(10, yPos, pageWidth - 20, 18, 'FD');
     
@@ -943,12 +933,10 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setFont('helvetica', 'normal');
     pdf.text('Sky Office', 42, yPos + 5);
     
-    // SHIPPER SIGNATURE moved to next line
     pdf.setFont('helvetica', 'bold');
     pdf.text('SHIPPER SIGNATURE:', 12, yPos + 12);
     pdf.rect(50, yPos + 8, 45, 8);
     
-    // CNIC on the right
     pdf.setFont('helvetica', 'bold');
     pdf.text('SHIPPER CNIC:', pageWidth - 70, yPos + 12);
     pdf.setFont('helvetica', 'normal');
@@ -965,10 +953,10 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.text(copyLabel, pageWidth / 2, yPos + 4, { align: 'center' });
   };
 
-  // Generate Sender Copy - MOVED UP from 8 to 6
+  // Generate Account Copy
   await generateCopy(6, 'Account Copy');
 
-  // Generate Forward Copy - MOVED UP from 156 to 154
+  // Generate Forward Copy
   await generateCopy(154, 'FORWARD COPY');
 
   handlePDFOutput(pdf, `AWB-Verification-${refNumber}.pdf`, mode);
@@ -977,7 +965,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
 // ===== 3. AIRWAY BILL with Payment (Sender Copy) =====
 export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMode = 'download'): Promise<void> => {
   // Fetch PKR exchange rate from pricing config
-  let pkrRate = 285.0; // Default fallback rate
+  let pkrRate = 285.0;
   try {
     const { data: pricingData } = await supabase
       .from('pricing_config')
@@ -994,20 +982,19 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   const pdf = new jsPDF('p', 'mm', 'a4');
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
-  let yPos = 6; // MOVED UP from 8 to 6
+  let yPos = 6;
 
   // Border
   pdf.setDrawColor(220, 20, 60);
   pdf.setLineWidth(0.8);
   pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
 
-  // USE REFERENCE_ID instead of tracking_id
   const refNumber = safeText(parcel.reference_id || parcel.tracking_id, '000000000');
 
-  // Add logo at top left - UPDATED SIZE to 50x30, MOVED UP
+  // Add logo at top left
   await addLogo(pdf, 10, yPos, 50, 30);
 
-  // Contact info next to logo - 4 rows now
+  // Contact info
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(80, 80, 80);
@@ -1016,12 +1003,12 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.text('WhatsApp: 0326 9422411', 60, yPos + 13);
   pdf.text('www.skyxpress.site', 60, yPos + 18);
 
-  // Right header box
+  // Right header box — extended to 32mm to fit barcode
   const headerX = pageWidth - 75;
   pdf.setFillColor(255, 240, 245);
   pdf.setDrawColor(220, 20, 60);
   pdf.setLineWidth(0.5);
-  pdf.rect(headerX, yPos, 65, 20, 'FD');
+  pdf.rect(headerX, yPos, 65, 32, 'FD');
   
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
@@ -1041,18 +1028,26 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   
   pdf.text(destination, headerX + 25, yPos + 11);
   pdf.text(service, headerX + 20, yPos + 14);
-  pdf.setFontSize(10);
+  pdf.setFontSize(9);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(220, 20, 60);
-  pdf.text(refNumber, headerX + 28, yPos + 17);
+  pdf.text(refNumber, headerX + 2, yPos + 17);
 
-  // Add QR Code - MOVED to inside AIRWAY BILL border frame (same as verification bill)
-  await addQRCode(pdf, refNumber, headerX + 43, yPos + 1, 18);
+  // Wide barcode spanning most of the header box width (bottom section)
+  await addBarcode(pdf, refNumber, headerX + 2, yPos + 20, 61, 10);
 
-  yPos += 28;
+  yPos += 40; // 32mm box + 8mm gap
 
   // Shipper & Receiver
   const boxWidth = (pageWidth - 20 - 2) / 2;
+
+  // Determine extra address flags
+  const hasSenderExtra = !!(parcel.sender_address_2 || parcel.sender_address_3);
+  const hasReceiverExtra = !!(parcel.receiver_address_2 || parcel.receiver_address_3);
+  const senderFontSize = hasSenderExtra ? 7.5 : 8;
+  const senderLineGap = hasSenderExtra ? 4 : 5;
+  const receiverFontSize = hasReceiverExtra ? 7.5 : 8;
+  const receiverLineGap = hasReceiverExtra ? 4 : 5;
   
   pdf.setFillColor(252, 252, 252);
   pdf.setDrawColor(200, 200, 200);
@@ -1067,7 +1062,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.setTextColor(255, 255, 255);
   pdf.text('SHIPPER', 12, yPos + 4);
   
-  pdf.setFontSize(8);
+  pdf.setFontSize(senderFontSize);
   pdf.setTextColor(0, 0, 0);
   let shipperY = yPos + 11;
   
@@ -1076,33 +1071,36 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.sender_name, 'N/A'), 24, shipperY);
   
-  shipperY += 5;
+  shipperY += senderLineGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Company:', 12, shipperY);
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.sender_company, 'N/A'), 28, shipperY);
   
-  shipperY += 5;
+  shipperY += senderLineGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Address:', 12, shipperY);
   pdf.setFont('helvetica', 'normal');
-  const shipperAddr = pdf.splitTextToSize(safeText(parcel.sender_address, 'N/A'), 70);
-  pdf.text(shipperAddr[0], 26, shipperY);
-  if (shipperAddr[1]) {
-    shipperY += 4;
-    pdf.text(shipperAddr[1], 12, shipperY);
+  pdf.text(safeText(parcel.sender_address, 'N/A'), 26, shipperY);
+  if (parcel.sender_address_2) {
+    shipperY += senderLineGap - 1;
+    pdf.text(safeText(parcel.sender_address_2), 12, shipperY);
+  }
+  if (parcel.sender_address_3) {
+    shipperY += senderLineGap - 1;
+    pdf.text(safeText(parcel.sender_address_3), 12, shipperY);
   }
   
-  shipperY += 5;
+  shipperY += senderLineGap;
   pdf.text(`${safeText(parcel.sender_city, '')}, ${safeText(parcel.sender_country, 'Pakistan')}`, 12, shipperY);
   
-  shipperY += 5;
+  shipperY += senderLineGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Phone:', 12, shipperY);
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.sender_phone, 'N/A'), 24, shipperY);
   
-  shipperY += 5;
+  shipperY += senderLineGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('CNIC:', 12, shipperY);
   pdf.setFont('helvetica', 'normal');
@@ -1117,7 +1115,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.setTextColor(255, 255, 255);
   pdf.text('RECEIVER', receiverX + 2, yPos + 4);
   
-  pdf.setFontSize(8);
+  pdf.setFontSize(receiverFontSize);
   pdf.setTextColor(0, 0, 0);
   let receiverY = yPos + 11;
   
@@ -1126,39 +1124,42 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.receiver_name, 'N/A'), receiverX + 14, receiverY);
   
-  receiverY += 5;
+  receiverY += receiverLineGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Company:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.receiver_company, 'N/A'), receiverX + 20, receiverY);
   
-  receiverY += 5;
+  receiverY += receiverLineGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Address:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
-  const receiverAddr = pdf.splitTextToSize(`${safeText(parcel.receiver_address, '')} ${safeText(parcel.receiver_city, '')}`, 70);
-  pdf.text(receiverAddr[0], receiverX + 16, receiverY);
-  if (receiverAddr[1]) {
-    receiverY += 4;
-    pdf.text(receiverAddr[1], receiverX + 2, receiverY);
+  pdf.text(safeText(parcel.receiver_address, 'N/A'), receiverX + 16, receiverY);
+  if (parcel.receiver_address_2) {
+    receiverY += receiverLineGap - 1;
+    pdf.text(safeText(parcel.receiver_address_2), receiverX + 2, receiverY);
+  }
+  if (parcel.receiver_address_3) {
+    receiverY += receiverLineGap - 1;
+    pdf.text(safeText(parcel.receiver_address_3), receiverX + 2, receiverY);
   }
   
-  receiverY += 5;
+  receiverY += receiverLineGap;
   pdf.text(`${safeText(parcel.receiver_state, '')}, ${safeText(parcel.receiver_country, 'UK')}`, receiverX + 2, receiverY);
   
-  receiverY += 5;
+  receiverY += receiverLineGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Postal Code:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.receiver_postal_code, 'N/A'), receiverX + 22, receiverY);
   
-  receiverY += 5;
+  receiverY += receiverLineGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Phone:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.receiver_phone, 'N/A'), receiverX + 14, receiverY);
   
-  receiverY += 5;
+  receiverY += receiverLineGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Email:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
@@ -1168,7 +1169,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
 
   yPos += 52;
 
-  // Items table - REDUCED HEIGHT TO 10mm
+  // Items table
   pdf.setFillColor(220, 20, 60);
   pdf.rect(10, yPos, pageWidth - 20, 6, 'F');
   pdf.setFontSize(9);
@@ -1194,7 +1195,6 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   
   yPos += 7;
   
-  // Table rows - REDUCED HEIGHT TO 10mm
   const senderItems = parcel.items || [{ description: 'General Goods', quantity: 1, unit_price: parcel.total_price || 100 }];
   let senderGrandTotal = 0;
   
@@ -1202,7 +1202,6 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const itemTotal = (item.quantity || 1) * (item.unit_price || 0);
     senderGrandTotal += itemTotal;
     
-    // Reduced row height to 10mm
     pdf.setFillColor(index % 2 === 0 ? 255 : 252, index % 2 === 0 ? 252 : 250, index % 2 === 0 ? 252 : 248);
     pdf.rect(10, yPos - 2, pageWidth - 20, 10, 'F');
     pdf.setDrawColor(230, 230, 230);
@@ -1233,21 +1232,23 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.setFontSize(11);
   pdf.setTextColor(255, 255, 255);
 
-  // USD Total - cleaner display
   const senderCurrency = parcel.currency || 'USD';
   pdf.text(`TOTAL ${senderCurrency}: ${senderGrandTotal.toFixed(2)}`, pageWidth / 2, yPos + 4, { align: 'center' });
 
   yPos += 12;
 
-  // Shipment details - IMPROVED LAYOUT
-  const length = parcel.length || 12;
-  const width = parcel.width || 12;
-  const height = parcel.height || 16;
-  const dimWeightFor5000 = ((length * width * height) / 5000).toFixed(2);
-  const pieces = parcel.pieces || 1;
-  const actualWeight = parcel.weight || 5;
-  const chargeableWeight = Math.max(parseFloat(dimWeightFor5000), actualWeight);
-  const documentType = (parcel.document_type || 'document').toUpperCase();
+  // Shipment details
+  const lengthB3 = parcel.length || 12;
+  const widthB3 = parcel.width || 12;
+  const heightB3 = parcel.height || 16;
+  const calcDimWeightB3 = parseFloat(((lengthB3 * widthB3 * heightB3) / 5000).toFixed(2));
+  const dimWeightB3 = parcel.dim_weight_override != null ? parcel.dim_weight_override : calcDimWeightB3;
+  const dimWeightStrB3 = Number(dimWeightB3).toFixed(2);
+  const piecesB3 = parcel.pieces || 1;
+  const actualWeightB3 = parcel.weight || 5;
+  const chargeableWeightB3 = Math.max(parseFloat(dimWeightStrB3), actualWeightB3);
+  const documentTypeB3 = (parcel.document_type || 'document').toUpperCase();
+  const dimLabelB3 = parcel.dim_weight_override != null ? `${dimWeightStrB3} KG*` : `${dimWeightStrB3} KG`;
 
   pdf.setFillColor(50, 50, 50);
   pdf.rect(10, yPos, pageWidth - 20, 6, 'F');
@@ -1274,13 +1275,12 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.setTextColor(0, 0, 0);
   const bookingDate = parcel.created_at ? new Date(parcel.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB');
   pdf.text(bookingDate, 12, yPos + 8);
-  pdf.text(`${length}x${width}x${height}`, 95, yPos + 8);
-  pdf.text(String(pieces), 145, yPos + 8);
+  pdf.text(`${lengthB3}x${widthB3}x${heightB3}`, 95, yPos + 8);
+  pdf.text(String(piecesB3), 145, yPos + 8);
 
-  // WEIGHT VALUE - BIGGER AND BOLD
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
-  pdf.text(`${actualWeight} KG`, pageWidth - 30, yPos + 8);
+  pdf.text(`${actualWeightB3} KG`, pageWidth - 30, yPos + 8);
 
   // Row 2
   pdf.setFontSize(7);
@@ -1292,13 +1292,16 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
 
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(0, 0, 0);
-  pdf.text(`${dimWeightFor5000} KG`, 12, yPos + 18);
-  pdf.text(`${chargeableWeight} KG`, 95, yPos + 18);
-  pdf.text(documentType, 145, yPos + 18);
+  pdf.text(dimLabelB3, 12, yPos + 18);
+  pdf.text(`${chargeableWeightB3} KG`, 95, yPos + 18);
+  pdf.text(documentTypeB3, 145, yPos + 18);
 
   yPos += 24;
 
-  // Payment box - PKR ONLY
+  // Payment box — use amount_override if set, else freight_amount_pkr
+  const freightPkr = parcel.amount_override != null ? parcel.amount_override : (parcel.freight_amount_pkr || 0);
+  const freightLabel = parcel.amount_override != null ? `PKR ${Number(freightPkr).toLocaleString()} (override)` : `PKR ${Number(freightPkr).toLocaleString()}`;
+
   pdf.setFillColor(255, 240, 240);
   pdf.setDrawColor(220, 20, 60);
   pdf.rect(10, yPos, pageWidth - 20, 12, 'FD');
@@ -1308,11 +1311,9 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.setTextColor(0, 0, 0);
   pdf.text('SHIPMENT FREIGHT:', 12, yPos + 5);
   
-  // PKR Amount ONLY (from freight_amount_pkr column)
   pdf.setFontSize(14);
   pdf.setTextColor(220, 20, 60);
-  const freightPkr = parcel.freight_amount_pkr || 0;
-  pdf.text(`PKR ${freightPkr.toLocaleString()}`, 12, yPos + 9);
+  pdf.text(freightLabel, 12, yPos + 9);
   
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'italic');
@@ -1366,20 +1367,16 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
 
   yPos += 10;
 
-  // Check number of items to determine conditions placement
   const itemCount = (parcel.items || [{ description: 'General Goods', quantity: 1, unit_price: parcel.total_price || 100 }]).length;
   
-  // If 8 or more items, add new page for conditions
   if (itemCount >= 8) {
     pdf.addPage();
     yPos = 15;
     
-    // Add border on new page
     pdf.setDrawColor(220, 20, 60);
     pdf.setLineWidth(0.8);
     pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
 
-    // Standard Trading Conditions - FULL SIZE
     pdf.setFillColor(250, 250, 250);
     pdf.rect(10, yPos, pageWidth - 20, pageHeight - yPos - 15, 'F');
     pdf.setDrawColor(220, 20, 60);
@@ -1428,7 +1425,6 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
       conditionsY += lines.length * 3;
     });
 
-    // Footer on new page
     yPos = pageHeight - 8;
     pdf.setDrawColor(220, 20, 60);
     pdf.line(10, yPos, pageWidth - 10, yPos);
@@ -1438,10 +1434,8 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     pdf.setTextColor(220, 20, 60);
     pdf.text('© 2025 Sky Xpress International - All Rights Reserved', pageWidth / 2, yPos, { align: 'center' });
   } else {
-    // 7 or fewer items - keep conditions on same page with smaller text
-    // Standard Trading Conditions - COMPACT SIZE
     pdf.setFillColor(250, 250, 250);
-    const availableHeight = pageHeight - yPos - 12; // Leave space for footer
+    const availableHeight = pageHeight - yPos - 12;
     pdf.rect(10, yPos, pageWidth - 20, availableHeight, 'F');
     pdf.setDrawColor(220, 20, 60);
     pdf.rect(10, yPos, pageWidth - 20, availableHeight);
@@ -1484,7 +1478,6 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
       conditionsY += lines.length * 2.2;
     });
 
-    // Footer on same page
     yPos = pageHeight - 8;
     pdf.setDrawColor(220, 20, 60);
     pdf.line(10, yPos, pageWidth - 10, yPos);
