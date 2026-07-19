@@ -175,8 +175,9 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
 
   // Barcode instead of QR code -- rendered client-side via bwip-js,
   // no external API call needed. Sits along the bottom of the header box.
-  addBarcode(pdf, refNumber, rightBoxX + 2, yPos + 12.5, 61, 7, false);
-
+  const canvas = document.createElement("canvas");
+addBarcode(canvas, refNumber);
+pdf.addImage(canvas, "PNG", rightBoxX + 2, yPos + 12.5, 61, 7);
   yPos += 28;
 
   // Shipper & Receiver sections
