@@ -21,7 +21,7 @@ interface Country {
 }
 
 interface FormData {
-  reference_id?: string; // Add reference_id field
+  reference_id?: string;
   sender_name: string;
   sender_company: string;
   sender_phone: string;
@@ -115,16 +115,18 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     to_country: parcel?.to_country || "",
     special_instructions: parcel?.special_instructions || "",
     pieces: parcel?.pieces || 1,
-    freight_amount_pkr: parcel?.freight_amount_pkr || "",
-    items: parcel?.items || [
-      {
-        description: "",
-        quantity: 1,
-        unit_price: 0,
-        hs_code: "",
-        total: 0
-      }
-    ],
+    freight_amount_pkr: parcel?.freight_amount_pkr?.toString() || "",
+    items: parcel?.items?.length
+      ? parcel.items
+      : [
+          {
+            description: "",
+            quantity: 1,
+            unit_price: 0,
+            hs_code: "",
+            total: 0,
+          },
+        ],
   });
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
@@ -145,12 +147,12 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     const fetchCountries = async () => {
       setCountriesLoading(true);
       const { data, error } = await supabase
-        .from('countries')
-        .select('code, name, continent')
-        .order('name', { ascending: true });
+        .from("countries")
+        .select("code, name, continent")
+        .order("name", { ascending: true });
 
       if (error) {
-        console.error('Error fetching countries:', error);
+        console.error("Error fetching countries:", error);
         toast({
           title: "Error",
           description: "Failed to load countries list",
@@ -174,10 +176,12 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     const handle = setTimeout(async () => {
       setSenderSearching(true);
       const { data, error } = await supabase
-        .from('parcels')
-        .select('sender_name, sender_company, sender_phone, sender_email, sender_cnic, sender_address, sender_city, sender_country')
+        .from("parcels")
+        .select(
+          "sender_name, sender_company, sender_phone, sender_email, sender_cnic, sender_address, sender_city, sender_country"
+        )
         .or(`sender_name.ilike.%${senderSearch}%,sender_phone.ilike.%${senderSearch}%`)
-        .order('created_at', { ascending: false })
+        .order("created_at", { ascending: false })
         .limit(8);
 
       if (!error && data) {
@@ -205,10 +209,12 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     const handle = setTimeout(async () => {
       setReceiverSearching(true);
       const { data, error } = await supabase
-        .from('parcels')
-        .select('receiver_name, receiver_company, receiver_phone, receiver_email, receiver_address, receiver_city, receiver_state, receiver_postal_code, receiver_country')
+        .from("parcels")
+        .select(
+          "receiver_name, receiver_company, receiver_phone, receiver_email, receiver_address, receiver_city, receiver_state, receiver_postal_code, receiver_country"
+        )
         .or(`receiver_name.ilike.%${receiverSearch}%,receiver_phone.ilike.%${receiverSearch}%`)
-        .order('created_at', { ascending: false })
+        .order("created_at", { ascending: false })
         .limit(8);
 
       if (!error && data) {
@@ -228,7 +234,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
   }, [receiverSearch]);
 
   const selectSenderResult = (row: any) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       sender_name: row.sender_name || "",
       sender_company: row.sender_company || "",
@@ -246,7 +252,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
   };
 
   const selectReceiverResult = (row: any) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       receiver_name: row.receiver_name || "",
       receiver_company: row.receiver_company || "",
@@ -265,33 +271,33 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
   };
 
   const handleInputChange = (field: keyof FormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleItemChange = (index: number, field: string, value: any) => {
     const newItems = [...formData.items];
     newItems[index] = { ...newItems[index], [field]: value };
-    
+
     // Auto-calculate total
-    if (field === 'quantity' || field === 'unit_price') {
+    if (field === "quantity" || field === "unit_price") {
       newItems[index].total = newItems[index].quantity * newItems[index].unit_price;
     }
-    
-    setFormData(prev => ({ ...prev, items: newItems }));
+
+    setFormData((prev) => ({ ...prev, items: newItems }));
   };
 
   const addItem = () => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      items: [...prev.items, { description: "", quantity: 1, unit_price: 0, hs_code: "", total: 0 }]
+      items: [...prev.items, { description: "", quantity: 1, unit_price: 0, hs_code: "", total: 0 }],
     }));
   };
 
   const removeItem = (index: number) => {
     if (formData.items.length > 1) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        items: prev.items.filter((_, i) => i !== index)
+        items: prev.items.filter((_, i) => i !== index),
       }));
     }
   };
@@ -306,6 +312,13 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     const chargeableWeight = Math.max(weight, volumetricWeight);
     const baseRate = 20; // $20 per kg base rate
     return chargeableWeight * baseRate;
+  };
+
+  const describeDuplicateError = (message: string | undefined) => {
+    if (!message) return "One of the values you entered is already in use.";
+    if (message.includes("tracking_id")) return "That Tracking ID is already in use.";
+    if (message.includes("reference_id")) return "That Reference ID is already in use.";
+    return "One of the values you entered is already in use.";
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -323,7 +336,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
 
       const totalPrice = calculatePrice(weight, length, width, height);
 
-      const parcelData = {
+      const parcelData: Record<string, any> = {
         sender_name: formData.sender_name,
         sender_company: formData.sender_company,
         sender_phone: formData.sender_phone,
@@ -358,12 +371,15 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
         freight_amount_pkr: freightAmountPkr,
       };
 
+      // Only send reference_id if the admin actually typed one; otherwise let the DB default generate it
+      const trimmedReferenceId = formData.reference_id?.trim();
+      if (trimmedReferenceId) {
+        parcelData.reference_id = trimmedReferenceId;
+      }
+
       if (parcel) {
         // UPDATE existing parcel
-        const { error } = await supabase
-          .from('parcels')
-          .update(parcelData)
-          .eq('id', parcel.id);
+        const { error } = await supabase.from("parcels").update(parcelData).eq("id", parcel.id);
 
         if (error) throw error;
 
@@ -374,19 +390,20 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
       } else {
         // CREATE new parcel
         // Generate tracking ID
-        const { data: trackingData, error: trackingError } = await supabase
-          .rpc('generate_numeric_tracking');
+        const { data: trackingData, error: trackingError } = await supabase.rpc(
+          "generate_numeric_tracking"
+        );
 
         if (trackingError) throw trackingError;
 
-        const { error } = await supabase
-          .from('parcels')
-          .insert([{
+        const { error } = await supabase.from("parcels").insert([
+          {
             ...parcelData,
             tracking_id: trackingData,
-            request_status: 'pending',
-            current_status: 'created'
-          }]);
+            request_status: "pending",
+            current_status: "created",
+          },
+        ]);
 
         if (error) throw error;
 
@@ -398,10 +415,11 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
 
       onSuccess();
     } catch (error: any) {
-      console.error('Error saving parcel:', error);
+      console.error("Error saving parcel:", error);
+      const isDuplicate = error?.code === "23505";
       toast({
         title: "Error",
-        description: error.message || "Failed to save parcel",
+        description: isDuplicate ? describeDuplicateError(error.message) : error.message || "Failed to save parcel",
         variant: "destructive",
       });
     } finally {
@@ -411,6 +429,24 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Reference ID (optional manual override) */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Reference</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Label htmlFor="reference_id">Reference ID</Label>
+            <Input
+              id="reference_id"
+              value={formData.reference_id}
+              onChange={(e) => handleInputChange("reference_id", e.target.value)}
+              placeholder="Leave blank to auto-generate"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Sender Information */}
       <Card>
         <CardHeader>
@@ -428,7 +464,10 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
                 id="sender_search"
                 placeholder="Search by name or phone..."
                 value={senderSearch}
-                onChange={(e) => { setSenderSearch(e.target.value); setShowSenderResults(true); }}
+                onChange={(e) => {
+                  setSenderSearch(e.target.value);
+                  setShowSenderResults(true);
+                }}
                 onFocus={() => setShowSenderResults(true)}
                 onBlur={() => setTimeout(() => setShowSenderResults(false), 150)}
                 className="pl-10"
@@ -449,7 +488,8 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
                     >
                       <div className="font-medium">{row.sender_name}</div>
                       <div className="text-sm text-muted-foreground">
-                        {row.sender_phone}{row.sender_city ? ` • ${row.sender_city}` : ""}
+                        {row.sender_phone}
+                        {row.sender_city ? ` • ${row.sender_city}` : ""}
                       </div>
                     </button>
                   ))
@@ -465,7 +505,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               <Input
                 id="sender_name"
                 value={formData.sender_name}
-                onChange={(e) => handleInputChange('sender_name', e.target.value)}
+                onChange={(e) => handleInputChange("sender_name", e.target.value)}
                 required
               />
             </div>
@@ -474,7 +514,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               <Input
                 id="sender_company"
                 value={formData.sender_company}
-                onChange={(e) => handleInputChange('sender_company', e.target.value)}
+                onChange={(e) => handleInputChange("sender_company", e.target.value)}
                 placeholder="Optional"
               />
             </div>
@@ -484,7 +524,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
                 id="sender_phone"
                 type="tel"
                 value={formData.sender_phone}
-                onChange={(e) => handleInputChange('sender_phone', e.target.value)}
+                onChange={(e) => handleInputChange("sender_phone", e.target.value)}
                 required
               />
             </div>
@@ -494,7 +534,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
                 id="sender_email"
                 type="email"
                 value={formData.sender_email}
-                onChange={(e) => handleInputChange('sender_email', e.target.value)}
+                onChange={(e) => handleInputChange("sender_email", e.target.value)}
                 required
               />
             </div>
@@ -505,7 +545,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               <Input
                 id="sender_cnic"
                 value={formData.sender_cnic}
-                onChange={(e) => handleInputChange('sender_cnic', e.target.value)}
+                onChange={(e) => handleInputChange("sender_cnic", e.target.value)}
                 placeholder="e.g., 1234567890123"
               />
             </div>
@@ -514,13 +554,16 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               <Input
                 id="sender_city"
                 value={formData.sender_city}
-                onChange={(e) => handleInputChange('sender_city', e.target.value)}
+                onChange={(e) => handleInputChange("sender_city", e.target.value)}
                 required
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="sender_country">Country *</Label>
-              <Select value={formData.sender_country} onValueChange={(value) => handleInputChange('sender_country', value)}>
+              <Select
+                value={formData.sender_country}
+                onValueChange={(value) => handleInputChange("sender_country", value)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder={countriesLoading ? "Loading countries..." : "Select country"} />
                 </SelectTrigger>
@@ -539,7 +582,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
             <Textarea
               id="sender_address"
               value={formData.sender_address}
-              onChange={(e) => handleInputChange('sender_address', e.target.value)}
+              onChange={(e) => handleInputChange("sender_address", e.target.value)}
               required
             />
           </div>
@@ -563,7 +606,10 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
                 id="receiver_search"
                 placeholder="Search by name or phone..."
                 value={receiverSearch}
-                onChange={(e) => { setReceiverSearch(e.target.value); setShowReceiverResults(true); }}
+                onChange={(e) => {
+                  setReceiverSearch(e.target.value);
+                  setShowReceiverResults(true);
+                }}
                 onFocus={() => setShowReceiverResults(true)}
                 onBlur={() => setTimeout(() => setShowReceiverResults(false), 150)}
                 className="pl-10"
@@ -584,7 +630,8 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
                     >
                       <div className="font-medium">{row.receiver_name}</div>
                       <div className="text-sm text-muted-foreground">
-                        {row.receiver_phone}{row.receiver_city ? ` • ${row.receiver_city}` : ""}
+                        {row.receiver_phone}
+                        {row.receiver_city ? ` • ${row.receiver_city}` : ""}
                       </div>
                     </button>
                   ))
@@ -600,7 +647,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               <Input
                 id="receiver_name"
                 value={formData.receiver_name}
-                onChange={(e) => handleInputChange('receiver_name', e.target.value)}
+                onChange={(e) => handleInputChange("receiver_name", e.target.value)}
                 required
               />
             </div>
@@ -609,7 +656,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               <Input
                 id="receiver_company"
                 value={formData.receiver_company}
-                onChange={(e) => handleInputChange('receiver_company', e.target.value)}
+                onChange={(e) => handleInputChange("receiver_company", e.target.value)}
                 placeholder="Optional"
               />
             </div>
@@ -619,25 +666,90 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
                 id="receiver_phone"
                 type="tel"
                 value={formData.receiver_phone}
-                onChange={(e) => handleInputChange('receiver_phone', e.target.value)}
+                onChange={(e) => handleInputChange("receiver_phone", e.target.value)}
                 required
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="receiver_email">Email Address *</Label>
+              <Label htmlFor="receiver_email">Email Address</Label>
               <Input
                 id="receiver_email"
                 type="email"
                 value={formData.receiver_email}
-                onChange={(e) => handleInputChange('receiver_email', e.target.value)}
-                required
+                onChange={(e) => handleInputChange("receiver_email", e.target.value)}
               />
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="receiver_city">City *</Label>
+              <Input
+                id="receiver_city"
+                value={formData.receiver_city}
+                onChange={(e) => handleInputChange("receiver_city", e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="receiver_state">State / Province</Label>
+              <Input
+                id="receiver_state"
+                value={formData.receiver_state}
+                onChange={(e) => handleInputChange("receiver_state", e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="receiver_postal_code">Postal Code</Label>
+              <Input
+                id="receiver_postal_code"
+                value={formData.receiver_postal_code}
+                onChange={(e) => handleInputChange("receiver_postal_code", e.target.value)}
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="receiver_country">Country *</Label>
-              <Select value={formData.receiver_country} onValueChange={(value) => handleInputChange('receiver_country', value)}>
+              <Select
+                value={formData.receiver_country}
+                onValueChange={(value) => handleInputChange("receiver_country", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={countriesLoading ? "Loading countries..." : "Select country"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {countries.map((country) => (
+                    <SelectItem key={country.code} value={country.code}>
+                      {country.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="receiver_address">Full Address *</Label>
+            <Textarea
+              id="receiver_address"
+              value={formData.receiver_address}
+              onChange={(e) => handleInputChange("receiver_address", e.target.value)}
+              required
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Route */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Route</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="from_country">From Country *</Label>
+              <Select
+                value={formData.from_country}
+                onValueChange={(value) => handleInputChange("from_country", value)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder={countriesLoading ? "Loading countries..." : "Select country"} />
                 </SelectTrigger>
@@ -651,126 +763,22 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="receiver_city">City *</Label>
-              <Input
-                id="receiver_city"
-                value={formData.receiver_city}
-                onChange={(e) => handleInputChange('receiver_city', e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="receiver_state">State/Province *</Label>
-              <Input
-                id="receiver_state"
-                value={formData.receiver_state}
-                onChange={(e) => handleInputChange('receiver_state', e.target.value)}
-                required
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="receiver_postal_code">Postal Code *</Label>
-            <Input
-              id="receiver_postal_code"
-              value={formData.receiver_postal_code}
-              onChange={(e) => handleInputChange('receiver_postal_code', e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="receiver_address">Full Address *</Label>
-            <Textarea
-              id="receiver_address"
-              value={formData.receiver_address}
-              onChange={(e) => handleInputChange('receiver_address', e.target.value)}
-              required
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Description Tab - Items */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Item Description</CardTitle>
-            <Button type="button" variant="outline" size="sm" onClick={addItem}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Item
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {formData.items.map((item, index) => (
-            <div key={index} className="p-4 border rounded-lg space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="font-semibold">Item {index + 1}</h4>
-                {formData.items.length > 1 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeItem(index)}
-                  >
-                    <Trash2 className="h-4 w-4 text-red-600" />
-                  </Button>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2 space-y-2">
-                  <Label>Item Description *</Label>
-                  <Input
-                    value={item.description}
-                    onChange={(e) => handleItemChange(index, 'description', e.target.value)}
-                    placeholder="e.g., Electronics, Clothing, etc."
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Quantity *</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={item.quantity}
-                    onChange={(e) => handleItemChange(index, 'quantity', parseInt(e.target.value) || 1)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Unit Price (USD) *</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={item.unit_price}
-                    onChange={(e) => handleItemChange(index, 'unit_price', parseFloat(e.target.value) || 0)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>HS Code</Label>
-                  <Input
-                    value={item.hs_code}
-                    onChange={(e) => handleItemChange(index, 'hs_code', e.target.value)}
-                    placeholder="e.g., 8471.30.00"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Total</Label>
-                  <Input
-                    value={`$${item.total.toFixed(2)}`}
-                    disabled
-                    className="bg-muted"
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
-          <div className="p-4 bg-primary/5 rounded-lg">
-            <div className="flex justify-between items-center text-lg font-bold">
-              <span>Subtotal:</span>
-              <span>${calculateSubtotal().toFixed(2)}</span>
+              <Label htmlFor="to_country">To Country *</Label>
+              <Select
+                value={formData.to_country}
+                onValueChange={(value) => handleInputChange("to_country", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={countriesLoading ? "Loading countries..." : "Select country"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {countries.map((country) => (
+                    <SelectItem key={country.code} value={country.code}>
+                      {country.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
@@ -779,15 +787,21 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
       {/* Parcel Details */}
       <Card>
         <CardHeader>
-          <CardTitle>Parcel Details</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Package className="h-5 w-5" />
+            Parcel Details
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label>Parcel Type *</Label>
-              <Select value={formData.parcel_type} onValueChange={(value) => handleInputChange('parcel_type', value)}>
+              <Label htmlFor="parcel_type">Parcel Type</Label>
+              <Select
+                value={formData.parcel_type}
+                onValueChange={(value) => handleInputChange("parcel_type", value)}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select parcel type" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {parcelTypes.map((type) => (
@@ -799,30 +813,36 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Service Type *</Label>
-              <Select value={formData.service_type} onValueChange={(value) => handleInputChange('service_type', value)}>
+              <Label htmlFor="document_type">Document Type</Label>
+              <Select
+                value={formData.document_type}
+                onValueChange={(value) => handleInputChange("document_type", value)}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select service type" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {serviceTypes.map((service) => (
-                    <SelectItem key={service.value} value={service.value}>
-                      {service.label}
+                  {documentTypes.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Document Type *</Label>
-              <Select value={formData.document_type} onValueChange={(value) => handleInputChange('document_type', value)}>
+              <Label htmlFor="service_type">Service Type</Label>
+              <Select
+                value={formData.service_type}
+                onValueChange={(value) => handleInputChange("service_type", value)}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select document type" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {documentTypes.map((docType) => (
-                    <SelectItem key={docType.value} value={docType.value}>
-                      {docType.label}
+                  {serviceTypes.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -830,52 +850,29 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="weight">Weight (KG) *</Label>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="weight">Weight (kg) *</Label>
               <Input
                 id="weight"
                 type="number"
                 step="0.01"
-                required
+                min="0.01"
                 value={formData.weight}
-                onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="pieces">Number of Pieces/Boxes *</Label>
-              <Input
-                id="pieces"
-                type="number"
-                min="1"
+                onChange={(e) => handleInputChange("weight", e.target.value)}
                 required
-                value={formData.pieces || 1}
-                onChange={(e) => setFormData({ ...formData, pieces: Number(e.target.value) })}
               />
             </div>
-            <div>
-              <Label htmlFor="freight_amount_pkr">Freight Amount (PKR)</Label>
-              <Input
-                id="freight_amount_pkr"
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.freight_amount_pkr}
-                onChange={(e) => handleInputChange('freight_amount_pkr', e.target.value)}
-                placeholder="0.00"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="length">Length (CM)</Label>
+            <div className="space-y-2">
+              <Label htmlFor="length">Length (cm) *</Label>
               <Input
                 id="length"
                 type="number"
                 step="0.01"
+                min="1"
                 value={formData.length}
-                onChange={(e) => setFormData({ ...formData, length: e.target.value })}
+                onChange={(e) => handleInputChange("length", e.target.value)}
+                required
               />
             </div>
             <div className="space-y-2">
@@ -883,10 +880,10 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               <Input
                 id="width"
                 type="number"
-                step="0.1"
+                step="0.01"
                 min="1"
                 value={formData.width}
-                onChange={(e) => handleInputChange('width', e.target.value)}
+                onChange={(e) => handleInputChange("width", e.target.value)}
                 required
               />
             </div>
@@ -895,66 +892,49 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               <Input
                 id="height"
                 type="number"
-                step="0.1"
+                step="0.01"
                 min="1"
                 value={formData.height}
-                onChange={(e) => handleInputChange('height', e.target.value)}
+                onChange={(e) => handleInputChange("height", e.target.value)}
                 required
               />
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="declared_value">Declared Value (USD)</Label>
-            <Input
-              id="declared_value"
-              type="number"
-              step="0.01"
-              min="0"
-              value={formData.declared_value}
-              onChange={(e) => handleInputChange('declared_value', e.target.value)}
-              placeholder="0.00"
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Route Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Route Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label>From Country</Label>
-              <Select value={formData.from_country} onValueChange={(value) => handleInputChange('from_country', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder={countriesLoading ? "Loading countries..." : "Select origin country"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {countries.map((country) => (
-                    <SelectItem key={country.code} value={country.code}>
-                      {country.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="declared_value">Declared Value</Label>
+              <Input
+                id="declared_value"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.declared_value}
+                onChange={(e) => handleInputChange("declared_value", e.target.value)}
+              />
             </div>
             <div className="space-y-2">
-              <Label>To Country</Label>
-              <Select value={formData.to_country} onValueChange={(value) => handleInputChange('to_country', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder={countriesLoading ? "Loading countries..." : "Select destination country"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {countries.map((country) => (
-                    <SelectItem key={country.code} value={country.code}>
-                      {country.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="pieces">Pieces</Label>
+              <Input
+                id="pieces"
+                type="number"
+                min="1"
+                value={formData.pieces}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, pieces: parseInt(e.target.value, 10) || 1 }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="freight_amount_pkr">Freight Amount (PKR)</Label>
+              <Input
+                id="freight_amount_pkr"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.freight_amount_pkr}
+                onChange={(e) => handleInputChange("freight_amount_pkr", e.target.value)}
+              />
             </div>
           </div>
 
@@ -963,26 +943,97 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
             <Textarea
               id="special_instructions"
               value={formData.special_instructions}
-              onChange={(e) => handleInputChange('special_instructions', e.target.value)}
-              placeholder="Any special handling instructions..."
+              onChange={(e) => handleInputChange("special_instructions", e.target.value)}
+              placeholder="Optional"
             />
           </div>
         </CardContent>
       </Card>
 
-      <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
-        {isLoading ? (
-          <>
-            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-            {parcel ? 'Updating...' : 'Submitting Request...'}
-          </>
-        ) : (
-          <>
-            <Package className="mr-2 h-5 w-5" />
-            {parcel ? 'Update Parcel' : 'Submit Parcel Request'}
-          </>
-        )}
-      </Button>
+      {/* Items */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Items</CardTitle>
+            <Button type="button" variant="outline" size="sm" onClick={addItem}>
+              <Plus className="h-4 w-4 mr-1" />
+              Add Item
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {formData.items.map((item, index) => (
+            <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end border-b pb-4 last:border-b-0">
+              <div className="md:col-span-4 space-y-2">
+                <Label>Description</Label>
+                <Input
+                  value={item.description}
+                  onChange={(e) => handleItemChange(index, "description", e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2 space-y-2">
+                <Label>Quantity</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={item.quantity}
+                  onChange={(e) => handleItemChange(index, "quantity", parseInt(e.target.value, 10) || 0)}
+                />
+              </div>
+              <div className="md:col-span-2 space-y-2">
+                <Label>Unit Price</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={item.unit_price}
+                  onChange={(e) => handleItemChange(index, "unit_price", parseFloat(e.target.value) || 0)}
+                />
+              </div>
+              <div className="md:col-span-2 space-y-2">
+                <Label>HS Code</Label>
+                <Input
+                  value={item.hs_code}
+                  onChange={(e) => handleItemChange(index, "hs_code", e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-1 space-y-2">
+                <Label>Total</Label>
+                <div className="h-10 flex items-center font-medium">{item.total.toFixed(2)}</div>
+              </div>
+              <div className="md:col-span-1 flex justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => removeItem(index)}
+                  disabled={formData.items.length === 1}
+                >
+                  <Trash2 className="h-4 w-4 text-red-600" />
+                </Button>
+              </div>
+            </div>
+          ))}
+          <div className="flex justify-end pt-2 text-sm font-semibold">
+            Items Subtotal: {calculateSubtotal().toFixed(2)}
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end gap-3">
+        <Button type="submit" disabled={isLoading}>
+          {isLoading ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Saving...
+            </>
+          ) : parcel ? (
+            "Update Parcel"
+          ) : (
+            "Create Parcel"
+          )}
+        </Button>
+      </div>
     </form>
   );
 };
