@@ -20,7 +20,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Shield, User, UserX, UserCheck } from "lucide-react";
+import {
+  Search,
+  Shield,
+  ShieldCheck,
+  Briefcase,
+  User,
+  UserX,
+  UserCheck,
+  Crown,
+  Lock,
+} from "lucide-react";
 
 interface UserProfile {
   id: string;
@@ -30,9 +40,52 @@ interface UserProfile {
   phone: string;
   role: string;
   is_blocked: boolean;
+  is_owner?: boolean;
   created_at: string;
   email?: string;
 }
+
+// ---------------------------------------------------------------------
+// The protected developer account. This is a UX-level guard only — it
+// stops people from accidentally (or deliberately) changing this role
+// from the admin UI. It is NOT real security on its own, because anyone
+// calling Supabase's REST/JS API directly could bypass client-side code
+// entirely. Real protection must live in the database — see the
+// accompanying SQL (protect_owner_profile trigger) which blocks the
+// change at the Postgres level no matter how the request is made.
+//
+// Other admins/super admins see this account labeled "Developer" in the
+// table — the underlying flag is still called is_owner in the database.
+// ---------------------------------------------------------------------
+const PROTECTED_EMAIL = "myne7x@gmail.com";
+
+const isProtectedProfile = (user: UserProfile) =>
+  user.is_owner === true || (user.email?.toLowerCase() === PROTECTED_EMAIL);
+
+// Unique visual identity per role — distinct icon, gradient, and motion
+const ROLE_META: Record<
+  string,
+  { label: string; icon: typeof Shield; badgeClass: string; glow?: boolean }
+> = {
+  admin: {
+    label: "Admin",
+    icon: ShieldCheck,
+    badgeClass: "role-badge-admin bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white",
+    glow: true,
+  },
+  staff: {
+    label: "Staff",
+    icon: Briefcase,
+    badgeClass: "role-badge-staff bg-gradient-to-r from-sky-500 to-blue-600 text-white",
+  },
+  user: {
+    label: "User",
+    icon: User,
+    badgeClass: "bg-slate-100 text-slate-700",
+  },
+};
+
+const getRoleMeta = (role: string) => ROLE_META[role] || ROLE_META.user;
 
 export const UserManagement = () => {
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -43,7 +96,9 @@ export const UserManagement = () => {
 
   useEffect(() => {
     const getCurrentUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       setCurrentUser(user);
     };
     getCurrentUser();
@@ -66,7 +121,10 @@ export const UserManagement = () => {
       // This may fail if admin privileges are not available
       let authUsers: any[] = [];
       try {
-        const { data: { users }, error: usersError } = await supabase.auth.admin.listUsers();
+        const {
+          data: { users },
+          error: usersError,
+        } = await supabase.auth.admin.listUsers();
         if (!usersError && users) {
           authUsers = users;
         }
@@ -75,11 +133,11 @@ export const UserManagement = () => {
       }
 
       // Combine profile data with email
-      const usersWithEmails = profilesData?.map(profile => {
-        const authUser = authUsers?.find(u => u && u.id === profile.user_id);
+      const usersWithEmails = profilesData?.map((profile) => {
+        const authUser = authUsers?.find((u) => u && u.id === profile.user_id);
         return {
           ...profile,
-          email: authUser?.email || "N/A"
+          email: authUser?.email || "N/A",
         };
       }) || [];
 
@@ -92,7 +150,7 @@ export const UserManagement = () => {
           .from("profiles")
           .select("*")
           .order("created_at", { ascending: false });
-        
+
         setUsers(profilesData || []);
       } catch (fallbackError) {
         toast({
@@ -106,18 +164,27 @@ export const UserManagement = () => {
     }
   };
 
-  const updateUserRole = async (userId: string, newRole: string) => {
+  const updateUserRole = async (user: UserProfile, newRole: string) => {
+    if (isProtectedProfile(user)) {
+      toast({
+        title: "Protected account",
+        description: "This account's role is locked and can't be changed here.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from("profiles")
         .update({ role: newRole })
-        .eq("user_id", userId);
+        .eq("user_id", user.user_id);
 
       if (error) throw error;
 
-      setUsers(users.map(user => 
-        user.user_id === userId ? { ...user, role: newRole } : user
-      ));
+      setUsers(
+        users.map((u) => (u.user_id === user.user_id ? { ...u, role: newRole } : u))
+      );
 
       toast({
         title: "Success",
@@ -132,22 +199,33 @@ export const UserManagement = () => {
     }
   };
 
-  const toggleUserBlock = async (userId: string, isBlocked: boolean) => {
+  const toggleUserBlock = async (user: UserProfile) => {
+    if (isProtectedProfile(user)) {
+      toast({
+        title: "Protected account",
+        description: "This account can't be blocked.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from("profiles")
-        .update({ is_blocked: !isBlocked })
-        .eq("user_id", userId);
+        .update({ is_blocked: !user.is_blocked })
+        .eq("user_id", user.user_id);
 
       if (error) throw error;
 
-      setUsers(users.map(user => 
-        user.user_id === userId ? { ...user, is_blocked: !isBlocked } : user
-      ));
+      setUsers(
+        users.map((u) =>
+          u.user_id === user.user_id ? { ...u, is_blocked: !user.is_blocked } : u
+        )
+      );
 
       toast({
         title: "Success",
-        description: `User ${!isBlocked ? "blocked" : "unblocked"} successfully`,
+        description: `User ${!user.is_blocked ? "blocked" : "unblocked"} successfully`,
       });
     } catch (error: any) {
       toast({
@@ -158,31 +236,19 @@ export const UserManagement = () => {
     }
   };
 
-  const filteredUsers = users.filter(user => {
+  const filteredUsers = users.filter((user) => {
     const query = searchQuery.toLowerCase();
     return (
-      (user.full_name?.toLowerCase().includes(query)) ||
-      (user.email?.toLowerCase().includes(query)) ||
-      (user.phone?.toLowerCase().includes(query))
+      user.full_name?.toLowerCase().includes(query) ||
+      user.email?.toLowerCase().includes(query) ||
+      user.phone?.toLowerCase().includes(query)
     );
   });
 
-  const getRoleBadgeColor = (role: string) => {
-    switch (role) {
-      case "admin": return "bg-red-100 text-red-800";
-      case "staff": return "bg-blue-100 text-blue-800";
-      default: return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const getRoleIcon = (role: string) => {
-    return role === "admin" ? Shield : User;
-  };
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+      <div className="flex h-64 items-center justify-center">
+        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-primary"></div>
       </div>
     );
   }
@@ -196,7 +262,7 @@ export const UserManagement = () => {
         </CardTitle>
         <div className="flex items-center gap-4">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-muted-foreground" />
             <Input
               placeholder="Search by name, email, or phone..."
               value={searchQuery}
@@ -221,12 +287,22 @@ export const UserManagement = () => {
             </TableHeader>
             <TableBody>
               {filteredUsers.map((user) => {
-                const RoleIcon = getRoleIcon(user.role);
+                const isProtected = isProtectedProfile(user);
+                const roleMeta = getRoleMeta(user.role);
+                const RoleIcon = roleMeta.icon;
+                const isSelf = currentUser?.id === user.user_id;
+
                 return (
-                  <TableRow key={user.user_id}>
+                  <TableRow
+                    key={user.user_id}
+                    className={isProtected ? "relative bg-amber-50/40" : undefined}
+                  >
                     <TableCell>
-                      <div>
-                        <div className="font-medium">{user.full_name || "N/A"}</div>
+                      <div className={isProtected ? "border-l-2 border-amber-400 pl-3" : undefined}>
+                        <div className="flex items-center gap-1.5 font-medium">
+                          {user.full_name || "N/A"}
+                          {isProtected && <Crown className="crown-float h-3.5 w-3.5 text-amber-500" />}
+                        </div>
                         <div className="text-sm text-muted-foreground">{user.company}</div>
                       </div>
                     </TableCell>
@@ -237,68 +313,116 @@ export const UserManagement = () => {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge className={getRoleBadgeColor(user.role)}>
-                        <RoleIcon className="w-3 h-3 mr-1" />
-                        {user.role.toUpperCase()}
-                      </Badge>
+                      {isProtected ? (
+                        <Badge className="developer-badge flex w-fit items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 px-3 py-1 text-white shadow-sm">
+                          <Crown className="crown-float h-3.5 w-3.5" />
+                          DEVELOPER
+                          <Lock className="ml-0.5 h-3 w-3 opacity-90" />
+                        </Badge>
+                      ) : (
+                        <Badge
+                          className={`flex w-fit items-center gap-1.5 rounded-full px-3 py-1 ${roleMeta.badgeClass}`}
+                        >
+                          <RoleIcon className="h-3.5 w-3.5" />
+                          {roleMeta.label.toUpperCase()}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={user.is_blocked ? "destructive" : "secondary"}>
                         {user.is_blocked ? (
                           <>
-                            <UserX className="w-3 h-3 mr-1" />
+                            <UserX className="mr-1 h-3 w-3" />
                             Blocked
                           </>
                         ) : (
                           <>
-                            <UserCheck className="w-3 h-3 mr-1" />
+                            <UserCheck className="mr-1 h-3 w-3" />
                             Active
                           </>
                         )}
                       </Badge>
                     </TableCell>
+                    <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
                     <TableCell>
-                      {new Date(user.created_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Select
-                          value={user.role}
-                          onValueChange={(newRole) => updateUserRole(user.user_id, newRole)}
-                          disabled={currentUser?.id === user.user_id}
-                        >
-                          <SelectTrigger className="w-24">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="user">User</SelectItem>
-                            <SelectItem value="staff">Staff</SelectItem>
-                            <SelectItem value="admin">Admin</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          variant={user.is_blocked ? "default" : "destructive"}
-                          size="sm"
-                          onClick={() => toggleUserBlock(user.user_id, user.is_blocked)}
-                          disabled={currentUser?.id === user.user_id && user.is_blocked}
-                        >
-                          {user.is_blocked ? "Unblock" : "Block"}
-                        </Button>
-                      </div>
+                      {isProtected ? (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Lock className="h-3.5 w-3.5" />
+                          Protected
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={user.role}
+                            onValueChange={(newRole) => updateUserRole(user, newRole)}
+                            disabled={isSelf}
+                          >
+                            <SelectTrigger className="w-24">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="user">User</SelectItem>
+                              <SelectItem value="staff">Staff</SelectItem>
+                              <SelectItem value="admin">Admin</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            variant={user.is_blocked ? "default" : "destructive"}
+                            size="sm"
+                            onClick={() => toggleUserBlock(user)}
+                            disabled={isSelf && user.is_blocked}
+                          >
+                            {user.is_blocked ? "Unblock" : "Block"}
+                          </Button>
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
               })}
             </TableBody>
           </Table>
-          
+
           {filteredUsers.length === 0 && (
-            <div className="text-center py-8">
+            <div className="py-8 text-center">
               <p className="text-muted-foreground">No users found</p>
             </div>
           )}
         </div>
       </CardContent>
+
+      {/* Scoped role-badge animations */}
+      <style>{`
+        @keyframes crownFloat {
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          50% { transform: translateY(-2px) rotate(-4deg); }
+        }
+        @keyframes developerGlow {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.45); }
+          50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+        }
+        @keyframes adminPulseRing {
+          0% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.35); }
+          70% { box-shadow: 0 0 0 5px rgba(168, 85, 247, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0); }
+        }
+        .crown-float {
+          animation: crownFloat 2.2s ease-in-out infinite;
+        }
+        .developer-badge {
+          animation: developerGlow 2.4s ease-in-out infinite;
+        }
+        .role-badge-admin {
+          animation: adminPulseRing 2.6s ease-in-out infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .crown-float,
+          .developer-badge,
+          .role-badge-admin {
+            animation: none !important;
+          }
+        }
+      `}</style>
     </Card>
   );
 };
