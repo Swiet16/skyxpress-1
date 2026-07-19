@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Package, Plus, Trash2 } from "lucide-react";
+import { Loader2, Package, Plus, Trash2, Search, History } from "lucide-react";
 
 interface ParcelFormProps {
   onSuccess: () => void;
@@ -129,6 +129,17 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
+  // Quick-fill: search previous parcels by sender/receiver name or phone
+  const [senderSearch, setSenderSearch] = useState("");
+  const [senderResults, setSenderResults] = useState<any[]>([]);
+  const [senderSearching, setSenderSearching] = useState(false);
+  const [showSenderResults, setShowSenderResults] = useState(false);
+
+  const [receiverSearch, setReceiverSearch] = useState("");
+  const [receiverResults, setReceiverResults] = useState<any[]>([]);
+  const [receiverSearching, setReceiverSearching] = useState(false);
+  const [showReceiverResults, setShowReceiverResults] = useState(false);
+
   // Fetch countries from Supabase 'countries' table on mount
   useEffect(() => {
     const fetchCountries = async () => {
@@ -153,6 +164,105 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
 
     fetchCountries();
   }, []);
+
+  // Debounced search for previous senders (from past parcels)
+  useEffect(() => {
+    if (senderSearch.trim().length < 2) {
+      setSenderResults([]);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      setSenderSearching(true);
+      const { data, error } = await supabase
+        .from('parcels')
+        .select('sender_name, sender_company, sender_phone, sender_email, sender_cnic, sender_address, sender_city, sender_country')
+        .or(`sender_name.ilike.%${senderSearch}%,sender_phone.ilike.%${senderSearch}%`)
+        .order('created_at', { ascending: false })
+        .limit(8);
+
+      if (!error && data) {
+        const seen = new Set<string>();
+        const unique = data.filter((row: any) => {
+          const key = `${row.sender_name}|${row.sender_phone}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setSenderResults(unique);
+      }
+      setSenderSearching(false);
+    }, 350);
+
+    return () => clearTimeout(handle);
+  }, [senderSearch]);
+
+  // Debounced search for previous receivers (from past parcels)
+  useEffect(() => {
+    if (receiverSearch.trim().length < 2) {
+      setReceiverResults([]);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      setReceiverSearching(true);
+      const { data, error } = await supabase
+        .from('parcels')
+        .select('receiver_name, receiver_company, receiver_phone, receiver_email, receiver_address, receiver_city, receiver_state, receiver_postal_code, receiver_country')
+        .or(`receiver_name.ilike.%${receiverSearch}%,receiver_phone.ilike.%${receiverSearch}%`)
+        .order('created_at', { ascending: false })
+        .limit(8);
+
+      if (!error && data) {
+        const seen = new Set<string>();
+        const unique = data.filter((row: any) => {
+          const key = `${row.receiver_name}|${row.receiver_phone}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setReceiverResults(unique);
+      }
+      setReceiverSearching(false);
+    }, 350);
+
+    return () => clearTimeout(handle);
+  }, [receiverSearch]);
+
+  const selectSenderResult = (row: any) => {
+    setFormData(prev => ({
+      ...prev,
+      sender_name: row.sender_name || "",
+      sender_company: row.sender_company || "",
+      sender_phone: row.sender_phone || "",
+      sender_email: row.sender_email || "",
+      sender_cnic: row.sender_cnic || "",
+      sender_address: row.sender_address || "",
+      sender_city: row.sender_city || "",
+      sender_country: row.sender_country || "",
+    }));
+    setSenderSearch("");
+    setSenderResults([]);
+    setShowSenderResults(false);
+    toast({ title: "Filled", description: "Sender details filled from a previous parcel" });
+  };
+
+  const selectReceiverResult = (row: any) => {
+    setFormData(prev => ({
+      ...prev,
+      receiver_name: row.receiver_name || "",
+      receiver_company: row.receiver_company || "",
+      receiver_phone: row.receiver_phone || "",
+      receiver_email: row.receiver_email || "",
+      receiver_address: row.receiver_address || "",
+      receiver_city: row.receiver_city || "",
+      receiver_state: row.receiver_state || "",
+      receiver_postal_code: row.receiver_postal_code || "",
+      receiver_country: row.receiver_country || "",
+    }));
+    setReceiverSearch("");
+    setReceiverResults([]);
+    setShowReceiverResults(false);
+    toast({ title: "Filled", description: "Receiver details filled from a previous parcel" });
+  };
 
   const handleInputChange = (field: keyof FormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -307,6 +417,48 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
           <CardTitle>Sender Information</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="relative space-y-2">
+            <Label htmlFor="sender_search" className="flex items-center gap-1.5">
+              <History className="h-3.5 w-3.5" />
+              Quick-fill from a previous sender
+            </Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                id="sender_search"
+                placeholder="Search by name or phone..."
+                value={senderSearch}
+                onChange={(e) => { setSenderSearch(e.target.value); setShowSenderResults(true); }}
+                onFocus={() => setShowSenderResults(true)}
+                onBlur={() => setTimeout(() => setShowSenderResults(false), 150)}
+                className="pl-10"
+                autoComplete="off"
+              />
+            </div>
+            {showSenderResults && senderSearch.trim().length >= 2 && (
+              <div className="absolute z-20 w-full bg-popover border rounded-md shadow-md mt-1 max-h-60 overflow-y-auto">
+                {senderSearching ? (
+                  <div className="p-3 text-sm text-muted-foreground">Searching...</div>
+                ) : senderResults.length > 0 ? (
+                  senderResults.map((row, i) => (
+                    <button
+                      type="button"
+                      key={i}
+                      className="w-full text-left p-3 hover:bg-accent border-b last:border-b-0"
+                      onMouseDown={() => selectSenderResult(row)}
+                    >
+                      <div className="font-medium">{row.sender_name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {row.sender_phone}{row.sender_city ? ` • ${row.sender_city}` : ""}
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="p-3 text-sm text-muted-foreground">No matches found</div>
+                )}
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="sender_name">Full Name *</Label>
@@ -400,6 +552,48 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
           <CardTitle>Receiver Information</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="relative space-y-2">
+            <Label htmlFor="receiver_search" className="flex items-center gap-1.5">
+              <History className="h-3.5 w-3.5" />
+              Quick-fill from a previous receiver
+            </Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                id="receiver_search"
+                placeholder="Search by name or phone..."
+                value={receiverSearch}
+                onChange={(e) => { setReceiverSearch(e.target.value); setShowReceiverResults(true); }}
+                onFocus={() => setShowReceiverResults(true)}
+                onBlur={() => setTimeout(() => setShowReceiverResults(false), 150)}
+                className="pl-10"
+                autoComplete="off"
+              />
+            </div>
+            {showReceiverResults && receiverSearch.trim().length >= 2 && (
+              <div className="absolute z-20 w-full bg-popover border rounded-md shadow-md mt-1 max-h-60 overflow-y-auto">
+                {receiverSearching ? (
+                  <div className="p-3 text-sm text-muted-foreground">Searching...</div>
+                ) : receiverResults.length > 0 ? (
+                  receiverResults.map((row, i) => (
+                    <button
+                      type="button"
+                      key={i}
+                      className="w-full text-left p-3 hover:bg-accent border-b last:border-b-0"
+                      onMouseDown={() => selectReceiverResult(row)}
+                    >
+                      <div className="font-medium">{row.receiver_name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {row.receiver_phone}{row.receiver_city ? ` • ${row.receiver_city}` : ""}
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="p-3 text-sm text-muted-foreground">No matches found</div>
+                )}
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="receiver_name">Full Name *</Label>
