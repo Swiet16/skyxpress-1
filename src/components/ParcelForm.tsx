@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,12 @@ import { Loader2, Package, Plus, Trash2 } from "lucide-react";
 interface ParcelFormProps {
   onSuccess: () => void;
   parcel?: any; // Optional parcel for edit mode
+}
+
+interface Country {
+  code: string;
+  name: string;
+  continent?: string;
 }
 
 interface FormData {
@@ -55,107 +61,6 @@ interface FormData {
   }>;
 }
 
-// Expanded country list (100+). Example snippet:
-const countries = [
-  { code: "US", name: "United States" },
-  { code: "CA", name: "Canada" },
-  { code: "MX", name: "Mexico" },
-  { code: "GB", name: "United Kingdom" },
-  { code: "DE", name: "Germany" },
-  { code: "FR", name: "France" },
-  { code: "ES", name: "Spain" },
-  { code: "IT", name: "Italy" },
-  { code: "JP", name: "Japan" },
-  { code: "CN", name: "China" },
-  { code: "IN", name: "India" },
-  { code: "SG", name: "Singapore" },
-  { code: "TH", name: "Thailand" },
-  { code: "AU", name: "Australia" },
-  { code: "NZ", name: "New Zealand" },
-  { code: "BR", name: "Brazil" },
-  { code: "AR", name: "Argentina" },
-  { code: "ZA", name: "South Africa" },
-  { code: "NG", name: "Nigeria" },
-  { code: "EG", name: "Egypt" },
-  { code: "SA", name: "Saudi Arabia" },
-  { code: "AE", name: "United Arab Emirates" },
-  { code: "TR", name: "Turkey" },
-  { code: "KR", name: "South Korea" },
-  { code: "PK", name: "Pakistan" },
-  { code: "BD", name: "Bangladesh" },
-  { code: "RU", name: "Russia" },
-  { code: "SE", name: "Sweden" },
-  { code: "NO", name: "Norway" },
-  { code: "FI", name: "Finland" },
-  { code: "DK", name: "Denmark" },
-  { code: "NL", name: "Netherlands" },
-  { code: "BE", name: "Belgium" },
-  { code: "CH", name: "Switzerland" },
-  { code: "AT", name: "Austria" },
-  { code: "PL", name: "Poland" },
-  { code: "CZ", name: "Czech Republic" },
-  { code: "HU", name: "Hungary" },
-  { code: "RO", name: "Romania" },
-  { code: "GR", name: "Greece" },
-  { code: "PT", name: "Portugal" },
-  { code: "IE", name: "Ireland" },
-  { code: "IL", name: "Israel" },
-  { code: "MY", name: "Malaysia" },
-  { code: "PH", name: "Philippines" },
-  { code: "VN", name: "Vietnam" },
-  { code: "ID", name: "Indonesia" },
-  { code: "KE", name: "Kenya" },
-  { code: "TZ", name: "Tanzania" },
-  { code: "GH", name: "Ghana" },
-  { code: "MA", name: "Morocco" },
-  { code: "DZ", name: "Algeria" },
-  { code: "UA", name: "Ukraine" },
-  { code: "BY", name: "Belarus" },
-  { code: "KZ", name: "Kazakhstan" },
-  { code: "LK", name: "Sri Lanka" },
-  { code: "NP", name: "Nepal" },
-  { code: "MM", name: "Myanmar" },
-  { code: "IR", name: "Iran" },
-  { code: "IQ", name: "Iraq" },
-  { code: "SY", name: "Syria" },
-  { code: "JO", name: "Jordan" },
-  { code: "LB", name: "Lebanon" },
-  { code: "KW", name: "Kuwait" },
-  { code: "QA", name: "Qatar" },
-  { code: "OM", name: "Oman" },
-  { code: "YE", name: "Yemen" },
-  { code: "ET", name: "Ethiopia" },
-  { code: "UG", name: "Uganda" },
-  { code: "CM", name: "Cameroon" },
-  { code: "SN", name: "Senegal" },
-  { code: "SD", name: "Sudan" },
-  { code: "VE", name: "Venezuela" },
-  { code: "CL", name: "Chile" },
-  { code: "CO", name: "Colombia" },
-  { code: "PE", name: "Peru" },
-  { code: "BO", name: "Bolivia" },
-  { code: "EC", name: "Ecuador" },
-  { code: "UY", name: "Uruguay" },
-  { code: "PY", name: "Paraguay" },
-  { code: "CU", name: "Cuba" },
-  { code: "DO", name: "Dominican Republic" },
-  { code: "JM", name: "Jamaica" },
-  { code: "HT", name: "Haiti" },
-  { code: "CR", name: "Costa Rica" },
-  { code: "GT", name: "Guatemala" },
-  { code: "HN", name: "Honduras" },
-  { code: "SV", name: "El Salvador" },
-  { code: "NI", name: "Nicaragua" },
-  { code: "PA", name: "Panama" },
-  { code: "IS", name: "Iceland" },
-  { code: "LU", name: "Luxembourg" },
-  { code: "MT", name: "Malta" },
-  { code: "MC", name: "Monaco" },
-  { code: "SM", name: "San Marino" },
-  { code: "AD", name: "Andorra" },
-  { code: "LI", name: "Liechtenstein" }
-]; // now 100+
-
 const parcelTypes = [
   { value: "box", label: "Box" },
   { value: "envelope", label: "Envelope" },
@@ -177,6 +82,8 @@ const documentTypes = [
 ];
 
 export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
+  const [countries, setCountries] = useState<Country[]>([]);
+  const [countriesLoading, setCountriesLoading] = useState(true);
   const [formData, setFormData] = useState<FormData>({
     reference_id: parcel?.reference_id || "",
     sender_name: parcel?.sender_name || "",
@@ -221,6 +128,31 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
   });
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+
+  // Fetch countries from Supabase 'countries' table on mount
+  useEffect(() => {
+    const fetchCountries = async () => {
+      setCountriesLoading(true);
+      const { data, error } = await supabase
+        .from('countries')
+        .select('code, name, continent')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching countries:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load countries list",
+          variant: "destructive",
+        });
+      } else if (data) {
+        setCountries(data as Country[]);
+      }
+      setCountriesLoading(false);
+    };
+
+    fetchCountries();
+  }, []);
 
   const handleInputChange = (field: keyof FormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -438,7 +370,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               <Label htmlFor="sender_country">Country *</Label>
               <Select value={formData.sender_country} onValueChange={(value) => handleInputChange('sender_country', value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select country" />
+                  <SelectValue placeholder={countriesLoading ? "Loading countries..." : "Select country"} />
                 </SelectTrigger>
                 <SelectContent>
                   {countries.map((country) => (
@@ -513,7 +445,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               <Label htmlFor="receiver_country">Country *</Label>
               <Select value={formData.receiver_country} onValueChange={(value) => handleInputChange('receiver_country', value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select country" />
+                  <SelectValue placeholder={countriesLoading ? "Loading countries..." : "Select country"} />
                 </SelectTrigger>
                 <SelectContent>
                   {countries.map((country) => (
@@ -724,7 +656,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
                 min="1"
                 required
                 value={formData.pieces || 1}
-                onChange={(e) => setFormData({ ...formData, pieces: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, pieces: Number(e.target.value) })}
               />
             </div>
             <div>
@@ -804,7 +736,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               <Label>From Country</Label>
               <Select value={formData.from_country} onValueChange={(value) => handleInputChange('from_country', value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select origin country" />
+                  <SelectValue placeholder={countriesLoading ? "Loading countries..." : "Select origin country"} />
                 </SelectTrigger>
                 <SelectContent>
                   {countries.map((country) => (
@@ -819,7 +751,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               <Label>To Country</Label>
               <Select value={formData.to_country} onValueChange={(value) => handleInputChange('to_country', value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select destination country" />
+                  <SelectValue placeholder={countriesLoading ? "Loading countries..." : "Select destination country"} />
                 </SelectTrigger>
                 <SelectContent>
                   {countries.map((country) => (
