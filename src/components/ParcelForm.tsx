@@ -22,6 +22,7 @@ interface Country {
 
 interface FormData {
   reference_id?: string;
+  tracking_id: string;
   sender_name: string;
   sender_company: string;
   sender_phone: string;
@@ -86,6 +87,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
   const [countriesLoading, setCountriesLoading] = useState(true);
   const [formData, setFormData] = useState<FormData>({
     reference_id: parcel?.reference_id || "",
+    tracking_id: parcel?.tracking_id || "",
     sender_name: parcel?.sender_name || "",
     sender_company: parcel?.sender_company || "",
     sender_phone: parcel?.sender_phone || "",
@@ -129,7 +131,26 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
         ],
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [trackingIdLoading, setTrackingIdLoading] = useState(false);
   const { toast } = useToast();
+
+  // In create mode, pre-generate a suggested tracking ID so the admin can see
+  // (and optionally override) it before the parcel is actually saved.
+  useEffect(() => {
+    if (parcel) return; // edit mode already has a real tracking_id
+
+    const fetchSuggestedTrackingId = async () => {
+      setTrackingIdLoading(true);
+      const { data, error } = await supabase.rpc("generate_numeric_tracking");
+      if (!error && data) {
+        setFormData((prev) => (prev.tracking_id ? prev : { ...prev, tracking_id: data }));
+      }
+      setTrackingIdLoading(false);
+    };
+
+    fetchSuggestedTrackingId();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Quick-fill: search previous parcels by sender/receiver name or phone
   const [senderSearch, setSenderSearch] = useState("");
@@ -323,6 +344,16 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (parcel && !formData.tracking_id.trim()) {
+      toast({
+        title: "Error",
+        description: "Tracking ID cannot be empty",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -379,6 +410,8 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
 
       if (parcel) {
         // UPDATE existing parcel
+        parcelData.tracking_id = formData.tracking_id.trim();
+
         const { error } = await supabase.from("parcels").update(parcelData).eq("id", parcel.id);
 
         if (error) throw error;
@@ -389,17 +422,21 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
         });
       } else {
         // CREATE new parcel
-        // Generate tracking ID
-        const { data: trackingData, error: trackingError } = await supabase.rpc(
-          "generate_numeric_tracking"
-        );
-
-        if (trackingError) throw trackingError;
+        // Use the (possibly admin-edited) suggested tracking ID; if it was
+        // somehow left blank, fall back to generating a fresh one now.
+        let trackingId = formData.tracking_id.trim();
+        if (!trackingId) {
+          const { data: trackingData, error: trackingError } = await supabase.rpc(
+            "generate_numeric_tracking"
+          );
+          if (trackingError) throw trackingError;
+          trackingId = trackingData;
+        }
 
         const { error } = await supabase.from("parcels").insert([
           {
             ...parcelData,
-            tracking_id: trackingData,
+            tracking_id: trackingId,
             request_status: "pending",
             current_status: "created",
           },
@@ -409,7 +446,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
 
         toast({
           title: "Success!",
-          description: `Parcel request submitted with tracking ID: ${trackingData}`,
+          description: `Parcel request submitted with tracking ID: ${trackingId}`,
         });
       }
 
@@ -429,12 +466,27 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Reference ID (optional manual override) */}
+      {/* Tracking ID & Reference ID */}
       <Card>
         <CardHeader>
-          <CardTitle>Reference</CardTitle>
+          <CardTitle>Identifiers</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="tracking_id">Tracking ID {parcel ? "*" : ""}</Label>
+            <Input
+              id="tracking_id"
+              value={formData.tracking_id}
+              onChange={(e) => handleInputChange("tracking_id", e.target.value)}
+              placeholder={trackingIdLoading ? "Generating..." : "Tracking ID"}
+              required={!!parcel}
+            />
+            {!parcel && (
+              <p className="text-xs text-muted-foreground">
+                Auto-generated — edit it if you'd like to set a custom one.
+              </p>
+            )}
+          </div>
           <div className="space-y-2">
             <Label htmlFor="reference_id">Reference ID</Label>
             <Input
