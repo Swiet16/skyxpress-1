@@ -25,26 +25,45 @@ import { Search, Plus, Package, Eye, Edit, FileText, Trash2, Paperclip } from "l
 import { ParcelForm } from "./ParcelForm";
 import { ParcelDetails } from "./ParcelDetails";
 import { ParcelAttachmentsDialog } from "./ParcelAttachments";
+import { SkyXpressAWBInvoice } from "./SkyXpressAWBInvoice";
 
 interface Parcel {
   id: string;
   tracking_id: string;
   reference_id?: string;
   sender_name: string;
+  sender_company?: string;
   sender_phone: string;
+  sender_cnic?: string;
+  sender_address?: string;
+  sender_address_2?: string;
+  sender_address_3?: string;
+  sender_city?: string;
+  sender_country?: string;
   receiver_name: string;
+  receiver_company?: string;
   receiver_phone: string;
+  receiver_address?: string;
+  receiver_address_2?: string;
+  receiver_city?: string;
+  receiver_state?: string;
+  receiver_postal_code?: string;
+  receiver_country?: string;
   parcel_type: string;
   weight: number;
+  pieces?: number;
+  dim_weight_override?: string;
   length: number;
   width: number;
   height: number;
   total_price: number;
   currency: string;
+  service_type?: string;
   current_status: string;
   from_country: string;
   to_country: string;
   created_at: string;
+  items?: Array<{ description: string; quantity: number; unit_price: number; total?: number }>;
 }
 
 interface Country {
@@ -75,6 +94,9 @@ export const ParcelManagement = () => {
   const [editingParcel, setEditingParcel] = useState<Parcel | null>(null);
   const [showAttachments, setShowAttachments] = useState(false);
   const [attachmentsParcel, setAttachmentsParcel] = useState<Parcel | null>(null);
+  const [showInvoice, setShowInvoice] = useState(false);
+  const [invoiceParcel, setInvoiceParcel] = useState<Parcel | null>(null);
+  const [loadingInvoice, setLoadingInvoice] = useState(false);
   const { toast } = useToast();
 
   // Country code -> full name lookup, pulled from Supabase
@@ -162,6 +184,39 @@ export const ParcelManagement = () => {
   const handleAttachmentsClick = (parcel: Parcel) => {
     setAttachmentsParcel(parcel);
     setShowAttachments(true);
+  };
+
+  const handleInvoiceClick = async (parcel: Parcel) => {
+    setLoadingInvoice(true);
+    try {
+      // Fetch full parcel data (items stored as JSONB column)
+      const { data, error } = await supabase
+        .from("parcels")
+        .select("*")
+        .eq("id", parcel.id)
+        .single();
+
+      if (error) throw error;
+
+      // Items are stored as a JSONB array on the parcel row
+      const rawItems = Array.isArray(data.items) ? data.items : [];
+      const items = rawItems.map((item: any) => ({
+        description: item.description || item.item_description || item.name || "",
+        quantity: Number(item.quantity || item.qty || 1),
+        unit_price: Number(item.unit_price || item.value || item.price || 0),
+        total: Number(item.total || item.total_amount || item.total_price || 0) ||
+               Number(item.quantity || 1) * Number(item.unit_price || item.value || 0),
+      }));
+
+      setInvoiceParcel({ ...data, items });
+      setShowInvoice(true);
+    } catch {
+      // Fall back to basic parcel data
+      setInvoiceParcel(parcel);
+      setShowInvoice(true);
+    } finally {
+      setLoadingInvoice(false);
+    }
   };
 
   const handleDeleteParcel = async (parcelId: string, trackingId: string) => {
@@ -452,7 +507,13 @@ export const ParcelManagement = () => {
                         >
                           <Paperclip className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="sm">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleInvoiceClick(parcel)}
+                          disabled={loadingInvoice}
+                          title="Generate AWB / Invoice"
+                        >
                           <FileText className="h-4 w-4" />
                         </Button>
                         <Button
@@ -523,6 +584,18 @@ export const ParcelManagement = () => {
           if (!open) setAttachmentsParcel(null);
         }}
       />
+
+      {/* AWB / Invoice Modal */}
+      {invoiceParcel && (
+        <SkyXpressAWBInvoice
+          open={showInvoice}
+          onClose={() => {
+            setShowInvoice(false);
+            setInvoiceParcel(null);
+          }}
+          parcel={invoiceParcel}
+        />
+      )}
     </div>
   );
 };
