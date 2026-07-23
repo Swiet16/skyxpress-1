@@ -16,6 +16,7 @@ import {
   Plane,
   XCircle,
   MessageSquareText,
+  MapPin,
 } from "lucide-react";
 
 interface TrackingResult {
@@ -477,30 +478,56 @@ export const TrackingSection = () => {
                   <div key={dateIndex}>
                     <h4 className="sx-display mb-4 text-base font-bold text-[#0B2545]/80">{date}</h4>
 
-                    <div className="space-y-5 border-l-2 border-dashed border-[#0B2545]/10 pl-5">
-                      {events.map((event, eventIndex) => (
-                        <div key={eventIndex} className="relative">
-                          <span className="absolute -left-[26px] top-1 h-3 w-3 rounded-full border-2 border-white bg-[#2E86FF] ring-2 ring-[#2E86FF]/20" />
-                          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                            <p className="sx-mono text-xs font-medium text-[#5B6B82]">
-                              {new Date(event.timestamp).toLocaleString("en-US", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                hour12: true,
-                              })}
-                            </p>
-                            <p className="text-sm font-semibold text-[#0B2545]">
-                              {formatStatusLabel(event.status || event.title || "Update")}
-                            </p>
+                    <div className="space-y-6 border-l-[3px] border-dotted border-[#0B2545]/25 pl-5">
+                      {events.map((event, eventIndex) => {
+                        const isLatest = dateIndex === 0 && eventIndex === 0;
+                        const place = event.location || event.place || event.city || event.checkpoint;
+                        return (
+                          <div key={eventIndex} className="relative">
+                            <span className="absolute -left-[27px] top-1 flex h-3.5 w-3.5 items-center justify-center">
+                              {isLatest && (
+                                <span className="absolute h-3.5 w-3.5 animate-ping rounded-full bg-[#FF6A1A]/50 motion-reduce:animate-none" />
+                              )}
+                              <span
+                                className="relative h-3 w-3 rounded-full border-2 border-white shadow-sm"
+                                style={{ backgroundColor: isLatest ? TOKENS.orange : TOKENS.blue }}
+                              />
+                            </span>
+
+                            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                              <p className="sx-mono text-xs font-medium text-[#5B6B82]">
+                                {new Date(event.timestamp).toLocaleString("en-US", {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                  hour12: true,
+                                })}
+                              </p>
+                              <p className="text-sm font-semibold text-[#0B2545]">
+                                {formatStatusLabel(event.status || event.title || "Update")}
+                              </p>
+                              {isLatest && (
+                                <span className="sx-mono rounded-full bg-[#FF6A1A]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#FF6A1A]">
+                                  Latest
+                                </span>
+                              )}
+                            </div>
+
+                            {place && (
+                              <p className="mt-1 flex items-center gap-1.5 text-xs text-[#5B6B82]">
+                                <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-[#2E86FF]" />
+                                {place}
+                              </p>
+                            )}
+
+                            {event.note && (
+                              <p className="mt-1 flex items-start gap-1.5 text-xs text-[#5B6B82]">
+                                <MessageSquareText className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                                {event.note}
+                              </p>
+                            )}
                           </div>
-                          {event.note && (
-                            <p className="mt-1 flex items-start gap-1.5 text-xs text-[#5B6B82]">
-                              <MessageSquareText className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                              {event.note}
-                            </p>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
