@@ -214,9 +214,17 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
 
   // Add logo at top
-  
+  await addLogo(pdf, margin, yPos, 50, 30);
+
   // Contact info next to logo
-  
+  pdf.setFontSize(7);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(80, 80, 80);
+  pdf.text('Email: skyxpress786@gmail.com', 60, yPos + 3);
+  pdf.text('Phone: 042 999164619', 60, yPos + 8);
+  pdf.text('WhatsApp: 0326 9422411', 60, yPos + 13);
+  pdf.text('www.skyxpress.site', 60, yPos + 18);
+
   // Right side: Header box — extended to 32mm to fit barcode
   const rightBoxX = pageWidth - margin - 75;
   pdf.setFillColor(30, 144, 255);
@@ -279,179 +287,113 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.sender_company, 'N/A'), margin + 20, shipperY);
   
-// ---------- Helper: wrap text and draw a labeled field, returns new Y ----------
-function drawField(pdf, label, value, x, y, labelWidth, maxWidth, lineGap, fontSize = 9) {
-  pdf.setFontSize(fontSize);
+  // Address block with optional extra lines
+  shipperY += senderLineGap;
+  pdf.setFontSize(senderFontSize);
   pdf.setFont('helvetica', 'bold');
-  pdf.text(label, x + 2, y);
+  pdf.text('Address:', margin + 2, shipperY);
   pdf.setFont('helvetica', 'normal');
+  pdf.text(safeText(parcel.sender_address, 'N/A'), margin + 18, shipperY);
+  if (parcel.sender_address_2) {
+    shipperY += senderLineGap - 1;
+    pdf.text(safeText(parcel.sender_address_2), margin + 2, shipperY);
+  }
+  if (parcel.sender_address_3) {
+    shipperY += senderLineGap - 1;
+    pdf.text(safeText(parcel.sender_address_3), margin + 2, shipperY);
+  }
+  pdf.setFontSize(9);
 
-  const text = safeText(value, 'N/A');
-  const lines = pdf.splitTextToSize(text, maxWidth - labelWidth - 2);
+  shipperY += senderLineGap;
+  pdf.text(`${safeText(parcel.sender_city, '')}, ${safeText(parcel.sender_country, 'Pakistan')}`, margin + 2, shipperY);
+  
+  shipperY += 5;
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Phone:', margin + 2, shipperY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(safeText(parcel.sender_phone, 'N/A'), margin + 15, shipperY);
+  
+  shipperY += 5;
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('CNIC:', margin + 2, shipperY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(safeText(parcel.sender_cnic, 'N/A'), margin + 13, shipperY);
 
-  lines.forEach((line, i) => {
-    pdf.text(line, x + labelWidth, y + (i * lineGap));
-  });
+  // Determine if extra address lines are present for receiver
+  const hasReceiverExtra = !!(parcel.receiver_address_2 || parcel.receiver_address_3);
+  const receiverFontSize = hasReceiverExtra ? 7.5 : 9;
+  const receiverLineGap = hasReceiverExtra ? 4 : 5;
 
-  return y + (Math.max(lines.length, 1) * lineGap);
-}
+  // Receiver box
+  const receiverX = pageWidth / 2 + 1.5;
+  pdf.setFillColor(30, 144, 255);
+  pdf.rect(receiverX, yPos, boxWidth, 7, 'F');
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(255, 255, 255);
+  pdf.text('RECEIVER', receiverX + 2, yPos + 5);
+  
+  pdf.setFillColor(250, 250, 250);
+  pdf.rect(receiverX, yPos + 7, boxWidth, 40, 'F');
+  pdf.setDrawColor(200, 200, 200);
+  pdf.rect(receiverX, yPos, boxWidth, 47);
+  
+  pdf.setFontSize(9);
+  pdf.setTextColor(0, 0, 0);
+  let receiverY = yPos + 12;
+  
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Name:', receiverX + 2, receiverY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(safeText(parcel.receiver_name, 'N/A'), receiverX + 15, receiverY);
+  
+  receiverY += 5;
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Company:', receiverX + 2, receiverY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(safeText(parcel.receiver_company, 'N/A'), receiverX + 20, receiverY);
+  
+  // Address block with optional extra lines
+  receiverY += receiverLineGap;
+  pdf.setFontSize(receiverFontSize);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Address:', receiverX + 2, receiverY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(safeText(parcel.receiver_address, 'N/A'), receiverX + 18, receiverY);
+  if (parcel.receiver_address_2) {
+    receiverY += receiverLineGap - 1;
+    pdf.text(safeText(parcel.receiver_address_2), receiverX + 2, receiverY);
+  }
+  if (parcel.receiver_address_3) {
+    receiverY += receiverLineGap - 1;
+    pdf.text(safeText(parcel.receiver_address_3), receiverX + 2, receiverY);
+  }
+  pdf.setFontSize(9);
 
-// ---------- Helper: measure total height a block will need ----------
-function measureBlockHeight(pdf, parcel, prefix, maxWidth, opts) {
-  const { hasExtra, fontSize, lineGap, extraFields } = opts;
-  let h = 12; // top padding before "Name"
+  receiverY += receiverLineGap;
+  pdf.text(`${safeText(parcel.receiver_state, '')}, ${safeText(parcel.receiver_country, 'UK')}`, receiverX + 2, receiverY);
+  
+  receiverY += 5;
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Postal Code:', receiverX + 2, receiverY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(safeText(parcel.receiver_postal_code, 'N/A'), receiverX + 23, receiverY);
+  
+  receiverY += 5;
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Phone:', receiverX + 2, receiverY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(safeText(parcel.receiver_phone, 'N/A'), receiverX + 15, receiverY);
+  
+  receiverY += 5;
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Email:', receiverX + 2, receiverY);
+  pdf.setFont('helvetica', 'normal');
+  const receiverEmail = safeText(parcel.receiver_email, 'N/A');
+  const emailLines = pdf.splitTextToSize(receiverEmail, 70);
+  pdf.text(emailLines[0], receiverX + 14, receiverY);
 
-  // Name
-  h += 5;
-  // Company
-  h += 5;
-
-  // Address (wraps)
-  h += lineGap;
-  const addrLines = pdf.splitTextToSize(
-    safeText(parcel[`${prefix}_address`], 'N/A'),
-    maxWidth - 18 - 2
-  );
-  h += Math.max(addrLines.length, 1) * lineGap;
-
-  if (parcel[`${prefix}_address_2`]) h += lineGap - 1;
-  if (parcel[`${prefix}_address_3`]) h += lineGap - 1;
-
-  // City/State, Country line
-  h += lineGap;
-
-  // extra fixed fields (Phone, CNIC / Postal Code, Phone, Email)
-  extraFields.forEach(() => { h += 5; });
-
-  return h + 6; // bottom padding
-}
-
-// ---------- Config for both blocks ----------
-const hasSenderExtra = !!(parcel.sender_address_2 || parcel.sender_address_3);
-const senderFontSize = hasSenderExtra ? 7.5 : 9;
-const senderLineGap = hasSenderExtra ? 4 : 5;
-
-const hasReceiverExtra = !!(parcel.receiver_address_2 || parcel.receiver_address_3);
-const receiverFontSize = hasReceiverExtra ? 7.5 : 9;
-const receiverLineGap = hasReceiverExtra ? 4 : 5;
-
-const contentWidth = boxWidth - 4;
-
-// ---------- Pre-measure both blocks, use the taller one for BOTH boxes ----------
-const senderHeight = measureBlockHeight(pdf, parcel, 'sender', contentWidth, {
-  fontSize: senderFontSize, lineGap: senderLineGap,
-  extraFields: ['phone', 'cnic'] // matches your sender fields below Address
-});
-
-const receiverHeight = measureBlockHeight(pdf, parcel, 'receiver', contentWidth, {
-  fontSize: receiverFontSize, lineGap: receiverLineGap,
-  extraFields: ['postal', 'phone', 'email']
-});
-
-const sharedBoxHeight = Math.max(47, senderHeight, receiverHeight);
-
-// ================= SENDER BOX =================
-pdf.setFillColor(30, 144, 255);
-pdf.rect(margin, yPos, boxWidth, 7, 'F');
-pdf.setFontSize(10);
-pdf.setFont('helvetica', 'bold');
-pdf.setTextColor(255, 255, 255);
-pdf.text('SENDER', margin + 2, yPos + 5);
-
-pdf.setFillColor(250, 250, 250);
-pdf.rect(margin, yPos + 7, boxWidth, sharedBoxHeight - 7, 'F');
-pdf.setDrawColor(200, 200, 200);
-pdf.rect(margin, yPos, boxWidth, sharedBoxHeight);
-
-pdf.setTextColor(0, 0, 0);
-let shipperY = yPos + 12;
-
-shipperY = drawField(pdf, 'Name:', parcel.sender_name, margin, shipperY, 15, contentWidth, 5);
-shipperY += 0; // next field starts right after (adjust if you had a gap here)
-
-shipperY = drawField(pdf, 'Company:', parcel.sender_company, margin, shipperY, 20, contentWidth, 5);
-
-// Address block
-shipperY += senderLineGap;
-pdf.setFontSize(senderFontSize);
-shipperY = drawField(pdf, 'Address:', parcel.sender_address, margin, shipperY, 18, contentWidth, senderLineGap, senderFontSize);
-
-if (parcel.sender_address_2) {
-  shipperY += senderLineGap - 1;
-  pdf.text(safeText(parcel.sender_address_2), margin + 2, shipperY);
-}
-if (parcel.sender_address_3) {
-  shipperY += senderLineGap - 1;
-  pdf.text(safeText(parcel.sender_address_3), margin + 2, shipperY);
-}
-pdf.setFontSize(9);
-
-shipperY += senderLineGap;
-pdf.text(`${safeText(parcel.sender_city, '')}, ${safeText(parcel.sender_country, 'Pakistan')}`, margin + 2, shipperY);
-
-shipperY += 5;
-shipperY = drawField(pdf, 'Phone:', parcel.sender_phone, margin, shipperY, 15, contentWidth, 5);
-
-shipperY += 5;
-shipperY = drawField(pdf, 'CNIC:', parcel.sender_cnic, margin, shipperY, 13, contentWidth, 5);
-
-// ================= RECEIVER BOX =================
-const receiverX = pageWidth / 2 + 1.5;
-
-pdf.setFillColor(30, 144, 255);
-pdf.rect(receiverX, yPos, boxWidth, 7, 'F');
-pdf.setFontSize(10);
-pdf.setFont('helvetica', 'bold');
-pdf.setTextColor(255, 255, 255);
-pdf.text('RECEIVER', receiverX + 2, yPos + 5);
-
-pdf.setFillColor(250, 250, 250);
-pdf.rect(receiverX, yPos + 7, boxWidth, sharedBoxHeight - 7, 'F');
-pdf.setDrawColor(200, 200, 200);
-pdf.rect(receiverX, yPos, boxWidth, sharedBoxHeight);
-
-pdf.setFontSize(9);
-pdf.setTextColor(0, 0, 0);
-let receiverY = yPos + 12;
-
-receiverY = drawField(pdf, 'Name:', parcel.receiver_name, receiverX, receiverY, 15, contentWidth, 5);
-receiverY = drawField(pdf, 'Company:', parcel.receiver_company, receiverX, receiverY, 20, contentWidth, 5);
-
-// Address block
-receiverY += receiverLineGap;
-pdf.setFontSize(receiverFontSize);
-receiverY = drawField(pdf, 'Address:', parcel.receiver_address, receiverX, receiverY, 18, contentWidth, receiverLineGap, receiverFontSize);
-
-if (parcel.receiver_address_2) {
-  receiverY += receiverLineGap - 1;
-  pdf.text(safeText(parcel.receiver_address_2), receiverX + 2, receiverY);
-}
-if (parcel.receiver_address_3) {
-  receiverY += receiverLineGap - 1;
-  pdf.text(safeText(parcel.receiver_address_3), receiverX + 2, receiverY);
-}
-pdf.setFontSize(9);
-
-receiverY += receiverLineGap;
-pdf.text(`${safeText(parcel.receiver_state, '')}, ${safeText(parcel.receiver_country, 'UK')}`, receiverX + 2, receiverY);
-
-receiverY += 5;
-receiverY = drawField(pdf, 'Postal Code:', parcel.receiver_postal_code, receiverX, receiverY, 23, contentWidth, 5);
-
-receiverY += 5;
-receiverY = drawField(pdf, 'Phone:', parcel.receiver_phone, receiverX, receiverY, 15, contentWidth, 5);
-
-receiverY += 5;
-pdf.setFont('helvetica', 'bold');
-pdf.text('Email:', receiverX + 2, receiverY);
-pdf.setFont('helvetica', 'normal');
-const receiverEmail = safeText(parcel.receiver_email, 'N/A');
-const emailLines = pdf.splitTextToSize(receiverEmail, contentWidth - 14);
-emailLines.forEach((line, i) => pdf.text(line, receiverX + 14, receiverY + (i * 5)));
-receiverY += emailLines.length * 5;
-
-// ================= Advance yPos =================
-yPos += sharedBoxHeight + 4;
+  yPos += 51;
 
   // Items table
   pdf.setFillColor(30, 144, 255);
@@ -626,967 +568,4 @@ yPos += sharedBoxHeight + 4;
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(80, 80, 80);
-  pdf.text('Email: skyxpress786@gmail.com | Phone: 042 999164619 | Mobile: 0321 4710522 | WhatsApp: 0326 9422411', pageWidth / 2, footerY, { align: 'center' });
-
-  const itemCount = items.length;
   
-  if (itemCount >= 8) {
-    pdf.addPage();
-    yPos = 15;
-    
-    pdf.setDrawColor(30, 144, 255);
-    pdf.setLineWidth(0.8);
-    pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
-
-    pdf.setFillColor(250, 250, 250);
-    const conditionsHeight = pageHeight - yPos - 25;
-    pdf.rect(10, yPos, pageWidth - 20, conditionsHeight, 'F');
-    
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(60, 60, 60);
-    pdf.text('STANDARD TRADING CONDITIONS', pageWidth / 2, yPos + 6, { align: 'center' });
-    
-    yPos += 12;
-    
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(60, 60, 60);
-    
-    const conditions = [
-      'By tendering goods for transport by SKY XPRESS WORLDWIDE EXPRESS, the Consignor agrees to the following conditions:',
-      '',
-      '1. DEFINITIONS: "SKY XPRESS" means Sky Xpress Worldwide Express. "Consignor" or "Shipper" means the sender.',
-      '"Consignee" means the person to whom the goods are consigned.',
-      '',
-      '2. CONSIGNMENT NOTE: Each consignment shall be correctly addressed and accompanied by SKY XPRESS form of',
-      'Consignment Note which the Consignor shall properly complete. The Consignor is responsible for correctness of information.',
-      '',
-      '3. SUB-CONTRACTING: SKY XPRESS may sub-contract all or any part and may engage agents or sub-contractors.',
-      '',
-      '4. COMMON CARRIER: The company is not a common carrier and will only carry goods on these conditions.',
-      '',
-      '5. LIABILITY: SKY XPRESS shall not be liable for any loss, damage, or delays except where directly caused by proven',
-      'negligence. Maximum liability is limited to USD 100 per shipment unless additional insurance is purchased.',
-      '',
-      '6. PROHIBITED ITEMS: Consignor warrants goods do not contain dangerous, hazardous, or prohibited items including',
-      'narcotics, weapons, explosives, antiques, liquids, or items prohibited by IATA or local laws. Consignor fully responsible.',
-      '',
-      '7. CUSTOMS & DUTIES: Any customs duties, taxes, or charges levied at destination shall be paid by Consignee.',
-      'If Consignee refuses payment, Consignor shall be liable.',
-      '',
-      '8. GOVERNING LAW: These conditions governed by laws of Pakistan. Disputes subject to exclusive jurisdiction of Pakistani courts.'
-    ];
-    
-    let conditionsY = yPos;
-    conditions.forEach((line) => {
-      const lines = pdf.splitTextToSize(line, pageWidth - 24);
-      pdf.text(lines, 12, conditionsY);
-      conditionsY += lines.length * 3;
-    });
-
-    footerY = pageHeight - 10;
-    pdf.setDrawColor(30, 144, 255);
-    pdf.setLineWidth(0.5);
-    pdf.line(10, footerY, pageWidth - 10, footerY);
-    footerY += 3;
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(80, 80, 80);
-    pdf.text('Email: skyxpress786@gmail.com | Phone: 042 999164619 | Mobile: 0321 4710522 | WhatsApp: 0326 9422411', pageWidth / 2, footerY, { align: 'center' });
-  } else {
-    pdf.setFillColor(250, 250, 250);
-    const availableHeight = pageHeight - yPos - 20;
-    pdf.rect(10, yPos, pageWidth - 20, availableHeight, 'F');
-    
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(60, 60, 60);
-    pdf.text('STANDARD TRADING CONDITIONS', pageWidth / 2, yPos + 4, { align: 'center' });
-    
-    yPos += 8;
-    
-    pdf.setFontSize(5.5);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(60, 60, 60);
-    
-    const conditions = [
-      'By tendering goods for transport by SKY XPRESS WORLDWIDE EXPRESS, the Consignor agrees to the following conditions:',
-      '',
-      '1. DEFINITIONS: "SKY XPRESS" means Sky Xpress Worldwide Express. "Consignor" or "Shipper" means the sender. "Consignee" means the person to whom the goods are consigned.',
-      '',
-      '2. CONSIGNMENT NOTE: Each consignment shall be correctly addressed and accompanied by SKY XPRESS form of Consignment Note which the Consignor shall properly complete. The Consignor is responsible for correctness of information.',
-      '',
-      '3. SUB-CONTRACTING: SKY XPRESS may sub-contract all or any part and may engage agents or sub-contractors.',
-      '',
-      '4. COMMON CARRIER: The company is not a common carrier and will only carry goods on these conditions.',
-      '',
-      '5. LIABILITY: SKY XPRESS shall not be liable for any loss, damage, or delays except where directly caused by proven negligence. Maximum liability is limited to USD 100 per shipment unless additional insurance is purchased.',
-      '',
-      '6. PROHIBITED ITEMS: Consignor warrants goods do not contain dangerous, hazardous, or prohibited items including narcotics, weapons, explosives, antiques, liquids, or items prohibited by IATA or local laws. Consignor fully responsible.',
-      '',
-      '7. CUSTOMS & DUTIES: Any customs duties, taxes, or charges levied at destination shall be paid by Consignee. If Consignee refuses payment, Consignor shall be liable.',
-      '',
-      '8. GOVERNING LAW: These conditions governed by laws of Pakistan. Disputes subject to exclusive jurisdiction of Pakistani courts.'
-    ];
-    
-    let conditionsY = yPos;
-    conditions.forEach((line) => {
-      const lines = pdf.splitTextToSize(line, pageWidth - 24);
-      pdf.text(lines, 12, conditionsY);
-      conditionsY += lines.length * 2.2;
-    });
-
-    footerY = pageHeight - 10;
-    pdf.setDrawColor(30, 144, 255);
-    pdf.setLineWidth(0.5);
-    pdf.line(10, footerY, pageWidth - 10, footerY);
-    footerY += 3;
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(80, 80, 80);
-    pdf.text('Email: skyxpress786@gmail.com | Phone: 042 999164619 | Mobile: 0321 4710522 | WhatsApp: 0326 9422411', pageWidth / 2, footerY, { align: 'center' });
-  }
-
-  handlePDFOutput(pdf, `Performa-Invoice-${refNumber}.pdf`, mode);
-};
-
-// ===== 2. AIRWAY BILL (Verification) =====
-export const generateAirwayBillVerification = async (parcel: any, mode: OutputMode = 'download'): Promise<void> => {
-  const pdf = new jsPDF('p', 'mm', 'a4');
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  
-  const length = parcel.length || 12;
-  const width = parcel.width || 12;
-  const height = parcel.height || 16;
-  const calcDimWeight = parseFloat(((height * width * length) / 5000).toFixed(2));
-  const dimWeight = parcel.dim_weight_override != null ? parcel.dim_weight_override : calcDimWeight;
-  const dimWeightStr = Number(dimWeight).toFixed(2);
-  const actualWeight = parcel.weight || 5;
-  const chargeableWeight = Math.max(parseFloat(dimWeightStr), actualWeight);
-  const pieces = parcel.pieces || 1;
-  const documentType = (parcel.document_type || 'document').toUpperCase();
-  
-  const refNumber = safeText(parcel.reference_id || parcel.tracking_id, '000000000');
-  const dimLabel = parcel.dim_weight_override != null ? `${dimWeightStr} KG*` : `${dimWeightStr} KG`;
-
-  // Determine extra address flags
-  const hasSenderExtra = !!(parcel.sender_address_2 || parcel.sender_address_3);
-  const hasReceiverExtra = !!(parcel.receiver_address_2 || parcel.receiver_address_3);
-  const senderFontSize = hasSenderExtra ? 7.5 : 8;
-  const senderLineGap = hasSenderExtra ? 4 : 5;
-  const receiverFontSize = hasReceiverExtra ? 7.5 : 8;
-  const receiverLineGap = hasReceiverExtra ? 4 : 5;
-
-  // Function to generate one copy
-  const generateCopy = async (startY: number, copyLabel: string) => {
-    let yPos = startY;
-
-    // Border for this copy
-    pdf.setDrawColor(255, 140, 0);
-    pdf.setLineWidth(0.5);
-    pdf.rect(5, startY - 2, pageWidth - 10, 140);
-
-    // Add logo
-    await addLogo(pdf, 10, yPos, 50, 30);
-
-    // Contact info
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(80, 80, 80);
-    pdf.text('Email: skyxpress786@gmail.com', 65, yPos + 5);
-    pdf.text('Phone: 042 999164619', 65, yPos + 10);
-    pdf.text('Mobile: 0321 4710522', 65, yPos + 15);
-    pdf.text('www.skyxpress.site', 65, yPos + 20);
-
-    // Right header box (same 20mm height — compact barcode replaces QR)
-    const headerX = pageWidth - 75;
-    pdf.setFillColor(255, 248, 240);
-    pdf.setDrawColor(255, 140, 0);
-    pdf.setLineWidth(0.5);
-    pdf.rect(headerX, yPos, 65, 20, 'FD');
-    
-    pdf.setFontSize(12);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(255, 100, 0);
-    pdf.text('AIRWAY BILL', headerX + 2, yPos + 6);
-    
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(60, 60, 60);
-    pdf.text('DESTINATION:', headerX + 2, yPos + 11);
-    pdf.text('SERVICE:', headerX + 2, yPos + 14);
-    pdf.text('Ref:', headerX + 2, yPos + 17);
-    
-    pdf.setFont('helvetica', 'normal');
-    const destination = countryNameToCode(safeText(parcel.receiver_country, 'UK'));
-    const service = safeText(parcel.service_type, 'STANDARD').toUpperCase();
-    
-    pdf.text(destination, headerX + 25, yPos + 11);
-    pdf.text(service, headerX + 20, yPos + 14);
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(255, 100, 0);
-    pdf.text(refNumber, headerX + 12, yPos + 17);
-
-    // Compact barcode (20×12mm) replacing the QR code in right slot
-    await addBarcode(pdf, refNumber, headerX + 43, yPos + 2, 20, 14);
-
-    yPos += 28;
-
-    // Shipper & Receiver
-    const boxWidth = (pageWidth - 20 - 2) / 2;
-    
-    pdf.setFillColor(255, 250, 245);
-    pdf.setDrawColor(220, 220, 220);
-    pdf.rect(10, yPos, boxWidth, 43, 'FD');
-    pdf.rect(pageWidth / 2 + 1, yPos, boxWidth, 43, 'FD');
-
-    // Shipper
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(255, 100, 0);
-    pdf.text('SHIPPER', 12, yPos + 5);
-    
-    pdf.setFontSize(senderFontSize);
-    pdf.setTextColor(0, 0, 0);
-    let shipperY = yPos + 10;
-    
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Name:', 12, shipperY);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.sender_name, 'N/A'), 24, shipperY);
-    
-    shipperY += senderLineGap;
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Company:', 12, shipperY);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.sender_company, 'N/A'), 28, shipperY);
-    
-    shipperY += senderLineGap;
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Address:', 12, shipperY);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.sender_address, 'N/A'), 26, shipperY);
-    if (parcel.sender_address_2) {
-      shipperY += senderLineGap - 1;
-      pdf.text(safeText(parcel.sender_address_2), 12, shipperY);
-    }
-    if (parcel.sender_address_3) {
-      shipperY += senderLineGap - 1;
-      pdf.text(safeText(parcel.sender_address_3), 12, shipperY);
-    }
-    
-    shipperY += senderLineGap;
-    pdf.text(`${safeText(parcel.sender_city, '')}, ${safeText(parcel.sender_country, 'Pakistan')}`, 12, shipperY);
-    
-    shipperY += senderLineGap;
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Phone:', 12, shipperY);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.sender_phone, 'N/A'), 24, shipperY);
-    
-    shipperY += senderLineGap;
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('CNIC:', 12, shipperY);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.sender_cnic, 'N/A'), 23, shipperY);
-
-    // Receiver
-    const receiverX = pageWidth / 2 + 3;
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(255, 100, 0);
-    pdf.text('RECEIVER', receiverX, yPos + 5);
-    
-    pdf.setFontSize(receiverFontSize);
-    pdf.setTextColor(0, 0, 0);
-    let receiverY = yPos + 10;
-    
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Name:', receiverX, receiverY);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.receiver_name, 'N/A'), receiverX + 12, receiverY);
-    
-    receiverY += receiverLineGap;
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Company:', receiverX, receiverY);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.receiver_company, 'N/A'), receiverX + 20, receiverY);
-    
-    receiverY += receiverLineGap;
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Address:', receiverX, receiverY);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.receiver_address, 'N/A'), receiverX + 16, receiverY);
-    if (parcel.receiver_address_2) {
-      receiverY += receiverLineGap - 1;
-      pdf.text(safeText(parcel.receiver_address_2), receiverX, receiverY);
-    }
-    if (parcel.receiver_address_3) {
-      receiverY += receiverLineGap - 1;
-      pdf.text(safeText(parcel.receiver_address_3), receiverX, receiverY);
-    }
-    
-    receiverY += receiverLineGap;
-    pdf.text(`${safeText(parcel.receiver_state, '')}, ${safeText(parcel.receiver_country, 'UK')}`, receiverX, receiverY);
-    
-    receiverY += receiverLineGap;
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Postal Code:', receiverX, receiverY);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.receiver_postal_code, 'N/A'), receiverX + 20, receiverY);
-    
-    receiverY += receiverLineGap;
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Phone:', receiverX, receiverY);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.receiver_phone, 'N/A'), receiverX + 12, receiverY);
-    
-    receiverY += receiverLineGap;
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Email:', receiverX, receiverY);
-    pdf.setFont('helvetica', 'normal');
-    const receiverEmail = safeText(parcel.receiver_email, 'N/A');
-    const emailLines = pdf.splitTextToSize(receiverEmail, 65);
-    pdf.text(emailLines[0], receiverX + 12, receiverY);
-
-    yPos += 45;
-
-    // Shipment details
-    pdf.setFillColor(255, 140, 0);
-    pdf.rect(10, yPos, pageWidth - 20, 7, 'F');
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(255, 255, 255);
-    pdf.text('SHIPMENT DETAILS', 12, yPos + 5);
-    
-    yPos += 8;
-    pdf.setFillColor(255, 252, 248);
-    pdf.rect(10, yPos, pageWidth - 20, 21, 'FD');
-    
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(60, 60, 60);
-    
-    // Row 1
-    pdf.text('BOOKING DATE:', 12, yPos + 4);
-    pdf.text('DIMENSIONS:', 95, yPos + 4);
-    pdf.text('PIECES:', 145, yPos + 4);
-    pdf.text('WEIGHT:', pageWidth - 30, yPos + 4);
-    
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(0, 0, 0);
-    const bookingDate = parcel.created_at ? new Date(parcel.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB');
-    pdf.text(bookingDate, 12, yPos + 8);
-    pdf.text(`${length}x${width}x${height}`, 95, yPos + 8);
-    pdf.text(String(pieces), 145, yPos + 8);
-
-    pdf.setFontSize(11);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(`${actualWeight} KG`, pageWidth - 30, yPos + 8);
-
-    // Row 2
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(60, 60, 60);
-    pdf.text('DIM WEIGHT:', 12, yPos + 14);
-    pdf.text('CHARGEABLE:', 95, yPos + 14);
-    pdf.text('TYPE:', 145, yPos + 14);
-    
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(0, 0, 0);
-    pdf.text(dimLabel, 12, yPos + 18);
-    pdf.text(`${chargeableWeight} KG`, 95, yPos + 18);
-    pdf.text(documentType, 145, yPos + 18);
-
-    yPos += 21;
-
-    // Disclaimer
-    yPos += 3;
-    pdf.setFontSize(5.5);
-    pdf.setFont('helvetica', 'italic');
-    pdf.setTextColor(120, 120, 120);
-    const disclaimer = 'I/WE HEREBY DECLARE AND UNDERTAKE THAT THE ABOVE MENTIONED PARTICULARS ARE TRUE AND CORRECT. THERE IS NOTHING DANGEROUS, ANTIQUES, NARCOTICS, LIQUID OR ANYTHING LIKELY TO CAUSE DAMAGE. IF ANYTHING FOUND I/WE WILL BE FULLY RESPONSIBLE. NOTE: ANY TAXES AT THE DESTINATION WILL BE PAID BY THE CONSIGNEE. MAXIMUM LIABILITY LIMITED TO USD 100.';
-    const disclaimerLines = pdf.splitTextToSize(disclaimer, pageWidth - 20);
-    pdf.text(disclaimerLines, 10, yPos);
-
-    yPos += 7;
-
-    // Signature section
-    pdf.setFillColor(255, 250, 245);
-    pdf.rect(10, yPos, pageWidth - 20, 18, 'FD');
-    
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(0, 0, 0);
-    pdf.text('BOOKING OFFICE:', 12, yPos + 5);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text('Sky Office', 42, yPos + 5);
-    
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('SHIPPER SIGNATURE:', 12, yPos + 12);
-    pdf.rect(50, yPos + 8, 45, 8);
-    
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('SHIPPER CNIC:', pageWidth - 70, yPos + 12);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.sender_cnic, 'N/A'), pageWidth - 40, yPos + 12);
-
-    yPos += 18;
-
-    // Copy label
-    pdf.setFillColor(255, 140, 0);
-    pdf.rect(10, yPos, pageWidth - 20, 6, 'F');
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(255, 255, 255);
-    pdf.text(copyLabel, pageWidth / 2, yPos + 4, { align: 'center' });
-  };
-
-  // Generate Account Copy
-  await generateCopy(6, 'Account Copy');
-
-  // Generate Forward Copy
-  await generateCopy(154, 'FORWARD COPY');
-
-  handlePDFOutput(pdf, `AWB-Verification-${refNumber}.pdf`, mode);
-};
-
-// ===== 3. AIRWAY BILL with Payment (Sender Copy) =====
-export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMode = 'download'): Promise<void> => {
-  // Fetch PKR exchange rate from pricing config
-  let pkrRate = 285.0;
-  try {
-    const { data: pricingData } = await supabase
-      .from('pricing_config')
-      .select('currency_rates')
-      .single();
-    
-    if ((pricingData?.currency_rates as any)?.PKR) {
-      pkrRate = (pricingData.currency_rates as any).PKR;
-    }
-  } catch (error) {
-    console.warn('Failed to fetch PKR rate, using default:', error);
-  }
-
-  const pdf = new jsPDF('p', 'mm', 'a4');
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  let yPos = 6;
-
-  // Border
-  pdf.setDrawColor(220, 20, 60);
-  pdf.setLineWidth(0.8);
-  pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
-
-  const refNumber = safeText(parcel.reference_id || parcel.tracking_id, '000000000');
-
-  // Add logo at top left
-  await addLogo(pdf, 10, yPos, 50, 30);
-
-  // Contact info
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(80, 80, 80);
-  pdf.text('Email: skyxpress786@gmail.com', 60, yPos + 3);
-  pdf.text('Phone: 042 999164619', 60, yPos + 8);
-  pdf.text('WhatsApp: 0326 9422411', 60, yPos + 13);
-  pdf.text('www.skyxpress.site', 60, yPos + 18);
-
-  // Right header box — extended to 32mm to fit barcode
-  const headerX = pageWidth - 75;
-  pdf.setFillColor(255, 240, 245);
-  pdf.setDrawColor(220, 20, 60);
-  pdf.setLineWidth(0.5);
-  pdf.rect(headerX, yPos, 65, 32, 'FD');
-  
-  pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(220, 20, 60);
-  pdf.text('AIRWAY BILL', headerX + 2, yPos + 6);
-  
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(60, 60, 60);
-  pdf.text('DESTINATION:', headerX + 2, yPos + 11);
-  pdf.text('SERVICE:', headerX + 2, yPos + 14);
-  pdf.text('REF#:', headerX + 2, yPos + 17);
-
-  pdf.setFont('helvetica', 'normal');
-  const destination = countryNameToCode(safeText(parcel.receiver_country, 'UK'));
-  const service = safeText(parcel.service_type, 'STANDARD').toUpperCase();
-
-  pdf.text(destination, headerX + 25, yPos + 11);
-  pdf.text(service, headerX + 20, yPos + 14);
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(220, 20, 60);
-  pdf.text(refNumber, headerX + 14, yPos + 17);
-
-  // Wide barcode spanning most of the header box width (bottom section)
-  await addBarcode(pdf, refNumber, headerX + 2, yPos + 20, 61, 10);
-
-  yPos += 40; // 32mm box + 8mm gap
-
-  // Shipper & Receiver
-  const boxWidth = (pageWidth - 20 - 2) / 2;
-
-  // Determine extra address flags
-  const hasSenderExtra = !!(parcel.sender_address_2 || parcel.sender_address_3);
-  const hasReceiverExtra = !!(parcel.receiver_address_2 || parcel.receiver_address_3);
-  const senderFontSize = hasSenderExtra ? 7.5 : 8;
-  const senderLineGap = hasSenderExtra ? 4 : 5;
-  const receiverFontSize = hasReceiverExtra ? 7.5 : 8;
-  const receiverLineGap = hasReceiverExtra ? 4 : 5;
-  
-  pdf.setFillColor(252, 252, 252);
-  pdf.setDrawColor(200, 200, 200);
-  pdf.rect(10, yPos, boxWidth, 48, 'FD');
-  pdf.rect(pageWidth / 2 + 1, yPos, boxWidth, 48, 'FD');
-
-  // Shipper header
-  pdf.setFillColor(220, 20, 60);
-  pdf.rect(10, yPos, boxWidth, 6, 'F');
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('SHIPPER', 12, yPos + 4);
-  
-  pdf.setFontSize(senderFontSize);
-  pdf.setTextColor(0, 0, 0);
-  let shipperY = yPos + 11;
-  
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Name:', 12, shipperY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_name, 'N/A'), 24, shipperY);
-  
-  shipperY += senderLineGap;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Company:', 12, shipperY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_company, 'N/A'), 28, shipperY);
-  
-  shipperY += senderLineGap;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Address:', 12, shipperY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_address, 'N/A'), 26, shipperY);
-  if (parcel.sender_address_2) {
-    shipperY += senderLineGap - 1;
-    pdf.text(safeText(parcel.sender_address_2), 12, shipperY);
-  }
-  if (parcel.sender_address_3) {
-    shipperY += senderLineGap - 1;
-    pdf.text(safeText(parcel.sender_address_3), 12, shipperY);
-  }
-  
-  shipperY += senderLineGap;
-  pdf.text(`${safeText(parcel.sender_city, '')}, ${safeText(parcel.sender_country, 'Pakistan')}`, 12, shipperY);
-  
-  shipperY += senderLineGap;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Phone:', 12, shipperY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_phone, 'N/A'), 24, shipperY);
-  
-  shipperY += senderLineGap;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('CNIC:', 12, shipperY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_cnic, 'N/A'), 23, shipperY);
-
-  // Receiver header
-  const receiverX = pageWidth / 2 + 1;
-  pdf.setFillColor(220, 20, 60);
-  pdf.rect(receiverX, yPos, boxWidth, 6, 'F');
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('RECEIVER', receiverX + 2, yPos + 4);
-  
-  pdf.setFontSize(receiverFontSize);
-  pdf.setTextColor(0, 0, 0);
-  let receiverY = yPos + 11;
-  
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Name:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_name, 'N/A'), receiverX + 14, receiverY);
-  
-  receiverY += receiverLineGap;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Company:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_company, 'N/A'), receiverX + 20, receiverY);
-  
-  receiverY += receiverLineGap;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Address:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_address, 'N/A'), receiverX + 16, receiverY);
-  if (parcel.receiver_address_2) {
-    receiverY += receiverLineGap - 1;
-    pdf.text(safeText(parcel.receiver_address_2), receiverX + 2, receiverY);
-  }
-  if (parcel.receiver_address_3) {
-    receiverY += receiverLineGap - 1;
-    pdf.text(safeText(parcel.receiver_address_3), receiverX + 2, receiverY);
-  }
-  
-  receiverY += receiverLineGap;
-  pdf.text(`${safeText(parcel.receiver_state, '')}, ${safeText(parcel.receiver_country, 'UK')}`, receiverX + 2, receiverY);
-  
-  receiverY += receiverLineGap;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Postal Code:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_postal_code, 'N/A'), receiverX + 22, receiverY);
-  
-  receiverY += receiverLineGap;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Phone:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_phone, 'N/A'), receiverX + 14, receiverY);
-  
-  receiverY += receiverLineGap;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Email:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  const receiverEmail = safeText(parcel.receiver_email, 'N/A');
-  const emailLines = pdf.splitTextToSize(receiverEmail, 65);
-  pdf.text(emailLines[0], receiverX + 12, receiverY);
-
-  yPos += 52;
-
-  // Items table
-  pdf.setFillColor(220, 20, 60);
-  pdf.rect(10, yPos, pageWidth - 20, 6, 'F');
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('ITEMS / CONTENTS', 12, yPos + 4);
-  
-  yPos += 7;
-  
-  // Table header
-  pdf.setFillColor(255, 250, 250);
-  pdf.rect(10, yPos, pageWidth - 20, 6, 'F');
-  pdf.setDrawColor(220, 220, 220);
-  pdf.rect(10, yPos, pageWidth - 20, 6);
-  
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(60, 60, 60);
-  pdf.text('DESCRIPTION', 12, yPos + 4);
-  pdf.text('QTY', 115, yPos + 4);
-  pdf.text('UNIT PRICE', 135, yPos + 4);
-  pdf.text('TOTAL', pageWidth - 22, yPos + 4);
-  
-  yPos += 7;
-  
-  const senderItems = parcel.items || [{ description: 'General Goods', quantity: 1, unit_price: parcel.total_price || 100 }];
-  let senderGrandTotal = 0;
-
-  // Scale row height and font size based on item count so everything fits
-  const senderItemCount = senderItems.length;
-  const senderItemRowH = senderItemCount >= 6 ? 7 : 10;
-  const senderItemFont = senderItemCount >= 6 ? 6.5 : 8;
-
-  senderItems.forEach((item: any, index: number) => {
-    const itemTotal = (item.quantity || 1) * (item.unit_price || 0);
-    senderGrandTotal += itemTotal;
-    
-    pdf.setFillColor(index % 2 === 0 ? 255 : 252, index % 2 === 0 ? 252 : 250, index % 2 === 0 ? 252 : 248);
-    pdf.rect(10, yPos - 2, pageWidth - 20, senderItemRowH, 'F');
-    pdf.setDrawColor(230, 230, 230);
-    pdf.rect(10, yPos - 2, pageWidth - 20, senderItemRowH);
-    
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(senderItemFont);
-    pdf.setTextColor(0, 0, 0);
-    const desc = safeText(item.description, 'Item');
-    const descLines = pdf.splitTextToSize(desc, 90);
-    pdf.text(descLines[0], 13, yPos + (senderItemRowH / 2));
-    pdf.setFontSize(senderItemFont);
-    pdf.text(String(item.quantity || 1), 118, yPos + (senderItemRowH / 2));
-    pdf.text(`${(item.unit_price || 0).toFixed(2)}`, 138, yPos + (senderItemRowH / 2));
-    pdf.text(`${itemTotal.toFixed(2)}`, pageWidth - 19, yPos + (senderItemRowH / 2));
-    
-    yPos += senderItemRowH;
-  });
-  
-  // Total row - USD only
-  pdf.setFillColor(220, 20, 60);
-  pdf.rect(10, yPos - 2, pageWidth - 20, 10, 'F');
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(11);
-  pdf.setTextColor(255, 255, 255);
-
-  const senderCurrency = parcel.currency || 'USD';
-  pdf.text(`TOTAL ${senderCurrency}: ${senderGrandTotal.toFixed(2)}`, pageWidth / 2, yPos + 4, { align: 'center' });
-
-  yPos += 12;
-
-  // Shipment details
-  const lengthB3 = parcel.length || 12;
-  const widthB3 = parcel.width || 12;
-  const heightB3 = parcel.height || 16;
-  const calcDimWeightB3 = parseFloat(((lengthB3 * widthB3 * heightB3) / 5000).toFixed(2));
-  const dimWeightB3 = parcel.dim_weight_override != null ? parcel.dim_weight_override : calcDimWeightB3;
-  const dimWeightStrB3 = Number(dimWeightB3).toFixed(2);
-  const piecesB3 = parcel.pieces || 1;
-  const actualWeightB3 = parcel.weight || 5;
-  const chargeableWeightB3 = Math.max(parseFloat(dimWeightStrB3), actualWeightB3);
-  const documentTypeB3 = (parcel.document_type || 'document').toUpperCase();
-  const dimLabelB3 = parcel.dim_weight_override != null ? `${dimWeightStrB3} KG*` : `${dimWeightStrB3} KG`;
-
-  pdf.setFillColor(50, 50, 50);
-  pdf.rect(10, yPos, pageWidth - 20, 6, 'F');
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('SHIPMENT DETAILS', 12, yPos + 4);
-
-  yPos += 7;
-  pdf.setFillColor(250, 250, 250);
-  pdf.rect(10, yPos, pageWidth - 20, 24, 'FD');
-
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(60, 60, 60);
-
-  // Row 1
-  pdf.text('BOOKING DATE:', 12, yPos + 4);
-  pdf.text('DIMENSIONS:', 95, yPos + 4);
-  pdf.text('PIECES:', 145, yPos + 4);
-  pdf.text('WEIGHT:', pageWidth - 30, yPos + 4);
-
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(0, 0, 0);
-  const bookingDate = parcel.created_at ? new Date(parcel.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB');
-  pdf.text(bookingDate, 12, yPos + 8);
-  pdf.text(`${lengthB3}x${widthB3}x${heightB3}`, 95, yPos + 8);
-  pdf.text(String(piecesB3), 145, yPos + 8);
-
-  pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(`${actualWeightB3} KG`, pageWidth - 30, yPos + 8);
-
-  // Row 2
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(60, 60, 60);
-  pdf.text('DIM WEIGHT:', 12, yPos + 14);
-  pdf.text('CHARGEABLE:', 95, yPos + 14);
-  pdf.text('TYPE:', 145, yPos + 14);
-
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(0, 0, 0);
-  pdf.text(dimLabelB3, 12, yPos + 18);
-  pdf.text(`${chargeableWeightB3} KG`, 95, yPos + 18);
-  pdf.text(documentTypeB3, 145, yPos + 18);
-
-  yPos += 24;
-
-  // Payment box — use amount_override if set, else freight_amount_pkr
-  const freightPkr = parcel.amount_override != null ? parcel.amount_override : (parcel.freight_amount_pkr || 0);
-  const freightLabel = parcel.amount_override != null ? `PKR ${Number(freightPkr).toLocaleString()} (override)` : `PKR ${Number(freightPkr).toLocaleString()}`;
-
-  pdf.setFillColor(255, 240, 240);
-  pdf.setDrawColor(220, 20, 60);
-  pdf.rect(10, yPos, pageWidth - 20, 12, 'FD');
-  
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 0, 0);
-  pdf.text('SHIPMENT FREIGHT:', 12, yPos + 5);
-  
-  pdf.setFontSize(14);
-  pdf.setTextColor(220, 20, 60);
-  pdf.text(freightLabel, 12, yPos + 9);
-  
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'italic');
-  pdf.setTextColor(100, 100, 100);
-  pdf.text('(Payment to be collected from sender)', pageWidth - 12, yPos + 8, { align: 'right' });
-
-  yPos += 16;
-
-  // Disclaimer
-  pdf.setFontSize(6);
-  pdf.setFont('helvetica', 'italic');
-  pdf.setTextColor(120, 120, 120);
-  const disclaimer1 = 'I/WE HEREBY DECLARE AND UNDERTAKE THAT THE ABOVE MENTIONED PARTICULARS ARE TRUE AND CORRECT.';
-  const disclaimer2 = 'THERE IS NOTHING DANGEROUS OR PROHIBITED. MAXIMUM LIABILITY: USD 100 UNLESS ADDITIONAL INSURANCE PURCHASED.';
-  const disclaimer3 = 'CONSIGNEE PAYS ALL DESTINATION DUTIES/TAXES.';
-  
-  const disclaimerLines1 = pdf.splitTextToSize(disclaimer1, pageWidth - 20);
-  const disclaimerLines2 = pdf.splitTextToSize(disclaimer2, pageWidth - 20);
-  const disclaimerLines3 = pdf.splitTextToSize(disclaimer3, pageWidth - 20);
-  
-  pdf.text(disclaimerLines1, 10, yPos);
-  yPos += disclaimerLines1.length * 2.5;
-  pdf.text(disclaimerLines2, 10, yPos);
-  yPos += disclaimerLines2.length * 2.5;
-  pdf.text(disclaimerLines3, 10, yPos);
-
-  yPos += 8;
-
-  // Contact bar
-  pdf.setFillColor(240, 240, 240);
-  pdf.rect(10, yPos, pageWidth - 20, 7, 'F');
-  pdf.setDrawColor(200, 200, 200);
-  pdf.rect(10, yPos, pageWidth - 20, 7);
-  
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(60, 60, 60);
-  pdf.text('Phone: 042 999164619  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411  |  Email: skyxpress786@gmail.com', pageWidth / 2, yPos + 4, { align: 'center' });
-
-  yPos += 10;
-
-  // Sender copy header
-  pdf.setFillColor(220, 20, 60);
-  pdf.rect(10, yPos, pageWidth - 20, 7, 'F');
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('SENDER COPY', 12, yPos + 5);
-  pdf.setFontSize(8);
-  pdf.text('BOOKING OFFICE: Sky Office', pageWidth - 12, yPos + 5, { align: 'right' });
-
-  yPos += 10;
-
-  const itemCount = (parcel.items || [{ description: 'General Goods', quantity: 1, unit_price: parcel.total_price || 100 }]).length;
-  
-  if (itemCount >= 8) {
-    pdf.addPage();
-    yPos = 15;
-    
-    pdf.setDrawColor(220, 20, 60);
-    pdf.setLineWidth(0.8);
-    pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
-
-    pdf.setFillColor(250, 250, 250);
-    pdf.rect(10, yPos, pageWidth - 20, pageHeight - yPos - 15, 'F');
-    pdf.setDrawColor(220, 20, 60);
-    pdf.rect(10, yPos, pageWidth - 20, pageHeight - yPos - 15);
-    
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(220, 20, 60);
-    pdf.text('STANDARD TRADING CONDITIONS', pageWidth / 2, yPos + 5, { align: 'center' });
-    
-    yPos += 10;
-    
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(60, 60, 60);
-    
-    const conditions = [
-      'By tendering goods for transport by SKY XPRESS WORLDWIDE EXPRESS, the Consignor agrees to the following conditions:',
-      '',
-      '1. DEFINITIONS: "SKY XPRESS" means Sky Xpress Worldwide Express. "Consignor" or "Shipper" means the sender.',
-      '"Consignee" means the person to whom the goods are consigned.',
-      '',
-      '2. CONSIGNMENT NOTE: Each consignment shall be correctly addressed and accompanied by SKY XPRESS form of',
-      'Consignment Note which the Consignor shall properly complete. The Consignor is responsible for correctness of information.',
-      '',
-      '3. SUB-CONTRACTING: SKY XPRESS may sub-contract all or any part and may engage agents or sub-contractors.',
-      '',
-      '4. COMMON CARRIER: The company is not a common carrier and will only carry goods on these conditions.',
-      '',
-      '5. LIABILITY: SKY XPRESS shall not be liable for any loss, damage, or delays except where directly caused by proven',
-      'negligence. Maximum liability is limited to USD 100 per shipment unless additional insurance is purchased.',
-      '',
-      '6. PROHIBITED ITEMS: Consignor warrants goods do not contain dangerous, hazardous, or prohibited items including',
-      'narcotics, weapons, explosives, antiques, liquids, or items prohibited by IATA or local laws. Consignor fully responsible.',
-      '',
-      '7. CUSTOMS & DUTIES: Any customs duties, taxes, or charges levied at destination shall be paid by Consignee.',
-      'If Consignee refuses payment, Consignor shall be liable.',
-      '',
-      '8. GOVERNING LAW: These conditions governed by laws of Pakistan. Disputes subject to exclusive jurisdiction of Pakistani courts.'
-    ];
-    
-    let conditionsY = yPos;
-    conditions.forEach((line) => {
-      const lines = pdf.splitTextToSize(line, pageWidth - 24);
-      pdf.text(lines, 12, conditionsY);
-      conditionsY += lines.length * 3;
-    });
-
-    yPos = pageHeight - 8;
-    pdf.setDrawColor(220, 20, 60);
-    pdf.line(10, yPos, pageWidth - 10, yPos);
-    yPos += 3;
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(220, 20, 60);
-    pdf.text('© 2025 Sky Xpress International - All Rights Reserved', pageWidth / 2, yPos, { align: 'center' });
-  } else {
-    pdf.setFillColor(250, 250, 250);
-    const availableHeight = pageHeight - yPos - 12;
-    pdf.rect(10, yPos, pageWidth - 20, availableHeight, 'F');
-    pdf.setDrawColor(220, 20, 60);
-    pdf.rect(10, yPos, pageWidth - 20, availableHeight);
-    
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(220, 20, 60);
-    pdf.text('STANDARD TRADING CONDITIONS', pageWidth / 2, yPos + 4, { align: 'center' });
-    
-    yPos += 8;
-    
-    pdf.setFontSize(5.5);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(60, 60, 60);
-    
-    const conditions = [
-      'By tendering goods for transport by SKY XPRESS WORLDWIDE EXPRESS, the Consignor agrees to the following conditions:',
-      '',
-      '1. DEFINITIONS: "SKY XPRESS" means Sky Xpress Worldwide Express. "Consignor" or "Shipper" means the sender. "Consignee" means the person to whom the goods are consigned.',
-      '',
-      '2. CONSIGNMENT NOTE: Each consignment shall be correctly addressed and accompanied by SKY XPRESS form of Consignment Note which the Consignor shall properly complete. The Consignor is responsible for correctness of information.',
-      '',
-      '3. SUB-CONTRACTING: SKY XPRESS may sub-contract all or any part and may engage agents or sub-contractors.',
-      '',
-      '4. COMMON CARRIER: The company is not a common carrier and will only carry goods on these conditions.',
-      '',
-      '5. LIABILITY: SKY XPRESS shall not be liable for any loss, damage, or delays except where directly caused by proven negligence. Maximum liability is limited to USD 100 per shipment unless additional insurance is purchased.',
-      '',
-      '6. PROHIBITED ITEMS: Consignor warrants goods do not contain dangerous, hazardous, or prohibited items including narcotics, weapons, explosives, antiques, liquids, or items prohibited by IATA or local laws. Consignor fully responsible.',
-      '',
-      '7. CUSTOMS & DUTIES: Any customs duties, taxes, or charges levied at destination shall be paid by Consignee. If Consignee refuses payment, Consignor shall be liable.',
-      '',
-      '8. GOVERNING LAW: These conditions governed by laws of Pakistan. Disputes subject to exclusive jurisdiction of Pakistani courts.'
-    ];
-    
-    let conditionsY = yPos;
-    conditions.forEach((line) => {
-      const lines = pdf.splitTextToSize(line, pageWidth - 24);
-      pdf.text(lines, 12, conditionsY);
-      conditionsY += lines.length * 2.2;
-    });
-
-    yPos = pageHeight - 8;
-    pdf.setDrawColor(220, 20, 60);
-    pdf.line(10, yPos, pageWidth - 10, yPos);
-    yPos += 3;
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(220, 20, 60);
-    pdf.text('© 2025 Sky Xpress International - All Rights Reserved', pageWidth / 2, yPos, { align: 'center' });
-  }
-
-  handlePDFOutput(pdf, `AWB-Sender-Copy-${refNumber}.pdf`, mode);
-};
-
-// Generate all 3 bills at once
-export const generateAllBills = async (parcel: ParcelData): Promise<void> => {
-  await generatePaymentInvoice(parcel);
-  setTimeout(async () => await generateAirwayBillVerification(parcel), 500);
-  setTimeout(async () => await generateAirwayBillWithPayment(parcel), 1000);
-};
