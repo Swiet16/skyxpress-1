@@ -825,7 +825,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     yPos += 28;
 
     // Shipper & Receiver
-    const boxWidth = (pageWidth - 20 - 2) / 2;
+    const boxWidth = (pageWidth - 20) / 2;
     
     pdf.setFillColor(255, 250, 245);
     pdf.setDrawColor(220, 220, 220);
@@ -874,7 +874,14 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setFont('helvetica', 'bold');
     pdf.text('Phone:', 12, shipperY);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.sender_phone, 'N/A'), 24, shipperY);
+    const senderPhoneLines = pdf.splitTextToSize(
+  safeText(parcel.sender_phone, 'N/A'),
+  60
+);
+
+senderPhoneLines.forEach((line: string, index: number) => {
+  pdf.text(line, margin + 15, shipperY + index * 3.2);
+});
     
     shipperY += senderLineGap;
     pdf.setFont('helvetica', 'bold');
@@ -928,7 +935,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.text('Postal Code:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
     {
-      const lines = pdf.splitTextToSize(safeText(parcel.receiver_postal_code, 'N/A'), boxWidth - 22);
+      const lines = pdf.splitTextToSize(safeText(parcel.receiver_postal_code, 'N/A'), boxWidth - 10);
       lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 20, receiverY + i * 3.2));
       receiverY += (lines.length - 1) * 3.2;
     }
@@ -938,7 +945,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.text('Phone:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
     {
-      const lines = pdf.splitTextToSize(safeText(parcel.receiver_phone, 'N/A'), boxWidth - 14);
+      const lines = pdf.splitTextToSize(safeText(parcel.receiver_phone, 'N/A'), boxWidth - 8);
       lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 12, receiverY + i * 3.2));
       receiverY += (lines.length - 1) * 3.2;
     }
@@ -949,7 +956,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setFont('helvetica', 'normal');
     {
       const receiverEmail = safeText(parcel.receiver_email, 'N/A');
-      const emailLines = pdf.splitTextToSize(receiverEmail, boxWidth - 14);
+      const emailLines = pdf.splitTextToSize(receiverEmail, boxWidth - 8);
       emailLines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 12, receiverY + i * 3.2));
       receiverY += (emailLines.length - 1) * 3.2;
     }
