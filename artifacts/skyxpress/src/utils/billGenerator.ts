@@ -214,17 +214,9 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
 
   // Add logo at top
-  await addLogo(pdf, margin, yPos, 50, 30);
-
+  
   // Contact info next to logo
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(80, 80, 80);
-  pdf.text('Email: skyxpress786@gmail.com', 60, yPos + 3);
-  pdf.text('Phone: 042 999164619', 60, yPos + 8);
-  pdf.text('WhatsApp: 0326 9422411', 60, yPos + 13);
-  pdf.text('www.skyxpress.site', 60, yPos + 18);
-
+  
   // Right side: Header box — extended to 32mm to fit barcode
   const rightBoxX = pageWidth - margin - 75;
   pdf.setFillColor(30, 144, 255);
@@ -287,113 +279,179 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.sender_company, 'N/A'), margin + 20, shipperY);
   
-  // Address block with optional extra lines
-  shipperY += senderLineGap;
-  pdf.setFontSize(senderFontSize);
+// ---------- Helper: wrap text and draw a labeled field, returns new Y ----------
+function drawField(pdf, label, value, x, y, labelWidth, maxWidth, lineGap, fontSize = 9) {
+  pdf.setFontSize(fontSize);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('Address:', margin + 2, shipperY);
+  pdf.text(label, x + 2, y);
   pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_address, 'N/A'), margin + 18, shipperY);
-  if (parcel.sender_address_2) {
-    shipperY += senderLineGap - 1;
-    pdf.text(safeText(parcel.sender_address_2), margin + 2, shipperY);
-  }
-  if (parcel.sender_address_3) {
-    shipperY += senderLineGap - 1;
-    pdf.text(safeText(parcel.sender_address_3), margin + 2, shipperY);
-  }
-  pdf.setFontSize(9);
 
-  shipperY += senderLineGap;
-  pdf.text(`${safeText(parcel.sender_city, '')}, ${safeText(parcel.sender_country, 'Pakistan')}`, margin + 2, shipperY);
-  
-  shipperY += 5;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Phone:', margin + 2, shipperY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_phone, 'N/A'), margin + 15, shipperY);
-  
-  shipperY += 5;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('CNIC:', margin + 2, shipperY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_cnic, 'N/A'), margin + 13, shipperY);
+  const text = safeText(value, 'N/A');
+  const lines = pdf.splitTextToSize(text, maxWidth - labelWidth - 2);
 
-  // Determine if extra address lines are present for receiver
-  const hasReceiverExtra = !!(parcel.receiver_address_2 || parcel.receiver_address_3);
-  const receiverFontSize = hasReceiverExtra ? 7.5 : 9;
-  const receiverLineGap = hasReceiverExtra ? 4 : 5;
+  lines.forEach((line, i) => {
+    pdf.text(line, x + labelWidth, y + (i * lineGap));
+  });
 
-  // Receiver box
-  const receiverX = pageWidth / 2 + 1.5;
-  pdf.setFillColor(30, 144, 255);
-  pdf.rect(receiverX, yPos, boxWidth, 7, 'F');
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('RECEIVER', receiverX + 2, yPos + 5);
-  
-  pdf.setFillColor(250, 250, 250);
-  pdf.rect(receiverX, yPos + 7, boxWidth, 40, 'F');
-  pdf.setDrawColor(200, 200, 200);
-  pdf.rect(receiverX, yPos, boxWidth, 47);
-  
-  pdf.setFontSize(9);
-  pdf.setTextColor(0, 0, 0);
-  let receiverY = yPos + 12;
-  
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Name:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_name, 'N/A'), receiverX + 15, receiverY);
-  
-  receiverY += 5;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Company:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_company, 'N/A'), receiverX + 20, receiverY);
-  
-  // Address block with optional extra lines
-  receiverY += receiverLineGap;
-  pdf.setFontSize(receiverFontSize);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Address:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_address, 'N/A'), receiverX + 18, receiverY);
-  if (parcel.receiver_address_2) {
-    receiverY += receiverLineGap - 1;
-    pdf.text(safeText(parcel.receiver_address_2), receiverX + 2, receiverY);
-  }
-  if (parcel.receiver_address_3) {
-    receiverY += receiverLineGap - 1;
-    pdf.text(safeText(parcel.receiver_address_3), receiverX + 2, receiverY);
-  }
-  pdf.setFontSize(9);
+  return y + (Math.max(lines.length, 1) * lineGap);
+}
 
-  receiverY += receiverLineGap;
-  pdf.text(`${safeText(parcel.receiver_state, '')}, ${safeText(parcel.receiver_country, 'UK')}`, receiverX + 2, receiverY);
-  
-  receiverY += 5;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Postal Code:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_postal_code, 'N/A'), receiverX + 23, receiverY);
-  
-  receiverY += 5;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Phone:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_phone, 'N/A'), receiverX + 15, receiverY);
-  
-  receiverY += 5;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Email:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  const receiverEmail = safeText(parcel.receiver_email, 'N/A');
-  const emailLines = pdf.splitTextToSize(receiverEmail, 70);
-  pdf.text(emailLines[0], receiverX + 14, receiverY);
+// ---------- Helper: measure total height a block will need ----------
+function measureBlockHeight(pdf, parcel, prefix, maxWidth, opts) {
+  const { hasExtra, fontSize, lineGap, extraFields } = opts;
+  let h = 12; // top padding before "Name"
 
-  yPos += 51;
+  // Name
+  h += 5;
+  // Company
+  h += 5;
+
+  // Address (wraps)
+  h += lineGap;
+  const addrLines = pdf.splitTextToSize(
+    safeText(parcel[`${prefix}_address`], 'N/A'),
+    maxWidth - 18 - 2
+  );
+  h += Math.max(addrLines.length, 1) * lineGap;
+
+  if (parcel[`${prefix}_address_2`]) h += lineGap - 1;
+  if (parcel[`${prefix}_address_3`]) h += lineGap - 1;
+
+  // City/State, Country line
+  h += lineGap;
+
+  // extra fixed fields (Phone, CNIC / Postal Code, Phone, Email)
+  extraFields.forEach(() => { h += 5; });
+
+  return h + 6; // bottom padding
+}
+
+// ---------- Config for both blocks ----------
+const hasSenderExtra = !!(parcel.sender_address_2 || parcel.sender_address_3);
+const senderFontSize = hasSenderExtra ? 7.5 : 9;
+const senderLineGap = hasSenderExtra ? 4 : 5;
+
+const hasReceiverExtra = !!(parcel.receiver_address_2 || parcel.receiver_address_3);
+const receiverFontSize = hasReceiverExtra ? 7.5 : 9;
+const receiverLineGap = hasReceiverExtra ? 4 : 5;
+
+const contentWidth = boxWidth - 4;
+
+// ---------- Pre-measure both blocks, use the taller one for BOTH boxes ----------
+const senderHeight = measureBlockHeight(pdf, parcel, 'sender', contentWidth, {
+  fontSize: senderFontSize, lineGap: senderLineGap,
+  extraFields: ['phone', 'cnic'] // matches your sender fields below Address
+});
+
+const receiverHeight = measureBlockHeight(pdf, parcel, 'receiver', contentWidth, {
+  fontSize: receiverFontSize, lineGap: receiverLineGap,
+  extraFields: ['postal', 'phone', 'email']
+});
+
+const sharedBoxHeight = Math.max(47, senderHeight, receiverHeight);
+
+// ================= SENDER BOX =================
+pdf.setFillColor(30, 144, 255);
+pdf.rect(margin, yPos, boxWidth, 7, 'F');
+pdf.setFontSize(10);
+pdf.setFont('helvetica', 'bold');
+pdf.setTextColor(255, 255, 255);
+pdf.text('SENDER', margin + 2, yPos + 5);
+
+pdf.setFillColor(250, 250, 250);
+pdf.rect(margin, yPos + 7, boxWidth, sharedBoxHeight - 7, 'F');
+pdf.setDrawColor(200, 200, 200);
+pdf.rect(margin, yPos, boxWidth, sharedBoxHeight);
+
+pdf.setTextColor(0, 0, 0);
+let shipperY = yPos + 12;
+
+shipperY = drawField(pdf, 'Name:', parcel.sender_name, margin, shipperY, 15, contentWidth, 5);
+shipperY += 0; // next field starts right after (adjust if you had a gap here)
+
+shipperY = drawField(pdf, 'Company:', parcel.sender_company, margin, shipperY, 20, contentWidth, 5);
+
+// Address block
+shipperY += senderLineGap;
+pdf.setFontSize(senderFontSize);
+shipperY = drawField(pdf, 'Address:', parcel.sender_address, margin, shipperY, 18, contentWidth, senderLineGap, senderFontSize);
+
+if (parcel.sender_address_2) {
+  shipperY += senderLineGap - 1;
+  pdf.text(safeText(parcel.sender_address_2), margin + 2, shipperY);
+}
+if (parcel.sender_address_3) {
+  shipperY += senderLineGap - 1;
+  pdf.text(safeText(parcel.sender_address_3), margin + 2, shipperY);
+}
+pdf.setFontSize(9);
+
+shipperY += senderLineGap;
+pdf.text(`${safeText(parcel.sender_city, '')}, ${safeText(parcel.sender_country, 'Pakistan')}`, margin + 2, shipperY);
+
+shipperY += 5;
+shipperY = drawField(pdf, 'Phone:', parcel.sender_phone, margin, shipperY, 15, contentWidth, 5);
+
+shipperY += 5;
+shipperY = drawField(pdf, 'CNIC:', parcel.sender_cnic, margin, shipperY, 13, contentWidth, 5);
+
+// ================= RECEIVER BOX =================
+const receiverX = pageWidth / 2 + 1.5;
+
+pdf.setFillColor(30, 144, 255);
+pdf.rect(receiverX, yPos, boxWidth, 7, 'F');
+pdf.setFontSize(10);
+pdf.setFont('helvetica', 'bold');
+pdf.setTextColor(255, 255, 255);
+pdf.text('RECEIVER', receiverX + 2, yPos + 5);
+
+pdf.setFillColor(250, 250, 250);
+pdf.rect(receiverX, yPos + 7, boxWidth, sharedBoxHeight - 7, 'F');
+pdf.setDrawColor(200, 200, 200);
+pdf.rect(receiverX, yPos, boxWidth, sharedBoxHeight);
+
+pdf.setFontSize(9);
+pdf.setTextColor(0, 0, 0);
+let receiverY = yPos + 12;
+
+receiverY = drawField(pdf, 'Name:', parcel.receiver_name, receiverX, receiverY, 15, contentWidth, 5);
+receiverY = drawField(pdf, 'Company:', parcel.receiver_company, receiverX, receiverY, 20, contentWidth, 5);
+
+// Address block
+receiverY += receiverLineGap;
+pdf.setFontSize(receiverFontSize);
+receiverY = drawField(pdf, 'Address:', parcel.receiver_address, receiverX, receiverY, 18, contentWidth, receiverLineGap, receiverFontSize);
+
+if (parcel.receiver_address_2) {
+  receiverY += receiverLineGap - 1;
+  pdf.text(safeText(parcel.receiver_address_2), receiverX + 2, receiverY);
+}
+if (parcel.receiver_address_3) {
+  receiverY += receiverLineGap - 1;
+  pdf.text(safeText(parcel.receiver_address_3), receiverX + 2, receiverY);
+}
+pdf.setFontSize(9);
+
+receiverY += receiverLineGap;
+pdf.text(`${safeText(parcel.receiver_state, '')}, ${safeText(parcel.receiver_country, 'UK')}`, receiverX + 2, receiverY);
+
+receiverY += 5;
+receiverY = drawField(pdf, 'Postal Code:', parcel.receiver_postal_code, receiverX, receiverY, 23, contentWidth, 5);
+
+receiverY += 5;
+receiverY = drawField(pdf, 'Phone:', parcel.receiver_phone, receiverX, receiverY, 15, contentWidth, 5);
+
+receiverY += 5;
+pdf.setFont('helvetica', 'bold');
+pdf.text('Email:', receiverX + 2, receiverY);
+pdf.setFont('helvetica', 'normal');
+const receiverEmail = safeText(parcel.receiver_email, 'N/A');
+const emailLines = pdf.splitTextToSize(receiverEmail, contentWidth - 14);
+emailLines.forEach((line, i) => pdf.text(line, receiverX + 14, receiverY + (i * 5)));
+receiverY += emailLines.length * 5;
+
+// ================= Advance yPos =================
+yPos += sharedBoxHeight + 4;
 
   // Items table
   pdf.setFillColor(30, 144, 255);
