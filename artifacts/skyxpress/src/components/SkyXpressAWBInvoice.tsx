@@ -4,8 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Printer, X } from "lucide-react";
 import { format } from "date-fns";
-// Logo served from public folder
-const skyxpressLogo = "/skyxpress_logo.jpeg";
 
 interface ParcelItem {
   description: string;
@@ -54,12 +52,6 @@ interface AWBInvoiceProps {
 
 const URDU_DISCLAIMER =
   "ٹوٹنے والی اشیاہ کی کوئی گارنٹی نہیں ہونگی پارسل گم ہونے کی صورت زیادہ سے زیادہ 100 ڈالر کلیم کمپنی ادا کرے گی نیز انشورنس کے بغیر کاغزات کے گم ہونے کی صورت صرف بکنگ کی رقم واپس ہوگی";
-
-const ENGLISH_DISCLAIMER =
-  "I/WE HEREBY UNDERTAKE THAT THE ABOVE MENTIONED PARTICULARS ARE TRUE AND CORRECT AS PER MY STATEMENT AND THERE IS NOTHING DANGEROUS, ANTIQUES, NARCOTICS, LIQUID OR ANY THING LIKELY TO CAUSE DAMAGE. IF ANYTHING FOUND I/WE WILL BE FULLY RESPONSIBLE. NOTE: ANY TAXES AT THE DESTINATION WILL BE PAID BY THE CONSIGNEE.";
-
-const ATTENTION_NOTICE =
-  "THE SENDERS ATTENTION IS DRAWN TO THE IMPORTANT NOTICE OVERLEAF SUBJECT TO THE CONDITIONS ENDORSED AND INCORPORATED OVERLEAF PLEASE ACCEPT THE DOCUMENTS OR GOODS DESCRIBED BELOW FOR DELIVERY.";
 
 const NUM_CONTENT_ROWS = 15;
 
@@ -112,21 +104,11 @@ function InvoiceSection({ parcel, sectionTitle, showGiftLine = false }: InvoiceS
         tableLayout: "fixed",
       }}
     >
-      {/* ── TITLE ROW ── */}
+      {/* ── TITLE ROW (no logo — full width) ── */}
       <tbody>
         <tr>
-          <td colSpan={2} style={{ ...cell, width: "30%", padding: "4px", textAlign: "center", verticalAlign: "middle" }}>
-            <img
-              src={skyxpressLogo}
-              alt="SkyXpress"
-              style={{ maxHeight: "50px", maxWidth: "100%", objectFit: "contain" }}
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
-          </td>
-          <td colSpan={8} style={{ ...cell, textAlign: "center", verticalAlign: "middle" }}>
-            <div style={{ fontWeight: "bold", fontSize: "16px", letterSpacing: "2px" }}>
+          <td colSpan={10} style={{ ...cell, textAlign: "center", verticalAlign: "middle", padding: "6px" }}>
+            <div style={{ fontWeight: "bold", fontSize: "18px", letterSpacing: "2px" }}>
               {sectionTitle}
             </div>
             {showGiftLine && (
@@ -331,7 +313,7 @@ export function SkyXpressAWBInvoice({ open, onClose, parcel }: AWBInvoiceProps) 
     const doc = printWindow.document;
 
     // <title> via textContent (safe — no HTML parsing)
-    doc.title = `AWB Invoice - ${parcel.tracking_id}`;
+    doc.title = `Performa Invoice - ${parcel.tracking_id}`;
 
     // Stylesheet via createElement (no user data in CSS text)
     const style = doc.createElement("style");
@@ -365,7 +347,7 @@ export function SkyXpressAWBInvoice({ open, onClose, parcel }: AWBInvoiceProps) 
       >
         <DialogHeader className="flex flex-row items-center justify-between px-4 py-2 border-b sticky top-0 bg-white z-10">
           <DialogTitle className="text-sm font-semibold">
-            AWB / Performa Invoice — {parcel.tracking_id}
+            Performa Invoice — {parcel.tracking_id}
           </DialogTitle>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={handlePrint} className="flex items-center gap-1">
@@ -378,23 +360,12 @@ export function SkyXpressAWBInvoice({ open, onClose, parcel }: AWBInvoiceProps) 
           </div>
         </DialogHeader>
 
-        {/* ─── Printable area ─── */}
+        {/* ─── Printable area — single Performa Invoice only ─── */}
         <div
           ref={printRef}
           style={{ padding: "8px", backgroundColor: "#fff", fontFamily: "Arial, sans-serif" }}
         >
-          {/* PERFORMA INVOICE */}
-          <div style={{ marginBottom: "16px" }}>
-            <InvoiceSection parcel={parcel} sectionTitle="PERFORMA INVOICE" showGiftLine />
-          </div>
-
-          {/* divider */}
-          <div style={{ borderTop: "3px dashed #333", margin: "8px 0", pageBreakBefore: "auto" }} />
-
-          {/* AIRWAY BILL */}
-          <div style={{ marginTop: "8px" }}>
-            <InvoiceSection parcel={parcel} sectionTitle="AIRWAY BILL" />
-          </div>
+          <InvoiceSection parcel={parcel} sectionTitle="PERFORMA INVOICE" showGiftLine />
         </div>
       </DialogContent>
     </Dialog>
