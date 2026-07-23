@@ -525,6 +525,19 @@ export const TrackingSection = () => {
                                 {event.note}
                               </p>
                             )}
+
+                            {(event.admin_note || event.staff_note || event.internal_note) && (
+                              <div
+                                className="sx-display relative mt-2 inline-block max-w-sm rotate-[-1.5deg] rounded-lg border border-dashed border-[#FFB020]/50 bg-[#FFF7E8] px-3 py-2 text-xs text-[#8A5B00] shadow-sm transition-transform duration-200 hover:rotate-0"
+                              >
+                                <span className="absolute -top-2 left-3 rounded-full bg-[#FFB020] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow">
+                                  ✎ Admin note
+                                </span>
+                                <p className="mt-1.5 leading-snug">
+                                  {event.admin_note || event.staff_note || event.internal_note}
+                                </p>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
