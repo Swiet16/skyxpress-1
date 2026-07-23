@@ -874,13 +874,13 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setFont('helvetica', 'bold');
     pdf.text('Phone:', 12, shipperY);
     pdf.setFont('helvetica', 'normal');
-    const senderPhoneLines = pdf.splitTextToSize(
-  safeText(parcel.sender_phone, 'N/A'),
+    const senderPhoneLines: string[] = pdf.splitTextToSize(
+  safeText(parcel.sender_phone, 'N/A') as string,
   60
 );
 
-senderPhoneLines.forEach((line: string, index: number) => {
-  pdf.text(line, margin + 15, shipperY + index * 3.2);
+senderPhoneLines.forEach((line, index) => {
+  pdf.text(String(line), margin + 15, shipperY + index * 3.2);
 });
     
     shipperY += senderLineGap;
