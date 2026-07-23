@@ -421,7 +421,7 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   
   // Contact rows: shrink and wrap to keep values inside the receiver box
   pdf.setFontSize(7.5);
-  receiverY += 4.5;
+  receiverY += 2.5;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Postal Code:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
@@ -431,7 +431,7 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
     receiverY += (lines.length - 1) * 3.5;
   }
 
-  receiverY += 4.5;
+  receiverY += 2.5;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Phone:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
@@ -441,7 +441,7 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
     receiverY += (lines.length - 1) * 3.5;
   }
 
-  receiverY += 4.5;
+  receiverY += 2.5;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Email:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
@@ -815,7 +815,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.text('Ref:', headerX + 2, yPos + 17);
     
     pdf.setFont('helvetica', 'normal');
-    const destination = countryNameToCode(safeText(parcel.receiver_country, 'UK'));
+    const destination = codeToCountryName(safeText(parcel.receiver_country, 'UK'));
     const service = safeText(parcel.service_type, 'STANDARD').toUpperCase();
     
     pdf.text(destination, headerX + 25, yPos + 11);
@@ -929,7 +929,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setFontSize(receiverFontSize);
     
     pdf.setFontSize(7);
-    receiverY += receiverLineGap - 0.5;
+    receiverY += receiverLineGap - 2.5;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Postal Code:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
@@ -939,7 +939,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
       receiverY += (lines.length - 1) * 3.2;
     }
 
-    receiverY += receiverLineGap - 0.5;
+    receiverY += receiverLineGap - 2.5;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Phone:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
@@ -949,7 +949,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
       receiverY += (lines.length - 1) * 3.2;
     }
 
-    receiverY += receiverLineGap - 0.5;
+    receiverY += receiverLineGap - 2.5;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Email:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
@@ -1117,7 +1117,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.text('REF#:', headerX + 2, yPos + 17);
 
   pdf.setFont('helvetica', 'normal');
-  const destination = countryNameToCode(safeText(parcel.receiver_country, 'UK'));
+  const destination = codeToCountryName(safeText(parcel.receiver_country, 'UK'));
   const service = safeText(parcel.service_type, 'STANDARD').toUpperCase();
 
   pdf.text(destination, headerX + 25, yPos + 11);
@@ -1243,7 +1243,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.setFontSize(receiverFontSize);
   
   pdf.setFontSize(7);
-  receiverY += receiverLineGap - 0.5;
+  receiverY += receiverLineGap - 2.5;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Postal Code:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
@@ -1253,7 +1253,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     receiverY += (lines.length - 1) * 3.2;
   }
 
-  receiverY += receiverLineGap - 0.5;
+  receiverY += receiverLineGap - 2.5;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Phone:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
@@ -1263,7 +1263,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     receiverY += (lines.length - 1) * 3.2;
   }
 
-  receiverY += receiverLineGap - 0.5;
+  receiverY += receiverLineGap - 2.5;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Email:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
