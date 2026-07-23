@@ -90,6 +90,65 @@ const countryNameToCode = (name: string): string => {
   return n.substring(0, 2);
 };
 
+
+// Convert 2-letter ISO codes or common aliases (UK, USA, UAE) to full country names.
+// Returns the input unchanged when already a full name.
+const codeToCountryName = (input: string): string => {
+  if (!input) return '';
+  const trimmed = String(input).trim();
+  const upper = trimmed.toUpperCase();
+  const aliases: Record<string, string> = {
+    'UK': 'United Kingdom',
+    'USA': 'United States',
+    'UAE': 'United Arab Emirates',
+    'KSA': 'Saudi Arabia',
+  };
+  if (aliases[upper]) return aliases[upper];
+  const codeMap: Record<string, string> = {
+    GB: 'United Kingdom', US: 'United States', PK: 'Pakistan', AE: 'United Arab Emirates',
+    SA: 'Saudi Arabia', DE: 'Germany', FR: 'France', IT: 'Italy', ES: 'Spain',
+    NL: 'Netherlands', BE: 'Belgium', CA: 'Canada', AU: 'Australia', NZ: 'New Zealand',
+    CN: 'China', JP: 'Japan', IN: 'India', BD: 'Bangladesh', LK: 'Sri Lanka',
+    NP: 'Nepal', TR: 'Turkey', SE: 'Sweden', NO: 'Norway', DK: 'Denmark', FI: 'Finland',
+    CH: 'Switzerland', AT: 'Austria', PT: 'Portugal', IE: 'Ireland', PL: 'Poland',
+    CZ: 'Czech Republic', HU: 'Hungary', GR: 'Greece', RO: 'Romania', QA: 'Qatar',
+    KW: 'Kuwait', BH: 'Bahrain', OM: 'Oman', JO: 'Jordan', MY: 'Malaysia',
+    SG: 'Singapore', ID: 'Indonesia', TH: 'Thailand', PH: 'Philippines',
+    ZA: 'South Africa', NG: 'Nigeria', KE: 'Kenya', GH: 'Ghana', EG: 'Egypt',
+    MA: 'Morocco', BR: 'Brazil', MX: 'Mexico', AR: 'Argentina', CL: 'Chile',
+    RU: 'Russia', UA: 'Ukraine',
+  };
+  if (upper.length === 2 && codeMap[upper]) return codeMap[upper];
+  return trimmed;
+};
+
+// Renders an "Address:" label followed by wrapped address lines within maxWidth.
+// Returns the Y position after the last rendered line.
+const drawWrappedAddress = (
+  pdf: jsPDF,
+  parts: Array<string | undefined>,
+  x: number,
+  y: number,
+  maxWidth: number,
+  fontSize: number,
+  lineGap: number
+): number => {
+  pdf.setFontSize(fontSize);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Address:', x, y);
+  pdf.setFont('helvetica', 'normal');
+  let curY = y + lineGap;
+  const cleaned = parts.map(p => (p == null ? '' : String(p).trim())).filter(Boolean);
+  cleaned.forEach((raw) => {
+    const lines = pdf.splitTextToSize(raw, maxWidth) as string[];
+    lines.forEach((ln) => {
+      pdf.text(ln, x, curY);
+      curY += lineGap;
+    });
+  });
+  return curY;
+};
+
 type OutputMode = 'download' | 'preview' | 'print';
 
 const handlePDFOutput = (pdf: jsPDF, filename: string, mode: OutputMode = 'download') => {
@@ -213,17 +272,7 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setLineWidth(0.8);
   pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
 
-  // Add logo at top
-  await addLogo(pdf, margin, yPos, 50, 30);
-
-  // Contact info next to logo
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(80, 80, 80);
-  pdf.text('Email: skyxpress786@gmail.com', 60, yPos + 3);
-  pdf.text('Phone: 042 999164619', 60, yPos + 8);
-  pdf.text('WhatsApp: 0326 9422411', 60, yPos + 13);
-  pdf.text('www.skyxpress.site', 60, yPos + 18);
+  // Logo and top contact info intentionally removed per client request.
 
   // Right side: Header box — extended to 32mm to fit barcode
   const rightBoxX = pageWidth - margin - 75;
@@ -287,25 +336,23 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.sender_company, 'N/A'), margin + 20, shipperY);
   
-  // Address block with optional extra lines
+  // Address block: label + wrapped lines within box width
   shipperY += senderLineGap;
-  pdf.setFontSize(senderFontSize);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Address:', margin + 2, shipperY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_address, 'N/A'), margin + 18, shipperY);
-  if (parcel.sender_address_2) {
-    shipperY += senderLineGap - 1;
-    pdf.text(safeText(parcel.sender_address_2), margin + 2, shipperY);
-  }
-  if (parcel.sender_address_3) {
-    shipperY += senderLineGap - 1;
-    pdf.text(safeText(parcel.sender_address_3), margin + 2, shipperY);
-  }
+  shipperY = drawWrappedAddress(
+    pdf,
+    [
+      parcel.sender_address,
+      parcel.sender_address_2,
+      parcel.sender_address_3,
+      `${safeText(parcel.sender_city, '')}, ${codeToCountryName(safeText(parcel.sender_country, 'Pakistan'))}`,
+    ],
+    margin + 2,
+    shipperY,
+    boxWidth - 4,
+    senderFontSize,
+    senderLineGap - 1
+  );
   pdf.setFontSize(9);
-
-  shipperY += senderLineGap;
-  pdf.text(`${safeText(parcel.sender_city, '')}, ${safeText(parcel.sender_country, 'Pakistan')}`, margin + 2, shipperY);
   
   shipperY += 5;
   pdf.setFont('helvetica', 'bold');
@@ -353,25 +400,24 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.receiver_company, 'N/A'), receiverX + 20, receiverY);
   
-  // Address block with optional extra lines
+  // Address block: label + wrapped lines within box width
   receiverY += receiverLineGap;
-  pdf.setFontSize(receiverFontSize);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Address:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_address, 'N/A'), receiverX + 18, receiverY);
-  if (parcel.receiver_address_2) {
-    receiverY += receiverLineGap - 1;
-    pdf.text(safeText(parcel.receiver_address_2), receiverX + 2, receiverY);
-  }
-  if (parcel.receiver_address_3) {
-    receiverY += receiverLineGap - 1;
-    pdf.text(safeText(parcel.receiver_address_3), receiverX + 2, receiverY);
-  }
+  receiverY = drawWrappedAddress(
+    pdf,
+    [
+      parcel.receiver_address,
+      parcel.receiver_address_2,
+      parcel.receiver_address_3,
+      `${safeText(parcel.receiver_city, '')}, ${safeText(parcel.receiver_state, '')}`.replace(/^,\s*|,\s*$/g, ''),
+      codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')),
+    ],
+    receiverX + 2,
+    receiverY,
+    boxWidth - 4,
+    receiverFontSize,
+    receiverLineGap - 1
+  );
   pdf.setFontSize(9);
-
-  receiverY += receiverLineGap;
-  pdf.text(`${safeText(parcel.receiver_state, '')}, ${safeText(parcel.receiver_country, 'UK')}`, receiverX + 2, receiverY);
   
   receiverY += 5;
   pdf.setFont('helvetica', 'bold');
@@ -733,14 +779,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     // Add logo
     await addLogo(pdf, 10, yPos, 50, 30);
 
-    // Contact info
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(80, 80, 80);
-    pdf.text('Email: skyxpress786@gmail.com', 65, yPos + 5);
-    pdf.text('Phone: 042 999164619', 65, yPos + 10);
-    pdf.text('Mobile: 0321 4710522', 65, yPos + 15);
-    pdf.text('www.skyxpress.site', 65, yPos + 20);
+    // Top contact info removed per client request.
 
     // Right header box (same 20mm height — compact barcode replaces QR)
     const headerX = pageWidth - 75;
@@ -807,21 +846,21 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.text(safeText(parcel.sender_company, 'N/A'), 28, shipperY);
     
     shipperY += senderLineGap;
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Address:', 12, shipperY);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.sender_address, 'N/A'), 26, shipperY);
-    if (parcel.sender_address_2) {
-      shipperY += senderLineGap - 1;
-      pdf.text(safeText(parcel.sender_address_2), 12, shipperY);
-    }
-    if (parcel.sender_address_3) {
-      shipperY += senderLineGap - 1;
-      pdf.text(safeText(parcel.sender_address_3), 12, shipperY);
-    }
-    
-    shipperY += senderLineGap;
-    pdf.text(`${safeText(parcel.sender_city, '')}, ${safeText(parcel.sender_country, 'Pakistan')}`, 12, shipperY);
+    shipperY = drawWrappedAddress(
+      pdf,
+      [
+        parcel.sender_address,
+        parcel.sender_address_2,
+        parcel.sender_address_3,
+        `${safeText(parcel.sender_city, '')}, ${codeToCountryName(safeText(parcel.sender_country, 'Pakistan'))}`,
+      ],
+      12,
+      shipperY,
+      boxWidth - 4,
+      senderFontSize,
+      senderLineGap - 1
+    );
+    pdf.setFontSize(senderFontSize);
     
     shipperY += senderLineGap;
     pdf.setFont('helvetica', 'bold');
@@ -858,21 +897,22 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.text(safeText(parcel.receiver_company, 'N/A'), receiverX + 20, receiverY);
     
     receiverY += receiverLineGap;
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Address:', receiverX, receiverY);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.receiver_address, 'N/A'), receiverX + 16, receiverY);
-    if (parcel.receiver_address_2) {
-      receiverY += receiverLineGap - 1;
-      pdf.text(safeText(parcel.receiver_address_2), receiverX, receiverY);
-    }
-    if (parcel.receiver_address_3) {
-      receiverY += receiverLineGap - 1;
-      pdf.text(safeText(parcel.receiver_address_3), receiverX, receiverY);
-    }
-    
-    receiverY += receiverLineGap;
-    pdf.text(`${safeText(parcel.receiver_state, '')}, ${safeText(parcel.receiver_country, 'UK')}`, receiverX, receiverY);
+    receiverY = drawWrappedAddress(
+      pdf,
+      [
+        parcel.receiver_address,
+        parcel.receiver_address_2,
+        parcel.receiver_address_3,
+        `${safeText(parcel.receiver_city, '')}, ${safeText(parcel.receiver_state, '')}`.replace(/^,\s*|,\s*$/g, ''),
+        codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')),
+      ],
+      receiverX,
+      receiverY,
+      boxWidth - 4,
+      receiverFontSize,
+      receiverLineGap - 1
+    );
+    pdf.setFontSize(receiverFontSize);
     
     receiverY += receiverLineGap;
     pdf.setFont('helvetica', 'bold');
@@ -1028,14 +1068,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   // Add logo at top left
   await addLogo(pdf, 10, yPos, 50, 30);
 
-  // Contact info
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(80, 80, 80);
-  pdf.text('Email: skyxpress786@gmail.com', 60, yPos + 3);
-  pdf.text('Phone: 042 999164619', 60, yPos + 8);
-  pdf.text('WhatsApp: 0326 9422411', 60, yPos + 13);
-  pdf.text('www.skyxpress.site', 60, yPos + 18);
+  // Top contact info removed per client request.
 
   // Right header box — extended to 32mm to fit barcode
   const headerX = pageWidth - 75;
@@ -1112,21 +1145,21 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.text(safeText(parcel.sender_company, 'N/A'), 28, shipperY);
   
   shipperY += senderLineGap;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Address:', 12, shipperY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_address, 'N/A'), 26, shipperY);
-  if (parcel.sender_address_2) {
-    shipperY += senderLineGap - 1;
-    pdf.text(safeText(parcel.sender_address_2), 12, shipperY);
-  }
-  if (parcel.sender_address_3) {
-    shipperY += senderLineGap - 1;
-    pdf.text(safeText(parcel.sender_address_3), 12, shipperY);
-  }
-  
-  shipperY += senderLineGap;
-  pdf.text(`${safeText(parcel.sender_city, '')}, ${safeText(parcel.sender_country, 'Pakistan')}`, 12, shipperY);
+  shipperY = drawWrappedAddress(
+    pdf,
+    [
+      parcel.sender_address,
+      parcel.sender_address_2,
+      parcel.sender_address_3,
+      `${safeText(parcel.sender_city, '')}, ${codeToCountryName(safeText(parcel.sender_country, 'Pakistan'))}`,
+    ],
+    12,
+    shipperY,
+    boxWidth - 4,
+    senderFontSize,
+    senderLineGap - 1
+  );
+  pdf.setFontSize(senderFontSize);
   
   shipperY += senderLineGap;
   pdf.setFont('helvetica', 'bold');
@@ -1165,21 +1198,22 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.text(safeText(parcel.receiver_company, 'N/A'), receiverX + 20, receiverY);
   
   receiverY += receiverLineGap;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Address:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_address, 'N/A'), receiverX + 16, receiverY);
-  if (parcel.receiver_address_2) {
-    receiverY += receiverLineGap - 1;
-    pdf.text(safeText(parcel.receiver_address_2), receiverX + 2, receiverY);
-  }
-  if (parcel.receiver_address_3) {
-    receiverY += receiverLineGap - 1;
-    pdf.text(safeText(parcel.receiver_address_3), receiverX + 2, receiverY);
-  }
-  
-  receiverY += receiverLineGap;
-  pdf.text(`${safeText(parcel.receiver_state, '')}, ${safeText(parcel.receiver_country, 'UK')}`, receiverX + 2, receiverY);
+  receiverY = drawWrappedAddress(
+    pdf,
+    [
+      parcel.receiver_address,
+      parcel.receiver_address_2,
+      parcel.receiver_address_3,
+      `${safeText(parcel.receiver_city, '')}, ${safeText(parcel.receiver_state, '')}`.replace(/^,\s*|,\s*$/g, ''),
+      codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')),
+    ],
+    receiverX + 2,
+    receiverY,
+    boxWidth - 4,
+    receiverFontSize,
+    receiverLineGap - 1
+  );
+  pdf.setFontSize(receiverFontSize);
   
   receiverY += receiverLineGap;
   pdf.setFont('helvetica', 'bold');
