@@ -30,6 +30,7 @@ interface TrackingResult {
   status_timeline: any[];
   live_route: boolean;
   route_checkpoints: any[];
+  admin_note?: string | null;
 }
 
 // Helper function to group events by date
@@ -113,6 +114,7 @@ const STATUS_TO_STAGE: Record<string, number> = {
 };
 
 const getStageIndex = (status: string) => STATUS_TO_STAGE[status] ?? 0;
+const STAGE_COLORS = [TOKENS.slate, TOKENS.green, TOKENS.blue, TOKENS.amber, TOKENS.green];
 
 const formatStatusLabel = (status: string) =>
   status
@@ -191,6 +193,12 @@ export const TrackingSection = () => {
             status_timeline: parcelData.status_timeline || [],
             live_route: parcelData.live_route || false,
             route_checkpoints: parcelData.route_checkpoints || [],
+            admin_note:
+              parcelData.admin_note ||
+              parcelData.staff_note ||
+              parcelData.internal_note ||
+              parcelData.notes ||
+              null,
           });
 
           toast({
@@ -245,8 +253,17 @@ export const TrackingSection = () => {
         .sx-glide { animation: sx-glide 1.6s ease-in-out infinite alternate; }
         @keyframes sx-beacon { 0%, 100% { opacity: 0.35; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.15); } }
         .sx-beacon { animation: sx-beacon 1.8s ease-in-out infinite; }
+        @keyframes sx-radar-spin { to { transform: rotate(360deg); } }
+        .sx-radar::before {
+          content: '';
+          position: absolute;
+          inset: -5px;
+          border-radius: 9999px;
+          background: conic-gradient(from 0deg, transparent 0deg, rgba(23,166,115,0.55) 70deg, transparent 100deg);
+          animation: sx-radar-spin 2.4s linear infinite;
+        }
         @media (prefers-reduced-motion: reduce) {
-          .sx-flicker, .sx-glide, .sx-beacon { animation: none !important; }
+          .sx-flicker, .sx-glide, .sx-beacon, .sx-radar::before { animation: none !important; }
         }
       `}</style>
 
@@ -371,6 +388,17 @@ export const TrackingSection = () => {
                     <p className="sx-mono mt-1 truncate text-sm font-semibold text-[#0B2545]">{trackingResult.tracking_id}</p>
                   </div>
                 </div>
+
+                {trackingResult.admin_note && (
+                  <div className="px-6 pb-6 sm:px-10">
+                    <div className="sx-display relative inline-block max-w-full rotate-[-1deg] rounded-lg border border-dashed border-[#FFB020]/60 bg-[#FFF7E8] px-4 py-3 text-sm text-[#8A5B00] shadow-sm transition-transform duration-200 hover:rotate-0">
+                      <span className="absolute -top-2.5 left-4 rounded-full bg-[#FFB020] px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow">
+                        📌 Note from SkyXpress
+                      </span>
+                      <p className="mt-1.5 leading-snug">{trackingResult.admin_note}</p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Die-cut perforation between stub and boarding strip */}
@@ -466,35 +494,54 @@ export const TrackingSection = () => {
           {/* ── Tracking history / flight log ── */}
           {trackingResult && trackingResult.status_timeline.length > 0 && (
             <div className="mt-8 rounded-3xl bg-white p-6 shadow-lg shadow-[#0B2545]/5 sm:p-8">
-              <div className="mb-6 flex items-center gap-2">
-                <span className="sx-beacon h-2 w-2 rounded-full bg-[#17A673]" />
-                <h3 className="sx-mono text-xs font-semibold uppercase tracking-[0.2em] text-[#5B6B82]">
-                  Flight log
-                </h3>
+              <div className="mb-6 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="sx-beacon h-2 w-2 rounded-full bg-[#17A673]" />
+                  <h3 className="sx-mono text-xs font-semibold uppercase tracking-[0.2em] text-[#5B6B82]">
+                    Flight log
+                  </h3>
+                </div>
+                <span className="flex items-center gap-1.5 rounded-full bg-[#17A673]/10 px-2.5 py-1">
+                  <span className="sx-radar relative flex h-2 w-2">
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[#17A673]" />
+                  </span>
+                  <span className="sx-mono text-[10px] font-semibold uppercase tracking-wide text-[#17A673]">
+                    Live
+                  </span>
+                </span>
               </div>
 
-              <div className="space-y-8">
+              <div className="space-y-3">
                 {Object.entries(groupEventsByDate(trackingResult.status_timeline)).map(([date, events], dateIndex) => (
-                  <div key={dateIndex}>
-                    <h4 className="sx-display mb-4 text-base font-bold text-[#0B2545]/80">{date}</h4>
+                  <div
+                    key={dateIndex}
+                    className="rounded-2xl border border-transparent p-4 transition-colors hover:border-[#0B2545]/8 hover:bg-[#F5F8FC]/60 sm:p-5"
+                  >
+                    <h4 className="sx-display mb-5 text-base font-bold text-[#0B2545]/80">{date}</h4>
 
-                    <div className="space-y-6 border-l-[3px] border-dotted border-[#0B2545]/25 pl-5">
+                    <div className="space-y-7 border-l-[3px] border-dotted border-[#0B2545]/25 pl-9">
                       {events.map((event, eventIndex) => {
                         const isLatest = dateIndex === 0 && eventIndex === 0;
                         const place = event.location || event.place || event.city || event.checkpoint;
+                        const eventStageIndex = getStageIndex(event.status);
+                        const StageIcon = STAGES[eventStageIndex]?.icon || Clock;
+                        const dotColor = isLatest ? TOKENS.orange : STAGE_COLORS[eventStageIndex];
+
                         return (
                           <div key={eventIndex} className="relative">
-                            <span className="absolute -left-[27px] top-1 flex h-3.5 w-3.5 items-center justify-center">
+                            <span className="absolute -left-[48px] top-0 flex h-6 w-6 items-center justify-center">
                               {isLatest && (
-                                <span className="absolute h-3.5 w-3.5 animate-ping rounded-full bg-[#FF6A1A]/50 motion-reduce:animate-none" />
+                                <span className="absolute h-6 w-6 animate-ping rounded-full bg-[#FF6A1A]/40 motion-reduce:animate-none" />
                               )}
                               <span
-                                className="relative h-3 w-3 rounded-full border-2 border-white shadow-sm"
-                                style={{ backgroundColor: isLatest ? TOKENS.orange : TOKENS.blue }}
-                              />
+                                className="relative flex h-6 w-6 items-center justify-center rounded-full border-2 border-white shadow"
+                                style={{ backgroundColor: dotColor }}
+                              >
+                                <StageIcon className="h-3 w-3 text-white" />
+                              </span>
                             </span>
 
-                            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                               <p className="sx-mono text-xs font-medium text-[#5B6B82]">
                                 {new Date(event.timestamp).toLocaleString("en-US", {
                                   hour: "2-digit",
@@ -506,16 +553,16 @@ export const TrackingSection = () => {
                                 {formatStatusLabel(event.status || event.title || "Update")}
                               </p>
                               {isLatest && (
-                                <span className="sx-mono rounded-full bg-[#FF6A1A]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#FF6A1A]">
+                                <span className="sx-mono animate-pulse rounded-full bg-[#FF6A1A]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#FF6A1A] motion-reduce:animate-none">
                                   Latest
                                 </span>
                               )}
                             </div>
 
                             {place && (
-                              <p className="mt-1 flex items-center gap-1.5 text-xs text-[#5B6B82]">
-                                <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-[#2E86FF]" />
-                                {place}
+                              <p className="mt-1.5 flex items-start gap-1.5 text-xs text-[#5B6B82]">
+                                <MapPin className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-[#2E86FF]" />
+                                <span>{place}</span>
                               </p>
                             )}
 
@@ -526,15 +573,13 @@ export const TrackingSection = () => {
                               </p>
                             )}
 
-                            {(event.admin_note || event.staff_note || event.internal_note) && (
-                              <div
-                                className="sx-display relative mt-2 inline-block max-w-sm rotate-[-1.5deg] rounded-lg border border-dashed border-[#FFB020]/50 bg-[#FFF7E8] px-3 py-2 text-xs text-[#8A5B00] shadow-sm transition-transform duration-200 hover:rotate-0"
-                              >
+                            {(event.admin_note || event.staff_note || event.internal_note || event.remarks || event.comment) && (
+                              <div className="sx-display relative mt-2 inline-block max-w-sm rotate-[-1.5deg] rounded-lg border border-dashed border-[#FFB020]/50 bg-[#FFF7E8] px-3 py-2 text-xs text-[#8A5B00] shadow-sm transition-transform duration-200 hover:rotate-0">
                                 <span className="absolute -top-2 left-3 rounded-full bg-[#FFB020] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow">
                                   ✎ Admin note
                                 </span>
                                 <p className="mt-1.5 leading-snug">
-                                  {event.admin_note || event.staff_note || event.internal_note}
+                                  {event.admin_note || event.staff_note || event.internal_note || event.remarks || event.comment}
                                 </p>
                               </div>
                             )}
