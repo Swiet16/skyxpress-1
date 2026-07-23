@@ -899,7 +899,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
   // whatever the box grows by, so longer addresses can never push content past the border.
   const frameHeight = 140 + Math.max(0, boxHeight - 43);
   const copy1StartY = 6;
-  const copy2StartY = copy1StartY + frameHeight + 8; // 8mm matches the original gap between copies
+  const copy2StartY = copy1StartY + frameHeight + 6; // 8mm matches the original gap between copies
 
   // Function to generate one copy
   const generateCopy = async (startY: number, copyLabel: string) => {
