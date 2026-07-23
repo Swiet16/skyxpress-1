@@ -149,6 +149,36 @@ const drawWrappedAddress = (
   return curY;
 };
 
+// Measures the vertical space drawWrappedAddress would consume (label line + wrapped lines),
+// without drawing anything. Mirrors drawWrappedAddress's line-counting logic exactly.
+const measureWrappedAddressHeight = (
+  pdf: jsPDF,
+  parts: Array<string | undefined>,
+  maxWidth: number,
+  fontSize: number,
+  lineGap: number
+): number => {
+  pdf.setFontSize(fontSize);
+  const cleaned = parts.map(p => (p == null ? '' : String(p).trim())).filter(Boolean);
+  let totalLines = 0;
+  cleaned.forEach((raw) => {
+    const lines = pdf.splitTextToSize(raw, maxWidth) as string[];
+    totalLines += lines.length;
+  });
+  return lineGap * (1 + totalLines); // +1 for the "Address:" label line itself
+};
+
+// Measures how many extra lines (beyond the first) a single labeled value (postal code,
+// phone, email) will wrap into, given the available width for the value.
+const measureExtraWrapLines = (
+  pdf: jsPDF,
+  value: string,
+  maxWidth: number
+): number => {
+  const lines = pdf.splitTextToSize(value, maxWidth) as string[];
+  return Math.max(0, lines.length - 1);
+};
+
 type OutputMode = 'download' | 'preview' | 'print';
 
 const handlePDFOutput = (pdf: jsPDF, filename: string, mode: OutputMode = 'download') => {
@@ -307,7 +337,53 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   const hasSenderExtra = !!(parcel.sender_address_2 || parcel.sender_address_3);
   const senderFontSize = hasSenderExtra ? 7.5 : 9;
   const senderLineGap = hasSenderExtra ? 4 : 5;
-  
+
+  // Determine if extra address lines are present for receiver
+  const hasReceiverExtra = !!(parcel.receiver_address_2 || parcel.receiver_address_3);
+  const receiverFontSize = hasReceiverExtra ? 7.5 : 9;
+  const receiverLineGap = hasReceiverExtra ? 4 : 5;
+  const contactGap = 3.5; // safe row gap for postal/phone/email at small font size
+
+  // --- Measure content first so the box can be sized to fit (no overlap, no clipping) ---
+  const senderAddrHeight = measureWrappedAddressHeight(
+    pdf,
+    [
+      parcel.sender_address,
+      parcel.sender_address_2,
+      parcel.sender_address_3,
+      `${safeText(parcel.sender_city, '')}, ${codeToCountryName(safeText(parcel.sender_country, 'Pakistan'))}`,
+    ],
+    boxWidth - 4,
+    senderFontSize,
+    senderLineGap - 1
+  );
+  const shipperContentHeight = 5 /* Company */ + senderLineGap /* pre-address gap */ + senderAddrHeight + 5 /* Phone */ + 5 /* CNIC */;
+
+  const receiverAddrHeight = measureWrappedAddressHeight(
+    pdf,
+    [
+      parcel.receiver_address,
+      parcel.receiver_address_2,
+      parcel.receiver_address_3,
+      `${safeText(parcel.receiver_city, '')}, ${safeText(parcel.receiver_state, '')}`.replace(/^,\s*|,\s*$/g, ''),
+      codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')),
+    ],
+    boxWidth - 4,
+    receiverFontSize,
+    receiverLineGap - 1
+  );
+  const postalExtra = measureExtraWrapLines(pdf, safeText(parcel.receiver_postal_code, 'N/A'), boxWidth - 25);
+  const phoneExtra = measureExtraWrapLines(pdf, safeText(parcel.receiver_phone, 'N/A'), boxWidth - 17);
+  const emailExtra = measureExtraWrapLines(pdf, safeText(parcel.receiver_email, 'N/A'), boxWidth - 16);
+  const receiverContentHeight =
+    5 /* Company */ + receiverLineGap /* pre-address gap */ + receiverAddrHeight +
+    contactGap + postalExtra * contactGap +
+    contactGap + phoneExtra * contactGap +
+    contactGap + emailExtra * contactGap;
+
+  const boxBodyHeight = Math.max(40, shipperContentHeight + 17, receiverContentHeight + 17); // +17 accounts for top padding to Name row + bottom padding
+  const boxTotalHeight = boxBodyHeight + 7; // + header bar
+
   // Shipper box
   pdf.setFillColor(30, 144, 255);
   pdf.rect(margin, yPos, boxWidth, 7, 'F');
@@ -317,9 +393,9 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.text('SHIPPER', margin + 2, yPos + 5);
   
   pdf.setFillColor(250, 250, 250);
-  pdf.rect(margin, yPos + 7, boxWidth, 40, 'F');
+  pdf.rect(margin, yPos + 7, boxWidth, boxBodyHeight, 'F');
   pdf.setDrawColor(200, 200, 200);
-  pdf.rect(margin, yPos, boxWidth, 47);
+  pdf.rect(margin, yPos, boxWidth, boxTotalHeight);
   
   pdf.setFontSize(9);
   pdf.setTextColor(0, 0, 0);
@@ -366,11 +442,6 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setFont('helvetica', 'normal');
   pdf.text(safeText(parcel.sender_cnic, 'N/A'), margin + 13, shipperY);
 
-  // Determine if extra address lines are present for receiver
-  const hasReceiverExtra = !!(parcel.receiver_address_2 || parcel.receiver_address_3);
-  const receiverFontSize = hasReceiverExtra ? 7.5 : 9;
-  const receiverLineGap = hasReceiverExtra ? 4 : 5;
-
   // Receiver box
   const receiverX = pageWidth / 2 + 1.5;
   pdf.setFillColor(30, 144, 255);
@@ -381,9 +452,9 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.text('RECEIVER', receiverX + 2, yPos + 5);
   
   pdf.setFillColor(250, 250, 250);
-  pdf.rect(receiverX, yPos + 7, boxWidth, 40, 'F');
+  pdf.rect(receiverX, yPos + 7, boxWidth, boxBodyHeight, 'F');
   pdf.setDrawColor(200, 200, 200);
-  pdf.rect(receiverX, yPos, boxWidth, 47);
+  pdf.rect(receiverX, yPos, boxWidth, boxTotalHeight);
   
   pdf.setFontSize(9);
   pdf.setTextColor(0, 0, 0);
@@ -421,39 +492,39 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   
   // Contact rows: shrink and wrap to keep values inside the receiver box
   pdf.setFontSize(7.5);
-  receiverY += 2.5;
+  receiverY += contactGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Postal Code:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
   {
     const lines = pdf.splitTextToSize(safeText(parcel.receiver_postal_code, 'N/A'), boxWidth - 25);
-    lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 23, receiverY + i * 3.5));
-    receiverY += (lines.length - 1) * 3.5;
+    lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 23, receiverY + i * contactGap));
+    receiverY += (lines.length - 1) * contactGap;
   }
 
-  receiverY += 2.5;
+  receiverY += contactGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Phone:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
   {
     const lines = pdf.splitTextToSize(safeText(parcel.receiver_phone, 'N/A'), boxWidth - 17);
-    lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 15, receiverY + i * 3.5));
-    receiverY += (lines.length - 1) * 3.5;
+    lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 15, receiverY + i * contactGap));
+    receiverY += (lines.length - 1) * contactGap;
   }
 
-  receiverY += 2.5;
+  receiverY += contactGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Email:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
   {
     const receiverEmail = safeText(parcel.receiver_email, 'N/A');
     const emailLines = pdf.splitTextToSize(receiverEmail, boxWidth - 16);
-    emailLines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 14, receiverY + i * 3.5));
-    receiverY += (emailLines.length - 1) * 3.5;
+    emailLines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 14, receiverY + i * contactGap));
+    receiverY += (emailLines.length - 1) * contactGap;
   }
   pdf.setFontSize(9);
 
-  yPos += 51;
+  yPos += boxTotalHeight + 4;
 
   // Items table
   pdf.setFillColor(30, 144, 255);
@@ -832,11 +903,51 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
 
     // Shipper & Receiver
     const boxWidth = (pageWidth - 20 - 2) / 2;
-    
+    const contactGap = 3.2; // safe row gap for postal/phone/email at small font size
+
+    // --- Measure content first so the box can be sized to fit (no overlap, no clipping) ---
+    const senderAddrHeight = measureWrappedAddressHeight(
+      pdf,
+      [
+        parcel.sender_address,
+        parcel.sender_address_2,
+        parcel.sender_address_3,
+        `${safeText(parcel.sender_city, '')}, ${codeToCountryName(safeText(parcel.sender_country, 'Pakistan'))}`,
+      ],
+      boxWidth - 4,
+      senderFontSize,
+      senderLineGap - 1
+    );
+    const shipperContentHeight = senderLineGap * 2 + senderAddrHeight + senderLineGap * 2;
+
+    const receiverAddrHeight = measureWrappedAddressHeight(
+      pdf,
+      [
+        parcel.receiver_address,
+        parcel.receiver_address_2,
+        parcel.receiver_address_3,
+        `${safeText(parcel.receiver_city, '')}, ${safeText(parcel.receiver_state, '')}`.replace(/^,\s*|,\s*$/g, ''),
+        codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')),
+      ],
+      boxWidth - 4,
+      receiverFontSize,
+      receiverLineGap - 1
+    );
+    const postalExtra = measureExtraWrapLines(pdf, safeText(parcel.receiver_postal_code, 'N/A'), boxWidth - 22);
+    const phoneExtra = measureExtraWrapLines(pdf, safeText(parcel.receiver_phone, 'N/A'), boxWidth - 14);
+    const emailExtra = measureExtraWrapLines(pdf, safeText(parcel.receiver_email, 'N/A'), boxWidth - 14);
+    const receiverContentHeight =
+      receiverLineGap * 2 + receiverAddrHeight +
+      contactGap + postalExtra * contactGap +
+      contactGap + phoneExtra * contactGap +
+      contactGap + emailExtra * contactGap;
+
+    const boxHeight = Math.max(43, shipperContentHeight + 15, receiverContentHeight + 15);
+
     pdf.setFillColor(255, 250, 245);
     pdf.setDrawColor(220, 220, 220);
-    pdf.rect(10, yPos, boxWidth, 43, 'FD');
-    pdf.rect(pageWidth / 2 + 1, yPos, boxWidth, 43, 'FD');
+    pdf.rect(10, yPos, boxWidth, boxHeight, 'FD');
+    pdf.rect(pageWidth / 2 + 1, yPos, boxWidth, boxHeight, 'FD');
 
     // Shipper
     pdf.setFontSize(10);
@@ -929,39 +1040,39 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setFontSize(receiverFontSize);
     
     pdf.setFontSize(7);
-    receiverY += receiverLineGap - 2.5;
+    receiverY += contactGap;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Postal Code:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
     {
       const lines = pdf.splitTextToSize(safeText(parcel.receiver_postal_code, 'N/A'), boxWidth - 22);
-      lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 20, receiverY + i * 3.2));
-      receiverY += (lines.length - 1) * 3.2;
+      lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 20, receiverY + i * contactGap));
+      receiverY += (lines.length - 1) * contactGap;
     }
 
-    receiverY += receiverLineGap - 2.5;
+    receiverY += contactGap;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Phone:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
     {
       const lines = pdf.splitTextToSize(safeText(parcel.receiver_phone, 'N/A'), boxWidth - 14);
-      lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 12, receiverY + i * 3.2));
-      receiverY += (lines.length - 1) * 3.2;
+      lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 12, receiverY + i * contactGap));
+      receiverY += (lines.length - 1) * contactGap;
     }
 
-    receiverY += receiverLineGap - 2.5;
+    receiverY += contactGap;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Email:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
     {
       const receiverEmail = safeText(parcel.receiver_email, 'N/A');
       const emailLines = pdf.splitTextToSize(receiverEmail, boxWidth - 14);
-      emailLines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 12, receiverY + i * 3.2));
-      receiverY += (emailLines.length - 1) * 3.2;
+      emailLines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 12, receiverY + i * contactGap));
+      receiverY += (emailLines.length - 1) * contactGap;
     }
     pdf.setFontSize(receiverFontSize);
 
-    yPos += 45;
+    yPos += boxHeight + 4;
 
     // Shipment details
     pdf.setFillColor(255, 140, 0);
@@ -1142,11 +1253,51 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   const senderLineGap = hasSenderExtra ? 4 : 5;
   const receiverFontSize = hasReceiverExtra ? 7.5 : 8;
   const receiverLineGap = hasReceiverExtra ? 4 : 5;
-  
+  const contactGap = 3.2; // safe row gap for postal/phone/email at small font size
+
+  // --- Measure content first so the box can be sized to fit (no overlap, no clipping) ---
+  const senderAddrHeight = measureWrappedAddressHeight(
+    pdf,
+    [
+      parcel.sender_address,
+      parcel.sender_address_2,
+      parcel.sender_address_3,
+      `${safeText(parcel.sender_city, '')}, ${codeToCountryName(safeText(parcel.sender_country, 'Pakistan'))}`,
+    ],
+    boxWidth - 4,
+    senderFontSize,
+    senderLineGap - 1
+  );
+  const shipperContentHeight = senderLineGap * 2 + senderAddrHeight + senderLineGap * 2;
+
+  const receiverAddrHeight = measureWrappedAddressHeight(
+    pdf,
+    [
+      parcel.receiver_address,
+      parcel.receiver_address_2,
+      parcel.receiver_address_3,
+      `${safeText(parcel.receiver_city, '')}, ${safeText(parcel.receiver_state, '')}`.replace(/^,\s*|,\s*$/g, ''),
+      codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')),
+    ],
+    boxWidth - 4,
+    receiverFontSize,
+    receiverLineGap - 1
+  );
+  const postalExtra = measureExtraWrapLines(pdf, safeText(parcel.receiver_postal_code, 'N/A'), boxWidth - 24);
+  const phoneExtra = measureExtraWrapLines(pdf, safeText(parcel.receiver_phone, 'N/A'), boxWidth - 16);
+  const emailExtra = measureExtraWrapLines(pdf, safeText(parcel.receiver_email, 'N/A'), boxWidth - 14);
+  const receiverContentHeight =
+    receiverLineGap * 2 + receiverAddrHeight +
+    contactGap + postalExtra * contactGap +
+    contactGap + phoneExtra * contactGap +
+    contactGap + emailExtra * contactGap;
+
+  const boxHeight = Math.max(48, shipperContentHeight + 17, receiverContentHeight + 17);
+
   pdf.setFillColor(252, 252, 252);
   pdf.setDrawColor(200, 200, 200);
-  pdf.rect(10, yPos, boxWidth, 48, 'FD');
-  pdf.rect(pageWidth / 2 + 1, yPos, boxWidth, 48, 'FD');
+  pdf.rect(10, yPos, boxWidth, boxHeight, 'FD');
+  pdf.rect(pageWidth / 2 + 1, yPos, boxWidth, boxHeight, 'FD');
 
   // Shipper header
   pdf.setFillColor(220, 20, 60);
@@ -1243,39 +1394,39 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.setFontSize(receiverFontSize);
   
   pdf.setFontSize(7);
-  receiverY += receiverLineGap - 2.5;
+  receiverY += contactGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Postal Code:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
   {
     const lines = pdf.splitTextToSize(safeText(parcel.receiver_postal_code, 'N/A'), boxWidth - 24);
-    lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 22, receiverY + i * 3.2));
-    receiverY += (lines.length - 1) * 3.2;
+    lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 22, receiverY + i * contactGap));
+    receiverY += (lines.length - 1) * contactGap;
   }
 
-  receiverY += receiverLineGap - 2.5;
+  receiverY += contactGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Phone:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
   {
     const lines = pdf.splitTextToSize(safeText(parcel.receiver_phone, 'N/A'), boxWidth - 16);
-    lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 14, receiverY + i * 3.2));
-    receiverY += (lines.length - 1) * 3.2;
+    lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 14, receiverY + i * contactGap));
+    receiverY += (lines.length - 1) * contactGap;
   }
 
-  receiverY += receiverLineGap - 2.5;
+  receiverY += contactGap;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Email:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
   {
     const receiverEmail = safeText(parcel.receiver_email, 'N/A');
     const emailLines = pdf.splitTextToSize(receiverEmail, boxWidth - 14);
-    emailLines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 12, receiverY + i * 3.2));
-    receiverY += (emailLines.length - 1) * 3.2;
+    emailLines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 12, receiverY + i * contactGap));
+    receiverY += (emailLines.length - 1) * contactGap;
   }
   pdf.setFontSize(receiverFontSize);
 
-  yPos += 52;
+  yPos += boxHeight + 4;
 
   // Items table
   pdf.setFillColor(220, 20, 60);
