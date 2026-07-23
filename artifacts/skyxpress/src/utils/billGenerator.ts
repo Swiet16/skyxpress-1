@@ -419,25 +419,39 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   );
   pdf.setFontSize(9);
   
-  receiverY += 5;
+  // Contact rows: shrink and wrap to keep values inside the receiver box
+  pdf.setFontSize(7.5);
+  receiverY += 4.5;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Postal Code:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_postal_code, 'N/A'), receiverX + 23, receiverY);
-  
-  receiverY += 5;
+  {
+    const lines = pdf.splitTextToSize(safeText(parcel.receiver_postal_code, 'N/A'), boxWidth - 25);
+    lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 23, receiverY + i * 3.5));
+    receiverY += (lines.length - 1) * 3.5;
+  }
+
+  receiverY += 4.5;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Phone:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_phone, 'N/A'), receiverX + 15, receiverY);
-  
-  receiverY += 5;
+  {
+    const lines = pdf.splitTextToSize(safeText(parcel.receiver_phone, 'N/A'), boxWidth - 17);
+    lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 15, receiverY + i * 3.5));
+    receiverY += (lines.length - 1) * 3.5;
+  }
+
+  receiverY += 4.5;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Email:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
-  const receiverEmail = safeText(parcel.receiver_email, 'N/A');
-  const emailLines = pdf.splitTextToSize(receiverEmail, 70);
-  pdf.text(emailLines[0], receiverX + 14, receiverY);
+  {
+    const receiverEmail = safeText(parcel.receiver_email, 'N/A');
+    const emailLines = pdf.splitTextToSize(receiverEmail, boxWidth - 16);
+    emailLines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 14, receiverY + i * 3.5));
+    receiverY += (emailLines.length - 1) * 3.5;
+  }
+  pdf.setFontSize(9);
 
   yPos += 51;
 
@@ -614,7 +628,7 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(80, 80, 80);
-  pdf.text('Email: skyxpress786@gmail.com | Phone: 042 999164619 | Mobile: 0321 4710522 | WhatsApp: 0326 9422411', pageWidth / 2, footerY, { align: 'center' });
+  pdf.text('Email: skyxpress786@gmail.com | Phone: (042) 37255473 | Mobile: 0321 4710522 | WhatsApp: 0326 9422411', pageWidth / 2, footerY, { align: 'center' });
 
   const itemCount = items.length;
   
@@ -681,7 +695,7 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
     pdf.setFontSize(7);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(80, 80, 80);
-    pdf.text('Email: skyxpress786@gmail.com | Phone: 042 999164619 | Mobile: 0321 4710522 | WhatsApp: 0326 9422411', pageWidth / 2, footerY, { align: 'center' });
+    pdf.text('Email: skyxpress786@gmail.com | Phone: (042) 37255473 | Mobile: 0321 4710522 | WhatsApp: 0326 9422411', pageWidth / 2, footerY, { align: 'center' });
   } else {
     pdf.setFillColor(250, 250, 250);
     const availableHeight = pageHeight - yPos - 20;
@@ -733,7 +747,7 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
     pdf.setFontSize(7);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(80, 80, 80);
-    pdf.text('Email: skyxpress786@gmail.com | Phone: 042 999164619 | Mobile: 0321 4710522 | WhatsApp: 0326 9422411', pageWidth / 2, footerY, { align: 'center' });
+    pdf.text('Email: skyxpress786@gmail.com | Phone: (042) 37255473 | Mobile: 0321 4710522 | WhatsApp: 0326 9422411', pageWidth / 2, footerY, { align: 'center' });
   }
 
   handlePDFOutput(pdf, `Performa-Invoice-${refNumber}.pdf`, mode);
@@ -914,25 +928,38 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     );
     pdf.setFontSize(receiverFontSize);
     
-    receiverY += receiverLineGap;
+    pdf.setFontSize(7);
+    receiverY += receiverLineGap - 0.5;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Postal Code:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.receiver_postal_code, 'N/A'), receiverX + 20, receiverY);
-    
-    receiverY += receiverLineGap;
+    {
+      const lines = pdf.splitTextToSize(safeText(parcel.receiver_postal_code, 'N/A'), boxWidth - 22);
+      lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 20, receiverY + i * 3.2));
+      receiverY += (lines.length - 1) * 3.2;
+    }
+
+    receiverY += receiverLineGap - 0.5;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Phone:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(safeText(parcel.receiver_phone, 'N/A'), receiverX + 12, receiverY);
-    
-    receiverY += receiverLineGap;
+    {
+      const lines = pdf.splitTextToSize(safeText(parcel.receiver_phone, 'N/A'), boxWidth - 14);
+      lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 12, receiverY + i * 3.2));
+      receiverY += (lines.length - 1) * 3.2;
+    }
+
+    receiverY += receiverLineGap - 0.5;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Email:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
-    const receiverEmail = safeText(parcel.receiver_email, 'N/A');
-    const emailLines = pdf.splitTextToSize(receiverEmail, 65);
-    pdf.text(emailLines[0], receiverX + 12, receiverY);
+    {
+      const receiverEmail = safeText(parcel.receiver_email, 'N/A');
+      const emailLines = pdf.splitTextToSize(receiverEmail, boxWidth - 14);
+      emailLines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 12, receiverY + i * 3.2));
+      receiverY += (emailLines.length - 1) * 3.2;
+    }
+    pdf.setFontSize(receiverFontSize);
 
     yPos += 45;
 
@@ -1215,25 +1242,38 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   );
   pdf.setFontSize(receiverFontSize);
   
-  receiverY += receiverLineGap;
+  pdf.setFontSize(7);
+  receiverY += receiverLineGap - 0.5;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Postal Code:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_postal_code, 'N/A'), receiverX + 22, receiverY);
-  
-  receiverY += receiverLineGap;
+  {
+    const lines = pdf.splitTextToSize(safeText(parcel.receiver_postal_code, 'N/A'), boxWidth - 24);
+    lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 22, receiverY + i * 3.2));
+    receiverY += (lines.length - 1) * 3.2;
+  }
+
+  receiverY += receiverLineGap - 0.5;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Phone:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_phone, 'N/A'), receiverX + 14, receiverY);
-  
-  receiverY += receiverLineGap;
+  {
+    const lines = pdf.splitTextToSize(safeText(parcel.receiver_phone, 'N/A'), boxWidth - 16);
+    lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 14, receiverY + i * 3.2));
+    receiverY += (lines.length - 1) * 3.2;
+  }
+
+  receiverY += receiverLineGap - 0.5;
   pdf.setFont('helvetica', 'bold');
   pdf.text('Email:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
-  const receiverEmail = safeText(parcel.receiver_email, 'N/A');
-  const emailLines = pdf.splitTextToSize(receiverEmail, 65);
-  pdf.text(emailLines[0], receiverX + 12, receiverY);
+  {
+    const receiverEmail = safeText(parcel.receiver_email, 'N/A');
+    const emailLines = pdf.splitTextToSize(receiverEmail, boxWidth - 14);
+    emailLines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 12, receiverY + i * 3.2));
+    receiverY += (emailLines.length - 1) * 3.2;
+  }
+  pdf.setFontSize(receiverFontSize);
 
   yPos += 52;
 
@@ -1420,7 +1460,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(60, 60, 60);
-  pdf.text('Phone: 042 999164619  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411  |  Email: skyxpress786@gmail.com', pageWidth / 2, yPos + 4, { align: 'center' });
+  pdf.text('Phone: (042) 37255473  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411  |  Email: skyxpress786@gmail.com', pageWidth / 2, yPos + 4, { align: 'center' });
 
   yPos += 10;
 
