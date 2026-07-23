@@ -57,7 +57,7 @@ const parcelTypeOptions = [
   { value: "other", label: "Other" },
 ];
 
-const serviceTypes = [
+const serviceTypeOptions = [
   { value: "standard", label: "Standard" },
   { value: "express", label: "Express" },
   { value: "overnight", label: "Overnight" },
