@@ -91,46 +91,42 @@ const countryNameToCode = (name: string): string => {
 };
 
 
-// Expand ISO codes or short names to full country display names
+// Convert 2-letter ISO codes or common aliases (UK, USA, UAE) to full country names.
+// Returns the input unchanged when already a full name.
 const codeToCountryName = (input: string): string => {
   if (!input) return '';
-  const n = input.trim().toUpperCase();
-  const map: Record<string, string> = {
-    'UK': 'United Kingdom', 'GB': 'United Kingdom', 'ENGLAND': 'United Kingdom',
-    'GREAT BRITAIN': 'United Kingdom', 'SCOTLAND': 'United Kingdom',
-    'WALES': 'United Kingdom', 'NORTHERN IRELAND': 'United Kingdom',
-    'US': 'United States', 'USA': 'United States',
-    'UAE': 'United Arab Emirates', 'AE': 'United Arab Emirates',
-    'KSA': 'Saudi Arabia', 'SA': 'Saudi Arabia',
-    'PK': 'Pakistan', 'DE': 'Germany', 'FR': 'France', 'IT': 'Italy',
-    'ES': 'Spain', 'NL': 'Netherlands', 'BE': 'Belgium', 'CA': 'Canada',
-    'AU': 'Australia', 'NZ': 'New Zealand', 'CN': 'China', 'JP': 'Japan',
-    'IN': 'India', 'BD': 'Bangladesh', 'LK': 'Sri Lanka', 'NP': 'Nepal',
-    'TR': 'Turkey', 'SE': 'Sweden', 'NO': 'Norway', 'DK': 'Denmark',
-    'FI': 'Finland', 'CH': 'Switzerland', 'AT': 'Austria', 'PT': 'Portugal',
-    'IE': 'Ireland', 'PL': 'Poland', 'CZ': 'Czech Republic', 'HU': 'Hungary',
-    'GR': 'Greece', 'RO': 'Romania', 'QA': 'Qatar', 'KW': 'Kuwait',
-    'BH': 'Bahrain', 'OM': 'Oman', 'JO': 'Jordan', 'MY': 'Malaysia',
-    'SG': 'Singapore', 'ID': 'Indonesia', 'TH': 'Thailand', 'PH': 'Philippines',
-    'ZA': 'South Africa', 'NG': 'Nigeria', 'KE': 'Kenya', 'GH': 'Ghana',
-    'EG': 'Egypt', 'MA': 'Morocco', 'BR': 'Brazil', 'MX': 'Mexico',
-    'AR': 'Argentina', 'CL': 'Chile', 'RU': 'Russia', 'UA': 'Ukraine',
+  const trimmed = String(input).trim();
+  const upper = trimmed.toUpperCase();
+  const aliases: Record<string, string> = {
+    'UK': 'United Kingdom',
+    'USA': 'United States',
+    'UAE': 'United Arab Emirates',
+    'KSA': 'Saudi Arabia',
   };
-  if (map[n]) return map[n];
-  // Already a full name — Title Case it
-  return input
-    .trim()
-    .toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  if (aliases[upper]) return aliases[upper];
+  const codeMap: Record<string, string> = {
+    GB: 'United Kingdom', US: 'United States', PK: 'Pakistan', AE: 'United Arab Emirates',
+    SA: 'Saudi Arabia', DE: 'Germany', FR: 'France', IT: 'Italy', ES: 'Spain',
+    NL: 'Netherlands', BE: 'Belgium', CA: 'Canada', AU: 'Australia', NZ: 'New Zealand',
+    CN: 'China', JP: 'Japan', IN: 'India', BD: 'Bangladesh', LK: 'Sri Lanka',
+    NP: 'Nepal', TR: 'Turkey', SE: 'Sweden', NO: 'Norway', DK: 'Denmark', FI: 'Finland',
+    CH: 'Switzerland', AT: 'Austria', PT: 'Portugal', IE: 'Ireland', PL: 'Poland',
+    CZ: 'Czech Republic', HU: 'Hungary', GR: 'Greece', RO: 'Romania', QA: 'Qatar',
+    KW: 'Kuwait', BH: 'Bahrain', OM: 'Oman', JO: 'Jordan', MY: 'Malaysia',
+    SG: 'Singapore', ID: 'Indonesia', TH: 'Thailand', PH: 'Philippines',
+    ZA: 'South Africa', NG: 'Nigeria', KE: 'Kenya', GH: 'Ghana', EG: 'Egypt',
+    MA: 'Morocco', BR: 'Brazil', MX: 'Mexico', AR: 'Argentina', CL: 'Chile',
+    RU: 'Russia', UA: 'Ukraine',
+  };
+  if (upper.length === 2 && codeMap[upper]) return codeMap[upper];
+  return trimmed;
 };
 
-// Draw a wrapped labeled field inside a fixed-width column.
-// Puts "Label:" on its own line and wraps the value on subsequent lines,
-// so long text never overlaps neighbouring columns.
-const drawWrappedField = (
-  pdf: any,
-  label: string,
-  value: string,
+// Renders an "Address:" label followed by wrapped address lines within maxWidth.
+// Returns the Y position after the last rendered line.
+const drawWrappedAddress = (
+  pdf: jsPDF,
+  parts: Array<string | undefined>,
   x: number,
   y: number,
   maxWidth: number,
@@ -139,15 +135,18 @@ const drawWrappedField = (
 ): number => {
   pdf.setFontSize(fontSize);
   pdf.setFont('helvetica', 'bold');
-  pdf.text(label, x, y);
+  pdf.text('Address:', x, y);
   pdf.setFont('helvetica', 'normal');
-  const lines: string[] = pdf.splitTextToSize(value || 'N/A', maxWidth);
-  let cy = y + lineGap;
-  for (const line of lines) {
-    pdf.text(line, x, cy);
-    cy += lineGap;
-  }
-  return cy;
+  let curY = y + lineGap;
+  const cleaned = parts.map(p => (p == null ? '' : String(p).trim())).filter(Boolean);
+  cleaned.forEach((raw) => {
+    const lines = pdf.splitTextToSize(raw, maxWidth) as string[];
+    lines.forEach((ln) => {
+      pdf.text(ln, x, curY);
+      curY += lineGap;
+    });
+  });
+  return curY;
 };
 
 type OutputMode = 'download' | 'preview' | 'print';
@@ -273,7 +272,7 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setLineWidth(0.8);
   pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
 
-  // Logo and top contact info removed per request
+  // Logo and top contact info intentionally removed per client request.
 
   // Right side: Header box — extended to 32mm to fit barcode
   const rightBoxX = pageWidth - margin - 75;
@@ -326,15 +325,34 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setTextColor(0, 0, 0);
   let shipperY = yPos + 12;
   
-  const b1ShipColW = boxWidth - 4;
-  shipperY = drawWrappedField(pdf, 'Name:', safeText(parcel.sender_name, 'N/A'), margin + 2, shipperY, b1ShipColW, senderFontSize, senderLineGap);
-  shipperY = drawWrappedField(pdf, 'Company:', safeText(parcel.sender_company, 'N/A'), margin + 2, shipperY, b1ShipColW, senderFontSize, senderLineGap);
-  const b1SenderAddrFull = [parcel.sender_address, parcel.sender_address_2, parcel.sender_address_3].filter(Boolean).map((v) => safeText(v)).join(', ') || 'N/A';
-  shipperY = drawWrappedField(pdf, 'Address:', b1SenderAddrFull, margin + 2, shipperY, b1ShipColW, senderFontSize, senderLineGap);
-  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Name:', margin + 2, shipperY);
   pdf.setFont('helvetica', 'normal');
-  const b1SenderLoc = pdf.splitTextToSize(`${safeText(parcel.sender_city, '')}, ${codeToCountryName(safeText(parcel.sender_country, 'Pakistan'))}`, b1ShipColW);
-  for (const ln of b1SenderLoc) { pdf.text(ln, margin + 2, shipperY); shipperY += 5; }
+  pdf.text(safeText(parcel.sender_name, 'N/A'), margin + 15, shipperY);
+  
+  shipperY += 5;
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Company:', margin + 2, shipperY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(safeText(parcel.sender_company, 'N/A'), margin + 20, shipperY);
+  
+  // Address block: label + wrapped lines within box width
+  shipperY += senderLineGap;
+  shipperY = drawWrappedAddress(
+    pdf,
+    [
+      parcel.sender_address,
+      parcel.sender_address_2,
+      parcel.sender_address_3,
+      `${safeText(parcel.sender_city, '')}, ${codeToCountryName(safeText(parcel.sender_country, 'Pakistan'))}`,
+    ],
+    margin + 2,
+    shipperY,
+    boxWidth - 4,
+    senderFontSize,
+    senderLineGap - 1
+  );
+  pdf.setFontSize(9);
   
   shipperY += 5;
   pdf.setFont('helvetica', 'bold');
@@ -371,15 +389,35 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setTextColor(0, 0, 0);
   let receiverY = yPos + 12;
   
-  const b1RecvColW = boxWidth - 4;
-  receiverY = drawWrappedField(pdf, 'Name:', safeText(parcel.receiver_name, 'N/A'), receiverX + 2, receiverY, b1RecvColW, receiverFontSize, receiverLineGap);
-  receiverY = drawWrappedField(pdf, 'Company:', safeText(parcel.receiver_company, 'N/A'), receiverX + 2, receiverY, b1RecvColW, receiverFontSize, receiverLineGap);
-  const b1RecvAddrFull = [parcel.receiver_address, parcel.receiver_address_2, parcel.receiver_address_3].filter(Boolean).map((v) => safeText(v)).join(', ') || 'N/A';
-  receiverY = drawWrappedField(pdf, 'Address:', b1RecvAddrFull, receiverX + 2, receiverY, b1RecvColW, receiverFontSize, receiverLineGap);
-  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Name:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
-  const b1RecvLoc = pdf.splitTextToSize(`${safeText(parcel.receiver_state, '')}, ${codeToCountryName(safeText(parcel.receiver_country, 'UK'))}`, b1RecvColW);
-  for (const ln of b1RecvLoc) { pdf.text(ln, receiverX + 2, receiverY); receiverY += 5; }
+  pdf.text(safeText(parcel.receiver_name, 'N/A'), receiverX + 15, receiverY);
+  
+  receiverY += 5;
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Company:', receiverX + 2, receiverY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(safeText(parcel.receiver_company, 'N/A'), receiverX + 20, receiverY);
+  
+  // Address block: label + wrapped lines within box width
+  receiverY += receiverLineGap;
+  receiverY = drawWrappedAddress(
+    pdf,
+    [
+      parcel.receiver_address,
+      parcel.receiver_address_2,
+      parcel.receiver_address_3,
+      `${safeText(parcel.receiver_city, '')}, ${safeText(parcel.receiver_state, '')}`.replace(/^,\s*|,\s*$/g, ''),
+      codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')),
+    ],
+    receiverX + 2,
+    receiverY,
+    boxWidth - 4,
+    receiverFontSize,
+    receiverLineGap - 1
+  );
+  pdf.setFontSize(9);
   
   receiverY += 5;
   pdf.setFont('helvetica', 'bold');
@@ -741,7 +779,7 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     // Add logo
     await addLogo(pdf, 10, yPos, 50, 30);
 
-    // Top contact info removed per request
+    // Top contact info removed per client request.
 
     // Right header box (same 20mm height — compact barcode replaces QR)
     const headerX = pageWidth - 75;
@@ -796,14 +834,33 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setTextColor(0, 0, 0);
     let shipperY = yPos + 10;
     
-    const b2ShipColW = boxWidth - 4;
-    shipperY = drawWrappedField(pdf, 'Name:', safeText(parcel.sender_name, 'N/A'), 12, shipperY, b2ShipColW, senderFontSize, senderLineGap);
-    shipperY = drawWrappedField(pdf, 'Company:', safeText(parcel.sender_company, 'N/A'), 12, shipperY, b2ShipColW, senderFontSize, senderLineGap);
-    const b2SenderAddrFull = [parcel.sender_address, parcel.sender_address_2, parcel.sender_address_3].filter(Boolean).map((v) => safeText(v)).join(', ') || 'N/A';
-    shipperY = drawWrappedField(pdf, 'Address:', b2SenderAddrFull, 12, shipperY, b2ShipColW, senderFontSize, senderLineGap);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Name:', 12, shipperY);
     pdf.setFont('helvetica', 'normal');
-    const b2SenderLoc = pdf.splitTextToSize(`${safeText(parcel.sender_city, '')}, ${codeToCountryName(safeText(parcel.sender_country, 'Pakistan'))}`, b2ShipColW);
-    for (const ln of b2SenderLoc) { pdf.text(ln, 12, shipperY); shipperY += senderLineGap; }
+    pdf.text(safeText(parcel.sender_name, 'N/A'), 24, shipperY);
+    
+    shipperY += senderLineGap;
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Company:', 12, shipperY);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(safeText(parcel.sender_company, 'N/A'), 28, shipperY);
+    
+    shipperY += senderLineGap;
+    shipperY = drawWrappedAddress(
+      pdf,
+      [
+        parcel.sender_address,
+        parcel.sender_address_2,
+        parcel.sender_address_3,
+        `${safeText(parcel.sender_city, '')}, ${codeToCountryName(safeText(parcel.sender_country, 'Pakistan'))}`,
+      ],
+      12,
+      shipperY,
+      boxWidth - 4,
+      senderFontSize,
+      senderLineGap - 1
+    );
+    pdf.setFontSize(senderFontSize);
     
     shipperY += senderLineGap;
     pdf.setFont('helvetica', 'bold');
@@ -828,14 +885,34 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
     pdf.setTextColor(0, 0, 0);
     let receiverY = yPos + 10;
     
-    const b2RecvColW = boxWidth - 4;
-    receiverY = drawWrappedField(pdf, 'Name:', safeText(parcel.receiver_name, 'N/A'), receiverX, receiverY, b2RecvColW, receiverFontSize, receiverLineGap);
-    receiverY = drawWrappedField(pdf, 'Company:', safeText(parcel.receiver_company, 'N/A'), receiverX, receiverY, b2RecvColW, receiverFontSize, receiverLineGap);
-    const b2RecvAddrFull = [parcel.receiver_address, parcel.receiver_address_2, parcel.receiver_address_3].filter(Boolean).map((v) => safeText(v)).join(', ') || 'N/A';
-    receiverY = drawWrappedField(pdf, 'Address:', b2RecvAddrFull, receiverX, receiverY, b2RecvColW, receiverFontSize, receiverLineGap);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Name:', receiverX, receiverY);
     pdf.setFont('helvetica', 'normal');
-    const b2RecvLoc = pdf.splitTextToSize(`${safeText(parcel.receiver_state, '')}, ${codeToCountryName(safeText(parcel.receiver_country, 'UK'))}`, b2RecvColW);
-    for (const ln of b2RecvLoc) { pdf.text(ln, receiverX, receiverY); receiverY += receiverLineGap; }
+    pdf.text(safeText(parcel.receiver_name, 'N/A'), receiverX + 12, receiverY);
+    
+    receiverY += receiverLineGap;
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Company:', receiverX, receiverY);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(safeText(parcel.receiver_company, 'N/A'), receiverX + 20, receiverY);
+    
+    receiverY += receiverLineGap;
+    receiverY = drawWrappedAddress(
+      pdf,
+      [
+        parcel.receiver_address,
+        parcel.receiver_address_2,
+        parcel.receiver_address_3,
+        `${safeText(parcel.receiver_city, '')}, ${safeText(parcel.receiver_state, '')}`.replace(/^,\s*|,\s*$/g, ''),
+        codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')),
+      ],
+      receiverX,
+      receiverY,
+      boxWidth - 4,
+      receiverFontSize,
+      receiverLineGap - 1
+    );
+    pdf.setFontSize(receiverFontSize);
     
     receiverY += receiverLineGap;
     pdf.setFont('helvetica', 'bold');
@@ -991,7 +1068,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   // Add logo at top left
   await addLogo(pdf, 10, yPos, 50, 30);
 
-  // Top contact info removed per request
+  // Top contact info removed per client request.
 
   // Right header box — extended to 32mm to fit barcode
   const headerX = pageWidth - 75;
@@ -1056,14 +1133,33 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.setTextColor(0, 0, 0);
   let shipperY = yPos + 11;
   
-  const b3ShipColW = boxWidth - 4;
-  shipperY = drawWrappedField(pdf, 'Name:', safeText(parcel.sender_name, 'N/A'), 12, shipperY, b3ShipColW, senderFontSize, senderLineGap);
-  shipperY = drawWrappedField(pdf, 'Company:', safeText(parcel.sender_company, 'N/A'), 12, shipperY, b3ShipColW, senderFontSize, senderLineGap);
-  const b3SenderAddrFull = [parcel.sender_address, parcel.sender_address_2, parcel.sender_address_3].filter(Boolean).map((v) => safeText(v)).join(', ') || 'N/A';
-  shipperY = drawWrappedField(pdf, 'Address:', b3SenderAddrFull, 12, shipperY, b3ShipColW, senderFontSize, senderLineGap);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Name:', 12, shipperY);
   pdf.setFont('helvetica', 'normal');
-  const b3SenderLoc = pdf.splitTextToSize(`${safeText(parcel.sender_city, '')}, ${codeToCountryName(safeText(parcel.sender_country, 'Pakistan'))}`, b3ShipColW);
-  for (const ln of b3SenderLoc) { pdf.text(ln, 12, shipperY); shipperY += senderLineGap; }
+  pdf.text(safeText(parcel.sender_name, 'N/A'), 24, shipperY);
+  
+  shipperY += senderLineGap;
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Company:', 12, shipperY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(safeText(parcel.sender_company, 'N/A'), 28, shipperY);
+  
+  shipperY += senderLineGap;
+  shipperY = drawWrappedAddress(
+    pdf,
+    [
+      parcel.sender_address,
+      parcel.sender_address_2,
+      parcel.sender_address_3,
+      `${safeText(parcel.sender_city, '')}, ${codeToCountryName(safeText(parcel.sender_country, 'Pakistan'))}`,
+    ],
+    12,
+    shipperY,
+    boxWidth - 4,
+    senderFontSize,
+    senderLineGap - 1
+  );
+  pdf.setFontSize(senderFontSize);
   
   shipperY += senderLineGap;
   pdf.setFont('helvetica', 'bold');
@@ -1090,14 +1186,34 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.setTextColor(0, 0, 0);
   let receiverY = yPos + 11;
   
-  const b3RecvColW = boxWidth - 4;
-  receiverY = drawWrappedField(pdf, 'Name:', safeText(parcel.receiver_name, 'N/A'), receiverX + 2, receiverY, b3RecvColW, receiverFontSize, receiverLineGap);
-  receiverY = drawWrappedField(pdf, 'Company:', safeText(parcel.receiver_company, 'N/A'), receiverX + 2, receiverY, b3RecvColW, receiverFontSize, receiverLineGap);
-  const b3RecvAddrFull = [parcel.receiver_address, parcel.receiver_address_2, parcel.receiver_address_3].filter(Boolean).map((v) => safeText(v)).join(', ') || 'N/A';
-  receiverY = drawWrappedField(pdf, 'Address:', b3RecvAddrFull, receiverX + 2, receiverY, b3RecvColW, receiverFontSize, receiverLineGap);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Name:', receiverX + 2, receiverY);
   pdf.setFont('helvetica', 'normal');
-  const b3RecvLoc = pdf.splitTextToSize(`${safeText(parcel.receiver_state, '')}, ${codeToCountryName(safeText(parcel.receiver_country, 'UK'))}`, b3RecvColW);
-  for (const ln of b3RecvLoc) { pdf.text(ln, receiverX + 2, receiverY); receiverY += receiverLineGap; }
+  pdf.text(safeText(parcel.receiver_name, 'N/A'), receiverX + 14, receiverY);
+  
+  receiverY += receiverLineGap;
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Company:', receiverX + 2, receiverY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(safeText(parcel.receiver_company, 'N/A'), receiverX + 20, receiverY);
+  
+  receiverY += receiverLineGap;
+  receiverY = drawWrappedAddress(
+    pdf,
+    [
+      parcel.receiver_address,
+      parcel.receiver_address_2,
+      parcel.receiver_address_3,
+      `${safeText(parcel.receiver_city, '')}, ${safeText(parcel.receiver_state, '')}`.replace(/^,\s*|,\s*$/g, ''),
+      codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')),
+    ],
+    receiverX + 2,
+    receiverY,
+    boxWidth - 4,
+    receiverFontSize,
+    receiverLineGap - 1
+  );
+  pdf.setFontSize(receiverFontSize);
   
   receiverY += receiverLineGap;
   pdf.setFont('helvetica', 'bold');
