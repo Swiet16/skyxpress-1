@@ -57,12 +57,21 @@ const parcelTypeOptions = [
   { value: "other", label: "Other" },
 ];
 
-const serviceTypeOptions = [
+const serviceTypes = [
   { value: "standard", label: "Standard" },
   { value: "express", label: "Express" },
   { value: "overnight", label: "Overnight" },
   { value: "economic", label: "Economic" },
   { value: "priority", label: "Priority" },
+
+  // New entries
+  { value: "dhl_pk", label: "DHL PK" },
+  { value: "ups_pk", label: "UPS PK" },
+  { value: "skynet", label: "SKYNET" },
+  { value: "dpd_uk", label: "DPD UK" },
+  { value: "dhl_via_uk", label: "DHL VIA UK" },
+  { value: "ups_via_belfast", label: "UPS VIA BELFAST" },
+  { value: "ups_saver", label: "UPS SAVER" },
 ];
 
 const documentTypeOptions = [
