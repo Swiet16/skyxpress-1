@@ -55,6 +55,23 @@ const URDU_DISCLAIMER =
 
 const NUM_CONTENT_ROWS = 15;
 
+// Converts a country code (e.g. "PK") to its full name (e.g. "Pakistan").
+// Falls back to the original value if it isn't a recognized 2-letter code.
+function getFullCountryName(value?: string): string {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (trimmed.length === 2 && /^[a-zA-Z]{2}$/.test(trimmed)) {
+    try {
+      const regionNames = new Intl.DisplayNames(["en"], { type: "region" });
+      const fullName = regionNames.of(trimmed.toUpperCase());
+      if (fullName) return fullName;
+    } catch {
+      // Intl.DisplayNames not supported — fall through to raw value
+    }
+  }
+  return trimmed;
+}
+
 function Value({ children }: { children: React.ReactNode }) {
   return <span style={{ fontSize: "9px" }}>{children ?? ""}</span>;
 }
@@ -67,7 +84,7 @@ interface InvoiceSectionProps {
 
 function InvoiceSection({ parcel, sectionTitle, showGiftLine = false }: InvoiceSectionProps) {
   const refNum = parcel.reference_id || parcel.tracking_id || "";
-  const destination = parcel.receiver_country || parcel.to_country || "";
+  const destination = getFullCountryName(parcel.receiver_country || parcel.to_country);
   const service = parcel.service_type?.toUpperCase() || "UPS";
   const bookingDate = parcel.created_at ? format(new Date(parcel.created_at), "dd/MM/yyyy") : "";
   const dimWt = parcel.dim_weight_override || "";
@@ -175,7 +192,7 @@ function InvoiceSection({ parcel, sectionTitle, showGiftLine = false }: InvoiceS
           <td style={cell} colSpan={3}><Value>{parcel.sender_city}{parcel.sender_country ? `, ${parcel.sender_country}` : ""}</Value></td>
           <td style={cell}></td>
           <td style={hdr}>COUNTRY :</td>
-          <td style={cell} colSpan={2}><Value>{parcel.receiver_country}</Value></td>
+          <td style={cell} colSpan={2}><Value>{getFullCountryName(parcel.receiver_country)}</Value></td>
           <td style={hdr}>POST/ZONE</td>
           <td style={cell}><Value>{parcel.receiver_postal_code}</Value></td>
         </tr>
@@ -320,16 +337,18 @@ export function SkyXpressAWBInvoice({ open, onClose, parcel }: AWBInvoiceProps) 
     style.textContent = [
       "* { margin: 0; padding: 0; box-sizing: border-box; }",
       "body { font-family: Arial, sans-serif; background: #fff; }",
+      ".print-area { width: 190mm; margin: 0 auto; }",
       "@media print {",
       "  body { margin: 0; }",
       "  .no-print { display: none !important; }",
-      "  @page { size: A4; margin: 8mm; }",
+      "  @page { size: A4 portrait; margin: 10mm; }",
       "}",
     ].join("\n");
     doc.head.appendChild(style);
 
     // Clone the already-rendered React tree into the print window (no re-parsing of raw HTML)
     const clone = content.cloneNode(true) as HTMLElement;
+    clone.classList.add("print-area");
     doc.body.appendChild(clone);
 
     setTimeout(() => {
