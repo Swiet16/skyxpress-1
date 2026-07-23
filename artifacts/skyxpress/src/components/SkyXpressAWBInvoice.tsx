@@ -66,7 +66,7 @@ interface InvoiceSectionProps {
 }
 
 function InvoiceSection({ parcel, sectionTitle, showGiftLine = false }: InvoiceSectionProps) {
-  const refNum = parcel.tracking_id || "";
+  const refNum = parcel.reference_id || parcel.tracking_id || "";
   const destination = parcel.receiver_country || parcel.to_country || "";
   const service = parcel.service_type?.toUpperCase() || "UPS";
   const bookingDate = parcel.created_at ? format(new Date(parcel.created_at), "dd/MM/yyyy") : "";
@@ -313,7 +313,7 @@ export function SkyXpressAWBInvoice({ open, onClose, parcel }: AWBInvoiceProps) 
     const doc = printWindow.document;
 
     // <title> via textContent (safe — no HTML parsing)
-    doc.title = `Performa Invoice - ${parcel.tracking_id}`;
+    doc.title = `Performa Invoice - ${parcel.reference_id || parcel.tracking_id}`;
 
     // Stylesheet via createElement (no user data in CSS text)
     const style = doc.createElement("style");
@@ -347,7 +347,7 @@ export function SkyXpressAWBInvoice({ open, onClose, parcel }: AWBInvoiceProps) 
       >
         <DialogHeader className="flex flex-row items-center justify-between px-4 py-2 border-b sticky top-0 bg-white z-10">
           <DialogTitle className="text-sm font-semibold">
-            Performa Invoice — {parcel.tracking_id}
+            Performa Invoice — {parcel.reference_id || parcel.tracking_id}
           </DialogTitle>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={handlePrint} className="flex items-center gap-1">
