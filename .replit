@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web"]
+modules = ["nodejs-24"]
 
 [deployment]
 router = "application"
@@ -18,12 +18,3 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
-
-[userenv]
-
-[userenv.shared]
-VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRodW5hb2xhbmRqdXZ1aHZic2RzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwNTEyMjQsImV4cCI6MjA3MzYyNzIyNH0.Qxv1DYPL4M15R4VVOm7Bph4ZKCjiClnNRvuMyPXZQts"
-VITE_SUPABASE_URL = "https://thunaolandjuvuhvbsds.supabase.co"
-
-[nix]
-channel = "stable-25_05"

@@ -1,50 +1,44 @@
-# SkyXpress
+# [Project name]
 
-SkyXpress is a logistics and parcel management web app with shipment tracking, quotes, invoices, and admin workflows.
+_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
 
 ## Run & Operate
 
-- `pnpm install --frozen-lockfile` — install the workspace dependencies
-- `pnpm --filter @workspace/skyxpress run dev` — run the SkyXpress Vite app
-- `pnpm --filter @workspace/skyxpress run typecheck` — typecheck the app
-- `PORT=20181 BASE_PATH=/ pnpm --filter @workspace/skyxpress run build` — create the production bundle
-- The managed `artifacts/skyxpress: web` workflow supplies `PORT` and `BASE_PATH` automatically.
-- Supabase-backed features use the configured `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` environment values.
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm run typecheck` — full typecheck across all packages
+- `pnpm run build` — typecheck + build all packages
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
+- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
+- Required env: `DATABASE_URL` — Postgres connection string
 
 ## Stack
 
-- pnpm workspaces, Node.js 20, TypeScript 5.9
-- React + Vite + Tailwind CSS
-- Supabase client for authentication, data, storage, and realtime features
-- ExcelJS, jsPDF, and html2canvas for manifest and invoice exports
+- pnpm workspaces, Node.js 24, TypeScript 5.9
+- API: Express 5
+- DB: PostgreSQL + Drizzle ORM
+- Validation: Zod (`zod/v4`), `drizzle-zod`
+- API codegen: Orval (from OpenAPI spec)
+- Build: esbuild (CJS bundle)
 
 ## Where things live
 
-- `artifacts/skyxpress/src/App.tsx` — application routes and main shell
-- `artifacts/skyxpress/src/components/` — shipment, invoice, tracking, and admin UI
-- `artifacts/skyxpress/src/integrations/supabase/` — Supabase client and generated types
-- `artifacts/skyxpress/.replit-artifact/artifact.toml` — preview and static publishing configuration
+_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
 
 ## Architecture decisions
 
-- The app remains a frontend-only Vite artifact and keeps its existing Supabase backend.
-- The production artifact is served statically from `dist/public` with an SPA rewrite to `index.html`.
-- The root preview path is `/`, so the published site opens directly at the app root.
+_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
 
 ## Product
 
-- Public pages for services, quotes, contact, tracking, and company information
-- Authenticated user dashboard for parcel requests, shipment status, and invoices
-- Admin tools for parcel approval, pricing, users, requests, and invoice generation
+_Describe the high-level user-facing capabilities of this app once they exist._
 
 ## User preferences
 
-- Keep the imported project structure and existing stack intact; prefer focused fixes over migrations.
+_Populate as you build — explicit user instructions worth remembering across sessions._
 
 ## Gotchas
 
-- Run builds with `PORT` and `BASE_PATH` set when invoking Vite directly; the managed artifact workflow injects both automatically.
-- Production publishing is configured in `artifacts/skyxpress/.replit-artifact/artifact.toml`, not in the root `.replit` deployment section.
+_Populate as you build — sharp edges, "always run X before Y" rules._
 
 ## Pointers
 
