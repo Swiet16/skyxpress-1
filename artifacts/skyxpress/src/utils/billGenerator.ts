@@ -378,7 +378,7 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   // Header row
   fillRect(pdf, shipX, yPos, colW, 7, C.navy);
   pdf.setFontSize(9); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...C.white);
-  pdf.text('✈ SHIPPER / SENDER', shipX + 5, yPos + 5.2);
+  pdf.text('SHIPPER / SENDER', shipX + 5, yPos + 5.2);
 
   let sy = yPos + 11;
   pdf.setFont('helvetica', 'bold'); pdf.setFontSize(sfSize); pdf.setTextColor(...C.navy);
@@ -404,7 +404,7 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   fillRect(pdf, recvX, yPos, 2.5, cardTotalH, C.orange);
   fillRect(pdf, recvX, yPos, colW, 7, C.orange);
   pdf.setFontSize(9); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...C.white);
-  pdf.text('✈ RECEIVER / CONSIGNEE', recvX + 5, yPos + 5.2);
+  pdf.text('RECEIVER / CONSIGNEE', recvX + 5, yPos + 5.2);
 
   let ry = yPos + 11;
   pdf.setFont('helvetica', 'bold'); pdf.setFontSize(rfSize); pdf.setTextColor(...C.orange);
@@ -721,11 +721,11 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
   // Dashed separator
   const sep = 4 + copyH + 1;
   pdf.setDrawColor(...C.border);
-  pdf.setLineDash([2,2]);
-  pdf.line(10, sep, PW-10, sep);
-  pdf.setLineDash([]);
+  pdf.setDrawColor(...C.border);
+  pdf.setLineWidth(0.4);
+  for (let dx = 10; dx < PW-10; dx += 4) pdf.line(dx, sep, dx+2, sep);
   pdf.setFontSize(6); pdf.setTextColor(...C.textLight);
-  pdf.text('✂  PLEASE CUT HERE', PW/2, sep+2.5, {align:'center'});
+  pdf.text('- - - CUT HERE - - -', PW/2, sep+2.5, {align:'center'});
 
   await generateCopy(sep + gap + 1, 'FORWARD COPY — FOR DESTINATION', true);
 
@@ -814,7 +814,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   fillRect(pdf, shipX, yPos, 2.5, cardH, C.crimson);
   fillRect(pdf, shipX, yPos, colW, 7, C.crimson);
   pdf.setFontSize(8.5); pdf.setFont('helvetica','bold'); pdf.setTextColor(...C.white);
-  pdf.text('✈ SHIPPER / SENDER', shipX+5, yPos+5.3);
+  pdf.text('SHIPPER / SENDER', shipX+5, yPos+5.3);
 
   let sy = yPos+12;
   pdf.setFont('helvetica','bold'); pdf.setFontSize(sfSize); pdf.setTextColor(...C.crimson);
@@ -836,7 +836,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   fillRect(pdf, recvX, yPos, 2.5, cardH, C.orange);
   fillRect(pdf, recvX, yPos, colW, 7, C.orange);
   pdf.setFontSize(8.5); pdf.setFont('helvetica','bold'); pdf.setTextColor(...C.white);
-  pdf.text('✈ RECEIVER / CONSIGNEE', recvX+5, yPos+5.3);
+  pdf.text('RECEIVER / CONSIGNEE', recvX+5, yPos+5.3);
 
   let ry = yPos+12;
   pdf.setFont('helvetica','bold'); pdf.setFontSize(rfSize); pdf.setTextColor(...C.orange);
