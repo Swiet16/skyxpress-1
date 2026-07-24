@@ -1,1 +1,2 @@
 - [Artifact dependency ownership](artifact-dependency-ownership.md) — imported artifact dependencies must be declared in that artifact's package manifest for reliable publishing.
+- [Vercel workspace builds](vercel-workspace-builds.md) — Vercel clones the GitHub branch, so local fixes must be committed and pushed before retrying.
