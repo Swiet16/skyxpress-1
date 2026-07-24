@@ -14,7 +14,6 @@ import {
   Activity,
   ClipboardCheck,
   Terminal,
-  ScrollText,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { UserManagement } from "./UserManagement";
@@ -207,9 +206,6 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
           <TabsTrigger value="approved">Approved</TabsTrigger>
           {isAdmin && <TabsTrigger value="users">Users</TabsTrigger>}
           <TabsTrigger value="parcels">All Parcels</TabsTrigger>
-          <TabsTrigger value="manifest" onClick={() => navigate("/manifest")}>
-            <ScrollText className="h-3.5 w-3.5 mr-1" />Manifest
-          </TabsTrigger>
           <TabsTrigger value="quotes">Quotes</TabsTrigger>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
           <TabsTrigger value="create-invoice">Create Invoice</TabsTrigger>
@@ -347,10 +343,6 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
                   <Button className="h-16 flex-col gap-2" onClick={() => setActiveTab("create-invoice")}>
                     <Plus className="h-6 w-6" />
                     Create New Parcel
-                  </Button>
-                  <Button variant="outline" className="h-16 flex-col gap-2" onClick={() => navigate("/manifest")}>
-                    <ScrollText className="h-6 w-6" />
-                    Shipment Manifest
                   </Button>
                   <Button variant="outline" className="h-16 flex-col gap-2" onClick={() => setActiveTab("users")}>
                     <Users className="h-6 w-6" />

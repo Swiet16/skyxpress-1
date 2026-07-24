@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, Package, Truck, FileText, X, Edit, Check, ChevronsUpDown, Layers } from "lucide-react";
+import { Search, Package, Truck, FileText, X, Edit, Check, ChevronsUpDown, Layers, ChevronLeft, ChevronRight } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
@@ -88,9 +88,12 @@ const WORLD_COUNTRIES = [
 ];
 
 export const ApprovedParcelsSection = () => {
+  const PAGE_SIZE = 10;
   const [parcels, setParcels] = useState<ApprovedParcel[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [countryFilter, setCountryFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
   const [countries, setCountries] = useState<string[]>([]);
   const [countrySearchOpen, setCountrySearchOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -316,9 +319,21 @@ export const ApprovedParcelsSection = () => {
     const matchesCountry = !countryFilter || 
       parcel.from_country === countryFilter || 
       parcel.to_country === countryFilter;
+    const matchesStatus = !statusFilter || parcel.shipping_status === statusFilter;
     
-    return matchesSearch && matchesCountry;
+    return matchesSearch && matchesCountry && matchesStatus;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredParcels.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedParcels = filteredParcels.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, countryFilter, statusFilter]);
 
   const allFilteredSelected =
     filteredParcels.length > 0 && filteredParcels.every((p) => selectedIds.has(p.id));
@@ -395,6 +410,20 @@ export const ApprovedParcelsSection = () => {
               </Command>
             </PopoverContent>
           </Popover>
+
+          <Select value={statusFilter || "all"} onValueChange={(value) => setStatusFilter(value === "all" ? "" : value)}>
+            <SelectTrigger className="w-full sm:w-[210px]">
+              <SelectValue placeholder="Filter by status..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              {Object.keys(statusColors).map((status) => (
+                <SelectItem key={status} value={status}>
+                  {status.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Bulk action bar - shown once at least one parcel is selected */}
@@ -438,7 +467,7 @@ export const ApprovedParcelsSection = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredParcels.map((parcel) => (
+               {paginatedParcels.map((parcel) => (
                 <TableRow key={parcel.id} data-state={selectedIds.has(parcel.id) ? "selected" : undefined}>
                   <TableCell>
                     <Checkbox
@@ -495,6 +524,38 @@ export const ApprovedParcelsSection = () => {
             </div>
           )}
         </div>
+
+        {filteredParcels.length > 0 && (
+          <div className="mt-4 flex flex-col gap-3 border-t pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-muted-foreground">
+              Showing {(currentPage - 1) * PAGE_SIZE + 1}–
+              {Math.min(currentPage * PAGE_SIZE, filteredParcels.length)} of {filteredParcels.length} approved parcels
+            </p>
+            <div className="flex items-center justify-between gap-2 sm:justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="mr-1 h-4 w-4" />
+                Previous
+              </Button>
+              <span className="min-w-20 text-center text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+                <ChevronRight className="ml-1 h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
 
       <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>

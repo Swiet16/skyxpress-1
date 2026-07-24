@@ -33,7 +33,8 @@ import {
   Paperclip,
   FileSpreadsheet,
   CheckSquare,
-  Square,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { ParcelForm } from "./ParcelForm";
 import { ParcelDetails } from "./ParcelDetails";
@@ -98,8 +99,10 @@ const statusColors: Record<string, string> = {
 };
 
 export const ParcelManagement = () => {
+  const PAGE_SIZE = 10;
   const [parcels, setParcels] = useState<Parcel[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [selectedParcel, setSelectedParcel] = useState<Parcel | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -172,6 +175,16 @@ export const ParcelManagement = () => {
       parcel.receiver_phone.toLowerCase().includes(query)
     );
   });
+  const totalPages = Math.max(1, Math.ceil(filteredParcels.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedParcels = filteredParcels.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery]);
 
   const allFilteredSelected =
     filteredParcels.length > 0 &&
@@ -439,7 +452,7 @@ export const ParcelManagement = () => {
               </TableHeader>
 
               <TableBody>
-                {filteredParcels.map((parcel) => {
+                {paginatedParcels.map((parcel) => {
                   const isSelected = selectedIds.has(parcel.id);
                   return (
                     <TableRow
@@ -586,6 +599,38 @@ export const ParcelManagement = () => {
               </div>
             )}
           </div>
+
+          {filteredParcels.length > 0 && (
+            <div className="mt-4 flex flex-col gap-3 border-t pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-muted-foreground">
+                Showing {(currentPage - 1) * PAGE_SIZE + 1}–
+                {Math.min(currentPage * PAGE_SIZE, filteredParcels.length)} of {filteredParcels.length} parcels
+              </p>
+              <div className="flex items-center justify-between gap-2 sm:justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((value) => Math.max(1, value - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="mr-1 h-4 w-4" />
+                  Previous
+                </Button>
+                <span className="min-w-20 text-center text-muted-foreground">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                  <ChevronRight className="ml-1 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Bottom manifest action bar — appears when parcels are selected */}
           {selectedCount > 0 && (

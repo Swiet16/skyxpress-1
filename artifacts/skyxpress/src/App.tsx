@@ -13,6 +13,7 @@ import Dashboard from "./pages/Dashboard";
 import About from "./pages/About";
 import Contact from "./pages/Contact";
 import Terms from "./pages/Terms";
+import Manifest from "./pages/Manifest";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,6 +35,7 @@ const App = () => (
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/terms" element={<Terms />} />
+          <Route path="/manifest" element={<Manifest />} />
           <Route path="/privacy" element={<Terms />} />
           <Route path="/shipping-terms" element={<Terms />} />
           <Route path="/country/:countryName" element={<Network />} />
