@@ -21,13 +21,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Search, Plus, Package, Eye, Edit, FileText, Trash2, Paperclip, FileSpreadsheet, Loader2 } from "lucide-react";
+import { Search, Plus, Package, Eye, Edit, FileText, Trash2, Paperclip } from "lucide-react";
 import { ParcelForm } from "./ParcelForm";
 import { ParcelDetails } from "./ParcelDetails";
 import { ParcelAttachmentsDialog } from "./ParcelAttachments";
 import { SkyXpressAWBInvoice } from "./SkyXpressAWBInvoice";
-import { exportManifest } from "@/lib/manifestExport";
 
 interface Parcel {
   id: string;
@@ -101,10 +99,6 @@ export const ParcelManagement = () => {
   const [loadingInvoice, setLoadingInvoice] = useState(false);
   const { toast } = useToast();
 
-  // Multi-select for manifest creation
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [creatingManifest, setCreatingManifest] = useState(false);
-
   // Country code -> full name lookup, pulled from Supabase
   const [countryMap, setCountryMap] = useState<Record<string, string>>({});
 
@@ -159,7 +153,7 @@ export const ParcelManagement = () => {
   };
 
   const getCountryName = (code: string) => {
-    if (!code) return "—";
+    if (!code) return "â€”";
     return countryMap[code] || code;
   };
 
@@ -348,63 +342,6 @@ export const ParcelManagement = () => {
     );
   });
 
-  // --- Multi-select helpers ---
-  const isSelected = (id: string) => selectedIds.has(id);
-
-  const toggleSelected = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  const allVisibleSelected =
-    filteredParcels.length > 0 && filteredParcels.every((p) => selectedIds.has(p.id));
-
-  const toggleSelectAllVisible = () => {
-    setSelectedIds((prev) => {
-      if (allVisibleSelected) {
-        // deselect only what's currently visible, keep any other selections intact
-        const next = new Set(prev);
-        filteredParcels.forEach((p) => next.delete(p.id));
-        return next;
-      }
-      const next = new Set(prev);
-      filteredParcels.forEach((p) => next.add(p.id));
-      return next;
-    });
-  };
-
-  const handleCreateManifest = async () => {
-    const selectedParcels = parcels.filter((p) => selectedIds.has(p.id));
-    if (selectedParcels.length === 0) return;
-
-    setCreatingManifest(true);
-    try {
-      await exportManifest(selectedParcels, getCountryName);
-      toast({
-        title: "Manifest created",
-        description: `Manifest generated for ${selectedParcels.length} parcel${
-          selectedParcels.length > 1 ? "s" : ""
-        }.`,
-      });
-    } catch (error: any) {
-      console.error("Error creating manifest:", error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create manifest",
-        variant: "destructive",
-      });
-    } finally {
-      setCreatingManifest(false);
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -422,34 +359,20 @@ export const ParcelManagement = () => {
               <Package className="h-5 w-5" />
               Parcel Management
             </CardTitle>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                disabled={selectedIds.size === 0 || creatingManifest}
-                onClick={handleCreateManifest}
-              >
-                {creatingManifest ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <FileSpreadsheet className="h-4 w-4 mr-2" />
-                )}
-                Create Manifest{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
-              </Button>
-              <Dialog open={showCreateForm} onOpenChange={setShowCreateForm}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create Parcel
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle>Create New Parcel</DialogTitle>
-                  </DialogHeader>
-                  <ParcelForm onSuccess={handleParcelCreated} />
-                </DialogContent>
-              </Dialog>
-            </div>
+            <Dialog open={showCreateForm} onOpenChange={setShowCreateForm}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Parcel
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Create New Parcel</DialogTitle>
+                </DialogHeader>
+                <ParcelForm onSuccess={handleParcelCreated} />
+              </DialogContent>
+            </Dialog>
           </div>
           <div className="flex items-center gap-4">
             <div className="relative flex-1">
@@ -468,13 +391,6 @@ export const ParcelManagement = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10">
-                    <Checkbox
-                      checked={allVisibleSelected}
-                      onCheckedChange={toggleSelectAllVisible}
-                      aria-label="Select all visible parcels"
-                    />
-                  </TableHead>
                   <TableHead>Reference ID</TableHead>
                   <TableHead>Tracking ID</TableHead>
                   <TableHead>Sender</TableHead>
@@ -489,14 +405,7 @@ export const ParcelManagement = () => {
               </TableHeader>
               <TableBody>
                 {filteredParcels.map((parcel) => (
-                  <TableRow key={parcel.id} data-state={isSelected(parcel.id) ? "selected" : undefined}>
-                    <TableCell>
-                      <Checkbox
-                        checked={isSelected(parcel.id)}
-                        onCheckedChange={() => toggleSelected(parcel.id)}
-                        aria-label={`Select parcel ${parcel.tracking_id}`}
-                      />
-                    </TableCell>
+                  <TableRow key={parcel.id}>
                     <TableCell>
                       {editingCell?.id === parcel.id && editingCell.field === "reference_id" ? (
                         <Input
@@ -553,14 +462,14 @@ export const ParcelManagement = () => {
                     </TableCell>
                     <TableCell>
                       <div className="text-sm">
-                        {getCountryName(parcel.from_country)} → {getCountryName(parcel.to_country)}
+                        {getCountryName(parcel.from_country)} â†’ {getCountryName(parcel.to_country)}
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="text-sm">
                         <div>{parcel.parcel_type}</div>
                         <div className="text-muted-foreground">
-                          {parcel.weight}kg • {parcel.length}×{parcel.width}×{parcel.height}cm
+                          {parcel.weight}kg â€¢ {parcel.length}Ã—{parcel.width}Ã—{parcel.height}cm
                         </div>
                       </div>
                     </TableCell>
