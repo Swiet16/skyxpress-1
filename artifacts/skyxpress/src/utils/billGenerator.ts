@@ -980,8 +980,12 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
 
 
 // ─── Generate all 3 bills ─────────────────────────────────────────────────────
+const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+
 export const generateAllBills = async (parcel: ParcelData): Promise<void> => {
   await generatePaymentInvoice(parcel);
-  setTimeout(async () => { await generateAirwayBillVerification(parcel); }, 600);
-  setTimeout(async () => { await generateAirwayBillWithPayment(parcel); }, 1200);
+  await delay(700);
+  await generateAirwayBillVerification(parcel);
+  await delay(700);
+  await generateAirwayBillWithPayment(parcel);
 };
