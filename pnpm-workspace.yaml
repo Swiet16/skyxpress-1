@@ -33,12 +33,14 @@ minimumReleaseAgeExclude:
   # this setting guards against does not apply to our own packages.
   - '@replit/*'
   - stripe-replit-sync
+  # Established packages used by the imported app (jspdf, bwip-js, html2canvas, xlsx)
+  - jspdf
+  - bwip-js
+  - html2canvas
+  - xlsx
 
 packages:
-  - artifacts/*
-  - lib/*
-  - lib/integrations/*
-  - scripts
+  - artifacts/skyxpress
 
 catalog:
   '@replit/vite-plugin-cartographer': ^0.5.21

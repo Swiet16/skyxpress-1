@@ -14,7 +14,6 @@ import About from "./pages/About";
 import Contact from "./pages/Contact";
 import Terms from "./pages/Terms";
 import NotFound from "./pages/NotFound";
-import Manifest from "./pages/Manifest";
 
 const queryClient = new QueryClient();
 
@@ -38,8 +37,6 @@ const App = () => (
           <Route path="/privacy" element={<Terms />} />
           <Route path="/shipping-terms" element={<Terms />} />
           <Route path="/country/:countryName" element={<Network />} />
-          <Route path="/manifest" element={<Manifest />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
