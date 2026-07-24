@@ -1,40 +1,17 @@
 import { useState, useEffect } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import heroLogisticsImage from "@/assets/hero-logistics.jpg";
+
+const slides = [
+  {
+    image: heroLogisticsImage,
+    title: "Reliable delivery, wherever business takes you",
+    subtitle: "Fast, secure courier and cargo solutions worldwide",
+  },
+];
 
 const ImageSlider = () => {
   const [currentSlide, setCurrentSlide] = useState(0);
-const slides = [
-    {
-      image: "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/pic1.png",
-      title: "",
-      subtitle: ""
-    },
-    {
-      image: "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/pic2.png", 
-      title: "",
-      subtitle: ""
-    },
-    {
-      image: "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/pic3.png", 
-      title: "",
-      subtitle: ""
-    },
-    {
-      image: "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/pic4.png",
-      title: "",
-      subtitle: ""
-    },
-    {
-      image: "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/pic5.png", 
-      title: "",
-      subtitle: ""
-    },
-    {
-      image: "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/pic6.png",
-      title: "",
-      subtitle: ""
-    }
-  ];
     
 
   // Auto-advance slides every 5 seconds

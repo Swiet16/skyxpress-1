@@ -2,7 +2,7 @@ import { HeroCarousel } from "@/components/HeroCarousel";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Package, Globe } from "lucide-react";
-import skyxpressLogo from '@/assets/skyxpress-logo.jpg';
+import skyxpressLogo from '@/assets/skyxpress_logo.png';
 
 const HeroSection = () => {
   return (
@@ -12,7 +12,7 @@ const HeroSection = () => {
         <div className="container mx-auto px-4 text-center">
           <div className="flex items-center justify-center gap-4 mb-4">
             <img 
-              src="https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/skyxpress_logo.png" 
+              src={skyxpressLogo}
               alt="SkyXpress Logo" 
               className="h-20 w-auto object-contain"
             />

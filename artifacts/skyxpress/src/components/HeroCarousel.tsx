@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from './ui/button';
+import heroLogisticsImage from '@/assets/hero-logistics.jpg';
 
 const carouselImages = [
   {
-    url: 'https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=1920&h=800&fit=crop&crop=center&auto=format',
+    url: heroLogisticsImage,
     title: 'Global Air Cargo Network',
     description: 'Fast and reliable international shipping solutions'
   },
