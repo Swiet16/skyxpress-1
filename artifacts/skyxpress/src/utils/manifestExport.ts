@@ -96,7 +96,7 @@ export function exportManifestToExcel(
   // ── Data rows ─────────────────────────────────────────────────────────────
   const dataRows = parcels.map((parcel, index) => [
     index + 1,
-    parcel.tracking_id || parcel.reference_id || "",
+    parcel.reference_id || parcel.tracking_id || "",
     parcel.sender_name || "",
     parcel.sender_city || "",
     getCountryDisplay(parcel.from_country, countryMap),
@@ -111,7 +111,7 @@ export function exportManifestToExcel(
     Number(parcel.weight ?? 0),
     Number(parcel.total_price ?? 0),
     getDescription(parcel),
-    parcel.tracking_id || "",
+    parcel.reference_id || parcel.tracking_id || "",
     parcel.service_type || "",
     "LABEL PASTED",
   ]);

@@ -158,7 +158,7 @@ export async function generateManifestExcel(
       p.weight ?? 0, // Wt KGS
       p.total_price ?? 0, // VALUE $
       description, // Description
-      p.tracking_id, // TRACKING I'D
+      p.reference_id || p.tracking_id, // TRACKING I'D
       p.service_type || "", // SERVICE
       "", // LABEL (checked off manually)
     ];
