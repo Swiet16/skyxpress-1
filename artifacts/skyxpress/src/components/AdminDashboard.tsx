@@ -18,10 +18,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { UserManagement } from "./UserManagement";
 import { ParcelManagement } from "./ParcelManagement";
-import { QuoteManagement } from "./QuoteManagement";
 import { PricingManager } from "./PricingManager";
-import { InvoiceManager } from "./InvoiceManager";
-import { InvoiceCreator } from "./InvoiceCreator";
 import { AdminRequestsSection } from "./AdminRequestsSection";
 import { ApprovedParcelsSection } from "./ApprovedParcelsSection";
 import { useLiveData } from "@/hooks/useLiveData";
@@ -203,12 +200,9 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
         <TabsList className="w-full h-auto flex-wrap justify-start gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="requests">Requests</TabsTrigger>
-          <TabsTrigger value="approved">Approved</TabsTrigger>
+          <TabsTrigger value="approved">Status / Approved</TabsTrigger>
           {isAdmin && <TabsTrigger value="users">Users</TabsTrigger>}
           <TabsTrigger value="parcels">All Parcels</TabsTrigger>
-          <TabsTrigger value="quotes">Quotes</TabsTrigger>
-          <TabsTrigger value="invoices">Invoices</TabsTrigger>
-          <TabsTrigger value="create-invoice">Create Invoice</TabsTrigger>
           {isAdmin && <TabsTrigger value="rates">Rates</TabsTrigger>}
           {(isDeveloper || isAdmin) && <TabsTrigger value="system">System</TabsTrigger>}
         </TabsList>
@@ -340,9 +334,9 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
             <CardContent>
               {isAdmin && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Button className="h-16 flex-col gap-2" onClick={() => setActiveTab("create-invoice")}>
+                  <Button className="h-16 flex-col gap-2" onClick={() => setActiveTab("parcels")}>
                     <Plus className="h-6 w-6" />
-                    Create New Parcel
+                    Create / View Parcels
                   </Button>
                   <Button variant="outline" className="h-16 flex-col gap-2" onClick={() => setActiveTab("users")}>
                     <Users className="h-6 w-6" />
@@ -355,7 +349,7 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
                 </div>
               )}
               {role === "staff" && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Button className="h-16 flex-col gap-2" onClick={() => setActiveTab("parcels")}>
                     <Package className="h-6 w-6" />
                     View All Parcels
@@ -363,10 +357,6 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
                   <Button variant="outline" className="h-16 flex-col gap-2" onClick={() => setActiveTab("requests")}>
                     <ClipboardCheck className="h-6 w-6" />
                     Review Requests
-                  </Button>
-                  <Button variant="outline" className="h-16 flex-col gap-2" onClick={() => setActiveTab("quotes")}>
-                    <FileText className="h-6 w-6" />
-                    Handle Quotes
                   </Button>
                 </div>
               )}
@@ -380,9 +370,9 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
                     <Package className="h-6 w-6" />
                     View All Parcels
                   </Button>
-                  <Button variant="outline" className="h-16 flex-col gap-2" onClick={() => setActiveTab("invoices")}>
-                    <FileText className="h-6 w-6" />
-                    View Invoices
+                  <Button variant="outline" className="h-16 flex-col gap-2" onClick={() => setActiveTab("approved")}>
+                    <ClipboardCheck className="h-6 w-6" />
+                    Status / Approved
                   </Button>
                 </div>
               )}
@@ -406,18 +396,6 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
 
         <TabsContent value="parcels">
           <ParcelManagement />
-        </TabsContent>
-
-        <TabsContent value="quotes">
-          <QuoteManagement />
-        </TabsContent>
-
-        <TabsContent value="invoices">
-          <InvoiceManager />
-        </TabsContent>
-
-        <TabsContent value="create-invoice">
-          <InvoiceCreator />
         </TabsContent>
 
         {isAdmin && (
