@@ -4,9 +4,40 @@ import heroLogisticsImage from "@/assets/hero-logistics.jpg";
 
 const slides = [
   {
-    image: heroLogisticsImage,
-    title: "Reliable delivery, wherever business takes you",
-    subtitle: "Fast, secure courier and cargo solutions worldwide",
+    image:
+      "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/pic1.png",
+    title: "Global Air Cargo Network",
+    subtitle: "Fast and reliable international shipping solutions",
+  },
+  {
+    image:
+      "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/pic2.png",
+    title: "Express Delivery Solutions",
+    subtitle: "Door-to-door courier services worldwide",
+  },
+  {
+    image:
+      "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/pic3.png",
+    title: "Secure Package Handling",
+    subtitle: "Your packages are safe with our expert team",
+  },
+  {
+    image:
+      "https://thunaolandjuvuhbsds.supabase.co/storage/v1/object/public/File/pic4.png",
+    title: "Real-time Tracking",
+    subtitle: "Monitor your shipments every step of the journey",
+  },
+  {
+    image:
+      "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/pic5.png",
+    title: "International Commerce",
+    subtitle: "Connecting businesses across continents seamlessly",
+  },
+  {
+    image:
+      "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/pic6.png",
+    title: "Reliable Global Logistics",
+    subtitle: "Courier and cargo services built around your business",
   },
 ];
 
@@ -48,6 +79,12 @@ const ImageSlider = () => {
               src={slide.image}
               alt={slide.title}
               className="absolute inset-0 z-0 w-full h-full object-cover"
+              onError={(event) => {
+                const image = event.currentTarget;
+                if (image.src !== heroLogisticsImage) {
+                  image.src = heroLogisticsImage;
+                }
+              }}
             />
             <div className="absolute inset-0 z-10 bg-black/35 flex items-center justify-center">
               <div className="relative z-20 text-center text-white px-4">
