@@ -115,7 +115,7 @@ export async function generateManifestExcel(
     cell.value = label;
     cell.font = { name: "Cambria", size: 12, bold: true, color: { argb: "FF000000" } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL_ARGB } };
-    cell.alignment = { horizontal: "left", vertical: "center" };
+    cell.alignment = { horizontal: "left", vertical: "middle" };
     cell.border = cellBorder(true, i === 0);
   });
 

@@ -1,0 +1,1 @@
+- [Artifact dependency ownership](artifact-dependency-ownership.md) — imported artifact dependencies must be declared in that artifact's package manifest for reliable publishing.
