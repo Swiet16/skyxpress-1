@@ -47,10 +47,10 @@ const ImageSlider = () => {
             <img
               src={slide.image}
               alt={slide.title}
-              className="w-full h-full object-cover"
+              className="absolute inset-0 z-0 w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
-              <div className="text-center text-white px-4">
+            <div className="absolute inset-0 z-10 bg-black/35 flex items-center justify-center">
+              <div className="relative z-20 text-center text-white px-4">
                 <h3 className="text-2xl md:text-4xl font-bold mb-2">{slide.title}</h3>
                 <p className="text-lg md:text-xl opacity-90">{slide.subtitle}</p>
               </div>
