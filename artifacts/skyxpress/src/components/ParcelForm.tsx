@@ -895,7 +895,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
   const isLastStep = step === STEPS.length - 1;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 bg-[#0f1020] text-white rounded-2xl p-5">
       {/* Step bar */}
       <div className="px-1">
         <StepBar step={step} total={STEPS.length} steps={STEPS} />
