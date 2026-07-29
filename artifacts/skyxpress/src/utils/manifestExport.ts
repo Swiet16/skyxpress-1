@@ -53,20 +53,22 @@ function getCountryDisplay(code: string, countryMap: Record<string, string>): st
 export function exportManifestToExcel(
   parcels: Parcel[],
   countryMap: Record<string, string>,
-  filename?: string
+  filename?: string,
+  manifestId?: string
 ): void {
   const wb = XLSX.utils.book_new();
 
   // ── Title / branding row ──────────────────────────────────────────────────
-  const companyName = "SKYXPRESS INTERNATIONAL";
+  const companyName = "SKYXPRESS INTERNATIONAL COURIER & CARGO";
   const manifestDate = new Date().toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
+  const idPart = manifestId ? `   Manifest ID: ${manifestId}` : "";
 
   const titleRow = [
-    `${companyName} — SHIPMENT MANIFEST   Date: ${manifestDate}   Total Parcels: ${parcels.length}`,
+    `${companyName} — SHIPMENT MANIFEST${idPart}   Date: ${manifestDate}   Total Parcels: ${parcels.length}`,
     "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
   ];
 

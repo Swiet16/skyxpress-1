@@ -14,6 +14,7 @@ import {
   Activity,
   ClipboardCheck,
   Terminal,
+  ClipboardList,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { UserManagement } from "./UserManagement";
@@ -21,6 +22,7 @@ import { ParcelManagement } from "./ParcelManagement";
 import { PricingManager } from "./PricingManager";
 import { AdminRequestsSection } from "./AdminRequestsSection";
 import { ApprovedParcelsSection } from "./ApprovedParcelsSection";
+import { ManifestStock } from "./ManifestStock";
 import { useLiveData } from "@/hooks/useLiveData";
 import {
   FlightPathChart,
@@ -203,6 +205,10 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
           <TabsTrigger value="approved">Status / Approved</TabsTrigger>
           {isAdmin && <TabsTrigger value="users">Users</TabsTrigger>}
           <TabsTrigger value="parcels">All Parcels</TabsTrigger>
+          <TabsTrigger value="manifests" className="gap-1.5">
+            <ClipboardList className="h-3.5 w-3.5" />
+            Manifest Stock
+          </TabsTrigger>
           {isAdmin && <TabsTrigger value="rates">Rates</TabsTrigger>}
           {(isDeveloper || isAdmin) && <TabsTrigger value="system">System</TabsTrigger>}
         </TabsList>
@@ -396,6 +402,10 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
 
         <TabsContent value="parcels">
           <ParcelManagement />
+        </TabsContent>
+
+        <TabsContent value="manifests">
+          <ManifestStock />
         </TabsContent>
 
         {isAdmin && (

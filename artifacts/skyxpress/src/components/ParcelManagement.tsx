@@ -35,12 +35,23 @@ import {
   CheckSquare,
   ChevronLeft,
   ChevronRight,
+  FileDown,
+  ClipboardList,
+  Sparkles,
 } from "lucide-react";
 import { ParcelForm } from "./ParcelForm";
 import { ParcelDetails } from "./ParcelDetails";
 import { ParcelAttachmentsDialog } from "./ParcelAttachments";
 import { SkyXpressAWBInvoice } from "./SkyXpressAWBInvoice";
 import { exportManifestToExcel } from "@/utils/manifestExport";
+import { buildManifestEntry, saveManifestToStock, type ManifestStockEntry } from "@/utils/manifestStorage";
+import { generateBulkManifestPDF } from "@/utils/bulkManifestPDF";
+import {
+  Dialog as ManifestDialog,
+  DialogContent as ManifestDialogContent,
+  DialogHeader as ManifestDialogHeader,
+  DialogTitle as ManifestDialogTitle,
+} from "@/components/ui/dialog";
 
 interface Parcel {
   id: string;
@@ -118,6 +129,8 @@ export const ParcelManagement = () => {
   // ── Manifest selection ──────────────────────────────────────────────────
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [exportingManifest, setExportingManifest] = useState(false);
+  const [generatedEntry, setGeneratedEntry] = useState<ManifestStockEntry | null>(null);
+  const [downloadingFormat, setDownloadingFormat] = useState<"xls" | "pdf" | null>(null);
 
   const { toast } = useToast();
 
@@ -218,50 +231,61 @@ export const ParcelManagement = () => {
 
   const selectedCount = selectedIds.size;
 
-  // ── Manifest export ──────────────────────────────────────────────────
-  const handleExportManifest = async () => {
+  // ── Manifest generation + stock ──────────────────────────────────────
+  const handleGenerateManifest = async () => {
     const toExport = parcels.filter((p) => selectedIds.has(p.id));
     if (toExport.length === 0) {
-      toast({ title: "No parcels selected", description: "Select at least one parcel to export.", variant: "destructive" });
+      toast({ title: "No parcels selected", description: "Select at least one parcel to generate a manifest.", variant: "destructive" });
       return;
     }
-
     setExportingManifest(true);
     try {
-      // Fetch full item data for each selected parcel
+      // Fetch full item data
       const ids = toExport.map((p) => p.id);
-      const { data, error } = await supabase
-        .from("parcels")
-        .select("*")
-        .in("id", ids)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-
-      const enriched = (data || toExport).map((row: any) => {
-        const rawItems = Array.isArray(row.items) ? row.items : [];
-        return {
-          ...row,
-          items: rawItems.map((item: any) => ({
-            description: item.description || item.item_description || item.name || "",
-            quantity: Number(item.quantity || item.qty || 1),
-            unit_price: Number(item.unit_price || item.value || item.price || 0),
-            total: Number(item.total || item.total_amount || 0),
-          })),
-        };
-      });
-
-      const dateStr = new Date().toISOString().slice(0, 10);
-      exportManifestToExcel(enriched, countryMap, `SkyXpress_Manifest_${dateStr}.xlsx`);
-
-      toast({
-        title: "Manifest exported ✓",
-        description: `${toExport.length} parcel${toExport.length !== 1 ? "s" : ""} exported to Excel.`,
-      });
+      const { data } = await supabase.from("parcels").select("*").in("id", ids).order("created_at", { ascending: false });
+      const enriched = (data || toExport).map((row: any) => ({
+        ...row,
+        items: (Array.isArray(row.items) ? row.items : []).map((item: any) => ({
+          description: item.description || item.item_description || item.name || "",
+          quantity: Number(item.quantity || item.qty || 1),
+          unit_price: Number(item.unit_price || item.value || item.price || 0),
+          total: Number(item.total || item.total_amount || 0),
+        })),
+      }));
+      const entry = buildManifestEntry(enriched, countryMap);
+      saveManifestToStock(entry);
+      setGeneratedEntry(entry);
+      setSelectedIds(new Set());
     } catch (err: any) {
-      toast({ title: "Export failed", description: err.message || "Could not generate manifest.", variant: "destructive" });
+      toast({ title: "Generation failed", description: err.message || "Could not generate manifest.", variant: "destructive" });
     } finally {
       setExportingManifest(false);
+    }
+  };
+
+  const handleDownloadExcel = async () => {
+    if (!generatedEntry) return;
+    setDownloadingFormat("xls");
+    try {
+      exportManifestToExcel(generatedEntry.parcels as any, countryMap, `SkyXpress_Manifest_${generatedEntry.manifestId}.xlsx`, generatedEntry.manifestId);
+      toast({ title: "Excel downloaded ✓", description: generatedEntry.manifestId });
+    } catch (e: any) {
+      toast({ title: "Excel export failed", description: e.message, variant: "destructive" });
+    } finally {
+      setDownloadingFormat(null);
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!generatedEntry) return;
+    setDownloadingFormat("pdf");
+    try {
+      await generateBulkManifestPDF(generatedEntry, countryMap);
+      toast({ title: "PDF downloaded ✓", description: generatedEntry.manifestId });
+    } catch (e: any) {
+      toast({ title: "PDF export failed", description: e.message, variant: "destructive" });
+    } finally {
+      setDownloadingFormat(null);
     }
   };
 
@@ -365,18 +389,18 @@ export const ParcelManagement = () => {
             </CardTitle>
 
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Manifest export button — prominent when parcels are selected */}
+              {/* Generate Manifest button — prominent when parcels are selected */}
               {selectedCount > 0 && (
                 <Button
                   variant="default"
                   className="bg-orange-500 hover:bg-orange-600 text-white gap-2 shadow-md animate-in fade-in slide-in-from-right-2 duration-200"
-                  onClick={handleExportManifest}
+                  onClick={handleGenerateManifest}
                   disabled={exportingManifest}
                 >
-                  <FileSpreadsheet className="h-4 w-4" />
+                  <Sparkles className="h-4 w-4" />
                   {exportingManifest
-                    ? "Exporting…"
-                    : `Export Manifest (${selectedCount})`}
+                    ? "Generating…"
+                    : `Generate Manifest (${selectedCount})`}
                 </Button>
               )}
 
@@ -637,7 +661,7 @@ export const ParcelManagement = () => {
             <div className="mt-4 flex items-center justify-between rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
               <div className="flex items-center gap-2 text-sm font-medium text-orange-800">
                 <CheckSquare className="h-4 w-4" />
-                {selectedCount} parcel{selectedCount !== 1 ? "s" : ""} selected for manifest
+                {selectedCount} parcel{selectedCount !== 1 ? "s" : ""} selected
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -646,16 +670,16 @@ export const ParcelManagement = () => {
                   className="border-orange-300 text-orange-700 hover:bg-orange-100"
                   onClick={() => setSelectedIds(new Set())}
                 >
-                  Clear selection
+                  Clear
                 </Button>
                 <Button
                   size="sm"
                   className="bg-orange-500 hover:bg-orange-600 text-white gap-2"
-                  onClick={handleExportManifest}
+                  onClick={handleGenerateManifest}
                   disabled={exportingManifest}
                 >
-                  <FileSpreadsheet className="h-4 w-4" />
-                  {exportingManifest ? "Exporting…" : "Export Manifest Excel"}
+                  <Sparkles className="h-4 w-4" />
+                  {exportingManifest ? "Generating…" : "Generate Manifest"}
                 </Button>
               </div>
             </div>
@@ -696,6 +720,84 @@ export const ParcelManagement = () => {
           parcel={invoiceParcel}
         />
       )}
+
+      {/* ── Manifest Generated Dialog ─────────────────────────────────────── */}
+      <ManifestDialog open={!!generatedEntry} onOpenChange={(o) => { if (!o) setGeneratedEntry(null); }}>
+        <ManifestDialogContent className="max-w-lg">
+          <ManifestDialogHeader>
+            <ManifestDialogTitle className="flex items-center gap-2 text-lg">
+              <ClipboardList className="h-5 w-5 text-orange-500" />
+              Manifest Generated!
+            </ManifestDialogTitle>
+          </ManifestDialogHeader>
+
+          {generatedEntry && (
+            <div className="space-y-5 pt-1">
+              {/* Manifest ID badge */}
+              <div className="flex flex-col items-center gap-1 py-4 bg-gradient-to-br from-slate-900 to-blue-950 rounded-xl">
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Manifest ID</p>
+                <p className="font-mono font-bold text-3xl text-orange-400 tracking-widest mt-1">
+                  {generatedEntry.manifestId}
+                </p>
+                <p className="text-slate-400 text-xs mt-1">
+                  {generatedEntry.parcelCount} parcel{generatedEntry.parcelCount !== 1 ? "s" : ""}
+                  {" · "}{generatedEntry.totalWeight.toFixed(2)} kg
+                  {" · "}{generatedEntry.currency} {generatedEntry.totalValue.toFixed(2)}
+                </p>
+              </div>
+
+              {/* Info */}
+              <div className="grid grid-cols-2 gap-3 text-sm bg-slate-50 rounded-lg p-3 border border-slate-100">
+                <div>
+                  <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">Date</p>
+                  <p className="font-medium">{new Date(generatedEntry.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">Service</p>
+                  <p className="font-medium">{generatedEntry.serviceType}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">From</p>
+                  <p className="font-medium">{generatedEntry.fromCountry || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">To</p>
+                  <p className="font-medium">{generatedEntry.toCountry || "—"}</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground text-center">
+                Saved to Manifest Stock. Download in your preferred format:
+              </p>
+
+              {/* Download buttons */}
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  className="gap-2 bg-green-600 hover:bg-green-700 text-white h-12"
+                  onClick={handleDownloadExcel}
+                  disabled={!!downloadingFormat}
+                >
+                  <FileSpreadsheet className="h-5 w-5" />
+                  {downloadingFormat === "xls" ? "Generating…" : "Download Excel"}
+                </Button>
+                <Button
+                  className="gap-2 bg-blue-600 hover:bg-blue-700 text-white h-12"
+                  onClick={handleDownloadPDF}
+                  disabled={!!downloadingFormat}
+                >
+                  <FileDown className="h-5 w-5" />
+                  {downloadingFormat === "pdf" ? "Generating…" : "Download PDF"}
+                </Button>
+              </div>
+
+              <p className="text-xs text-center text-muted-foreground">
+                You can also re-download from the{" "}
+                <span className="font-semibold text-blue-600">Manifest Stock</span> tab anytime.
+              </p>
+            </div>
+          )}
+        </ManifestDialogContent>
+      </ManifestDialog>
     </div>
   );
 };
