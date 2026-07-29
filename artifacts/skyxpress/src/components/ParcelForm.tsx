@@ -409,6 +409,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
   const [countriesLoading, setCountriesLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [trackingIdLoading, setTrackingIdLoading] = useState(false);
+  const [referenceIdLoading, setReferenceIdLoading] = useState(false);
 
   const [formData, setFormData] = useState<FormData>({
     reference_id: parcel?.reference_id || "",
@@ -477,6 +478,16 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     supabase.rpc("generate_numeric_tracking").then(({ data, error }) => {
       if (!error && data) setFormData((prev) => prev.tracking_id ? prev : { ...prev, tracking_id: data });
       setTrackingIdLoading(false);
+    });
+  }, []);
+
+  // Auto-generate Reference ID (sequential, +1 from Supabase, e.g. 0002122103 -> 0002122104)
+  useEffect(() => {
+    if (isEdit) return;
+    setReferenceIdLoading(true);
+    supabase.rpc("generate_sequential_reference").then(({ data, error }) => {
+      if (!error && data) setFormData((prev) => prev.reference_id ? prev : { ...prev, reference_id: data });
+      setReferenceIdLoading(false);
     });
   }, []);
 
@@ -615,8 +626,18 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
           )}
         </div>
       </Field>
-      <Field label="Reference ID" hint="Optional internal ref">
-        <StyledInput value={formData.reference_id} onChange={(e: any) => set("reference_id", e.target.value)} placeholder="e.g. ORD-00123" />
+      <Field label="Reference ID" hint="Auto-generated, sequential">
+        <div className="relative">
+          <StyledInput
+            value={formData.reference_id}
+            onChange={(e: any) => set("reference_id", e.target.value)}
+            placeholder={referenceIdLoading ? "Generating…" : "Auto-generated"}
+            className="font-mono"
+          />
+          {referenceIdLoading && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-white/30" />
+          )}
+        </div>
       </Field>
       <Field label="Pieces">
         <StyledInput type="number" min={1} value={formData.pieces} onChange={(e: any) => set("pieces", parseInt(e.target.value) || 1)} />
