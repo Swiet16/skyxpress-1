@@ -1,106 +1,415 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Package, Plus, Trash2, Search, History } from "lucide-react";
+import {
+  Loader2, Package, Plus, Trash2, Search, User, MapPin,
+  Phone, Mail, CreditCard, Box, Truck, Globe, FileText,
+  DollarSign, Weight, Ruler, ArrowRight, ArrowLeft,
+  CheckCircle2, Sparkles, Hash, Building2, ClipboardList,
+} from "lucide-react";
 
+// ─── types ───────────────────────────────────────────────────────────────────
 interface ParcelFormProps {
   onSuccess: () => void;
-  parcel?: any; // Optional parcel for edit mode
+  parcel?: any;
 }
-
-interface Country {
-  code: string;
-  name: string;
-  continent?: string;
-}
-
+interface Country { code: string; name: string; continent?: string; }
 interface FormData {
-  reference_id?: string;
-  tracking_id: string;
-  sender_name: string;
-  sender_company: string;
-  sender_phone: string;
-  sender_email: string;
-  sender_cnic: string;
-  sender_address: string;
-  sender_address_2: string;
-  sender_address_3: string;
-  sender_city: string;
-  sender_country: string;
-  receiver_name: string;
-  receiver_company: string;
-  receiver_email: string;
-  receiver_phone: string;
-  receiver_address: string;
-  receiver_address_2: string;
-  receiver_address_3: string;
-  receiver_city: string;
-  receiver_state: string;
-  receiver_postal_code: string;
-  receiver_country: string;
-  parcel_type: string;
-  weight: string;
-  length: string;
-  width: string;
-  height: string;
-  declared_value: string;
-  service_type: string;
-  document_type: string;
-  from_country: string;
-  to_country: string;
-  special_instructions: string;
-  pieces: number;
-  freight_amount_pkr: string;
-  dim_weight_override: string;
+  reference_id: string; tracking_id: string;
+  sender_name: string; sender_company: string; sender_phone: string;
+  sender_email: string; sender_cnic: string; sender_address: string;
+  sender_address_2: string; sender_address_3: string;
+  sender_city: string; sender_country: string;
+  receiver_name: string; receiver_company: string; receiver_email: string;
+  receiver_phone: string; receiver_address: string; receiver_address_2: string;
+  receiver_address_3: string; receiver_city: string; receiver_state: string;
+  receiver_postal_code: string; receiver_country: string;
+  parcel_type: string; weight: string; length: string; width: string; height: string;
+  declared_value: string; service_type: string; document_type: string;
+  from_country: string; to_country: string; special_instructions: string;
+  pieces: number; freight_amount_pkr: string; dim_weight_override: string;
   amount_override: string;
-  items: Array<{
-    description: string;
-    quantity: number;
-    unit_price: number;
-    hs_code: string;
-    total: number;
-  }>;
+  items: Array<{ description: string; quantity: number; unit_price: number; hs_code: string; total: number; }>;
 }
 
-const parcelTypes = [
-  { value: "box", label: "Box" },
-  { value: "envelope", label: "Envelope" },
-  { value: "pallet", label: "Pallet" },
-  { value: "other", label: "Other" },
+const SERVICE_TYPES = [
+  { value: "standard", label: "Standard", color: "#3B82F6", desc: "3-5 days" },
+  { value: "express", label: "Express", color: "#8B5CF6", desc: "1-2 days" },
+  { value: "overnight", label: "Overnight", color: "#F97316", desc: "Next day" },
+  { value: "economic", label: "Economic", color: "#22C55E", desc: "7-10 days" },
+  { value: "priority", label: "Priority", color: "#EAB308", desc: "Same day" },
+  { value: "dhl_pk", label: "DHL PK", color: "#EF4444", desc: "DHL Pakistan" },
+  { value: "ups_pk", label: "UPS PK", color: "#C98A2B", desc: "UPS Pakistan" },
+  { value: "skynet", label: "SKYNET", color: "#6366F1", desc: "SkyNet" },
+  { value: "dpd_uk", label: "DPD UK", color: "#E11D48", desc: "DPD UK" },
+  { value: "dhl_via_uk", label: "DHL via UK", color: "#DC2626", desc: "via UK" },
+  { value: "ups_via_belfast", label: "UPS via Belfast", color: "#7C3AED", desc: "via Belfast" },
+  { value: "ups_saver", label: "UPS Saver", color: "#D97706", desc: "UPS economy" },
 ];
 
-const serviceTypes = [
-  { value: "standard", label: "Standard" },
-  { value: "express", label: "Express" },
-  { value: "overnight", label: "Overnight" },
-  { value: "economic", label: "Economic" },
-  { value: "priority", label: "Priority" },
-
-  // New entries
-  { value: "dhl_pk", label: "DHL PK" },
-  { value: "ups_pk", label: "UPS PK" },
-  { value: "skynet", label: "SKYNET" },
-  { value: "dpd_uk", label: "DPD UK" },
-  { value: "dhl_via_uk", label: "DHL VIA UK" },
-  { value: "ups_via_belfast", label: "UPS VIA BELFAST" },
-  { value: "ups_saver", label: "UPS SAVER" },
+const PARCEL_TYPES = [
+  { value: "box", label: "Box", icon: "📦" },
+  { value: "envelope", label: "Envelope", icon: "✉️" },
+  { value: "pallet", label: "Pallet", icon: "🏗️" },
+  { value: "other", label: "Other", icon: "📫" },
 ];
 
-const documentTypes = [
-  { value: "document", label: "Document" },
-  { value: "non-document", label: "Non-Document" },
+// ─── STEP CONFIG ─────────────────────────────────────────────────────────────
+const STEPS = [
+  { id: 0, label: "Shipment", icon: Hash, color: "#C98A2B" },
+  { id: 1, label: "Sender", icon: User, color: "#8B5CF6" },
+  { id: 2, label: "Receiver", icon: MapPin, color: "#3B82F6" },
+  { id: 3, label: "Package", icon: Package, color: "#F97316" },
+  { id: 4, label: "Contents", icon: ClipboardList, color: "#22C55E" },
 ];
 
+// ─── UI Atoms ────────────────────────────────────────────────────────────────
+const Field = ({
+  label, required, children, hint,
+}: { label: string; required?: boolean; children: React.ReactNode; hint?: string }) => (
+  <div className="space-y-1.5">
+    <label className="flex items-center gap-1 text-xs font-medium text-white/55 uppercase tracking-wide">
+      {label}
+      {required && <span className="text-[#C98A2B]">*</span>}
+    </label>
+    {children}
+    {hint && <p className="text-[10px] text-white/25">{hint}</p>}
+  </div>
+);
+
+const StyledInput = ({ className = "", ...props }: any) => (
+  <Input
+    {...props}
+    className={`h-9 bg-white/5 border-white/10 text-white placeholder:text-white/25
+      focus:border-white/25 focus:bg-white/8 transition-all ${className}`}
+  />
+);
+
+const StyledSelect = ({ value, onValueChange, placeholder, children }: any) => (
+  <Select value={value} onValueChange={onValueChange}>
+    <SelectTrigger className="h-9 bg-white/5 border-white/10 text-white">
+      <SelectValue placeholder={placeholder} />
+    </SelectTrigger>
+    <SelectContent className="bg-[#0f1020] border-white/10 text-white">
+      {children}
+    </SelectContent>
+  </Select>
+);
+
+const CountrySelect = ({ value, onValueChange, countries, loading }: any) => (
+  <StyledSelect value={value} onValueChange={onValueChange}
+    placeholder={loading ? "Loading…" : "Select country"}>
+    {countries.map((c: Country) => (
+      <SelectItem key={c.code} value={c.code} className="text-white text-sm">{c.name}</SelectItem>
+    ))}
+  </StyledSelect>
+);
+
+// ─── Stepper Header ───────────────────────────────────────────────────────────
+const StepBar = ({ step, total, steps }: { step: number; total: number; steps: typeof STEPS }) => (
+  <div className="flex items-center justify-between relative">
+    {/* connector line */}
+    <div className="absolute left-0 right-0 top-5 h-px bg-white/8 z-0" />
+    <div
+      className="absolute left-0 top-5 h-px bg-gradient-to-r from-[#C98A2B] to-[#8B5CF6] z-0 transition-all duration-500"
+      style={{ width: `${(step / (total - 1)) * 100}%` }}
+    />
+    {steps.map((s, i) => {
+      const done = i < step;
+      const active = i === step;
+      const Icon = s.icon;
+      return (
+        <div key={s.id} className="relative z-10 flex flex-col items-center gap-1.5">
+          <motion.div
+            animate={{ scale: active ? 1.15 : 1 }}
+            className={`h-10 w-10 rounded-xl flex items-center justify-center border transition-all ${
+              done
+                ? "bg-emerald-500/20 border-emerald-500/40"
+                : active
+                ? "border-[#C98A2B]/60"
+                : "bg-white/4 border-white/10"
+            }`}
+            style={active ? { background: `${s.color}18`, borderColor: `${s.color}50` } : {}}
+          >
+            {done ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+            ) : (
+              <Icon className="h-4 w-4" style={{ color: active ? s.color : "rgba(255,255,255,0.3)" }} />
+            )}
+          </motion.div>
+          <span className={`text-[10px] font-medium ${active ? "text-white" : done ? "text-emerald-400" : "text-white/30"}`}>
+            {s.label}
+          </span>
+        </div>
+      );
+    })}
+  </div>
+);
+
+// ─── Section card ─────────────────────────────────────────────────────────────
+const SectionCard = ({
+  title, icon: Icon, color, children,
+}: { title: string; icon: any; color: string; children: React.ReactNode }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 16 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0, y: -12 }}
+    transition={{ duration: 0.3 }}
+    className="rounded-2xl border border-white/8 overflow-hidden"
+  >
+    <div
+      className="flex items-center gap-2.5 px-5 py-3 border-b border-white/6"
+      style={{ background: `linear-gradient(135deg, ${color}12, transparent)` }}
+    >
+      <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: `${color}20` }}>
+        <Icon className="h-3.5 w-3.5" style={{ color }} />
+      </div>
+      <span className="text-sm font-semibold text-white/80">{title}</span>
+    </div>
+    <div className="p-5 bg-white/2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {children}
+    </div>
+  </motion.div>
+);
+
+// ─── Quick-fill search dropdown ───────────────────────────────────────────────
+const QuickFill = ({
+  value, onChange, onBlur, searching, results, onSelect, placeholder,
+}: any) => (
+  <div className="relative col-span-2">
+    <div className="relative">
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/25" />
+      <StyledInput
+        placeholder={placeholder}
+        value={value}
+        onChange={(e: any) => onChange(e.target.value)}
+        onFocus={() => onChange(value)}
+        onBlur={onBlur}
+        className="pl-9 pr-3 border-dashed"
+        autoComplete="off"
+      />
+      {searching && (
+        <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-white/30" />
+      )}
+    </div>
+    <AnimatePresence>
+      {results.length > 0 && value.trim().length >= 2 && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          className="absolute z-30 w-full mt-1 rounded-xl border border-white/10 bg-[#0f1020] shadow-xl overflow-hidden"
+        >
+          {results.map((row: any, i: number) => (
+            <button
+              key={i}
+              type="button"
+              onMouseDown={() => onSelect(row)}
+              className="w-full text-left px-4 py-2.5 hover:bg-white/8 border-b border-white/6 last:border-0 transition-colors"
+            >
+              <p className="text-sm text-white font-medium">{row.sender_name || row.receiver_name}</p>
+              <p className="text-[11px] text-white/40">
+                {row.sender_phone || row.receiver_phone}
+                {(row.sender_city || row.receiver_city) ? ` · ${row.sender_city || row.receiver_city}` : ""}
+              </p>
+            </button>
+          ))}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  </div>
+);
+
+// ─── Service type card selector ──────────────────────────────────────────────
+const SERVICE_ICONS: Record<string, string> = {
+  standard: "🚚", express: "⚡", overnight: "🌙", economic: "🌿",
+  priority: "🏆", dhl_pk: "🔴", ups_pk: "🟤", skynet: "🔵",
+  dpd_uk: "🟣", dhl_via_uk: "✈️", ups_via_belfast: "🟠", ups_saver: "💰",
+};
+
+const ServicePicker = ({
+  value, onChange,
+}: { value: string; onChange: (v: string) => void }) => (
+  <div className="col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+    {SERVICE_TYPES.map((s) => {
+      const active = value === s.value;
+      return (
+        <motion.button
+          key={s.value}
+          type="button"
+          onClick={() => onChange(s.value)}
+          whileHover={{ scale: 1.03, y: -1 }}
+          whileTap={{ scale: 0.97 }}
+          transition={{ type: "spring", stiffness: 400, damping: 20 }}
+          className="relative rounded-xl border text-left overflow-hidden transition-colors duration-200"
+          style={{
+            borderColor: active ? `${s.color}60` : "rgba(255,255,255,0.07)",
+            background: active ? `${s.color}14` : "rgba(255,255,255,0.03)",
+            boxShadow: active ? `0 0 18px 0 ${s.color}22, inset 0 0 0 1px ${s.color}30` : "none",
+          }}
+        >
+          {/* colour accent strip */}
+          <div
+            className="absolute left-0 top-0 h-full w-1 rounded-l-xl transition-opacity"
+            style={{ background: s.color, opacity: active ? 1 : 0.25 }}
+          />
+          <div className="pl-4 pr-3 py-2.5">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <span className="text-base leading-none">{SERVICE_ICONS[s.value]}</span>
+              <p
+                className="text-xs font-bold leading-none transition-colors"
+                style={{ color: active ? s.color : "rgba(255,255,255,0.75)" }}
+              >
+                {s.label}
+              </p>
+            </div>
+            <p className="text-[10px] text-white/35 mt-1">{s.desc}</p>
+          </div>
+          {active && (
+            <motion.div
+              layoutId="service-active-dot"
+              className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full"
+              style={{ background: s.color }}
+            />
+          )}
+        </motion.button>
+      );
+    })}
+  </div>
+);
+
+// ─── Document / Non-Document toggle ──────────────────────────────────────────
+const DocTypePicker = ({
+  value, onChange,
+}: { value: string; onChange: (v: string) => void }) => {
+  const opts = [
+    {
+      value: "document",
+      label: "Document",
+      emoji: "📄",
+      desc: "Letters, certificates, papers",
+      color: "#3B82F6",
+    },
+    {
+      value: "non-document",
+      label: "Non-Document",
+      emoji: "📦",
+      desc: "Goods, merchandise, gifts",
+      color: "#F97316",
+    },
+  ];
+  return (
+    <div className="col-span-2 grid grid-cols-2 gap-3">
+      {opts.map((o) => {
+        const active = value === o.value;
+        return (
+          <motion.button
+            key={o.value}
+            type="button"
+            onClick={() => onChange(o.value)}
+            whileHover={{ scale: 1.02, y: -1 }}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 380, damping: 22 }}
+            className="relative rounded-2xl border p-4 text-center overflow-hidden transition-all duration-200"
+            style={{
+              borderColor: active ? `${o.color}55` : "rgba(255,255,255,0.08)",
+              background: active
+                ? `radial-gradient(ellipse at 50% 0%, ${o.color}20, ${o.color}08 70%)`
+                : "rgba(255,255,255,0.03)",
+              boxShadow: active ? `0 0 24px 0 ${o.color}18` : "none",
+            }}
+          >
+            {/* Top glow band */}
+            {active && (
+              <motion.div
+                layoutId="doc-type-glow"
+                className="absolute top-0 left-1/2 -translate-x-1/2 h-px w-2/3 rounded-full"
+                style={{ background: `linear-gradient(90deg, transparent, ${o.color}, transparent)` }}
+              />
+            )}
+            <motion.div
+              animate={{ scale: active ? 1.15 : 1 }}
+              transition={{ type: "spring", stiffness: 300, damping: 18 }}
+              className="text-3xl mb-2 leading-none"
+            >
+              {o.emoji}
+            </motion.div>
+            <p
+              className="text-sm font-bold transition-colors"
+              style={{ color: active ? o.color : "rgba(255,255,255,0.7)" }}
+            >
+              {o.label}
+            </p>
+            <p className="text-[10px] text-white/35 mt-1 leading-snug">{o.desc}</p>
+          </motion.button>
+        );
+      })}
+    </div>
+  );
+};
+
+// ─── Parcel type pill ─────────────────────────────────────────────────────────
+const TypePicker = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
+  <div className="col-span-2 grid grid-cols-4 gap-2">
+    {PARCEL_TYPES.map((t) => {
+      const active = value === t.value;
+      return (
+        <motion.button
+          key={t.value}
+          type="button"
+          onClick={() => onChange(t.value)}
+          whileHover={{ scale: 1.05, y: -2 }}
+          whileTap={{ scale: 0.95 }}
+          transition={{ type: "spring", stiffness: 400, damping: 20 }}
+          className="relative rounded-2xl border py-4 text-center overflow-hidden transition-all duration-200"
+          style={{
+            borderColor: active ? "rgba(249,115,22,0.55)" : "rgba(255,255,255,0.07)",
+            background: active
+              ? "radial-gradient(ellipse at 50% 0%, rgba(249,115,22,0.18), rgba(249,115,22,0.06) 80%)"
+              : "rgba(255,255,255,0.03)",
+            boxShadow: active ? "0 0 20px 0 rgba(249,115,22,0.18)" : "none",
+          }}
+        >
+          {active && (
+            <motion.div
+              layoutId="type-glow"
+              className="absolute top-0 left-1/2 -translate-x-1/2 h-px w-3/4 rounded-full"
+              style={{ background: "linear-gradient(90deg, transparent, #F97316, transparent)" }}
+            />
+          )}
+          <motion.div
+            animate={{ scale: active ? 1.2 : 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 18 }}
+            className="text-2xl leading-none mb-1.5"
+          >
+            {t.icon}
+          </motion.div>
+          <div className={`text-[11px] font-semibold transition-colors ${active ? "text-[#F97316]" : "text-white/45"}`}>
+            {t.label}
+          </div>
+        </motion.button>
+      );
+    })}
+  </div>
+);
+
+// ─── Main Form ────────────────────────────────────────────────────────────────
 export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
+  const isEdit = !!parcel;
+  const { toast } = useToast();
+  const [step, setStep] = useState(0);
   const [countries, setCountries] = useState<Country[]>([]);
   const [countriesLoading, setCountriesLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [trackingIdLoading, setTrackingIdLoading] = useState(false);
+
   const [formData, setFormData] = useState<FormData>({
     reference_id: parcel?.reference_id || "",
     tracking_id: parcel?.tracking_id || "",
@@ -142,1070 +451,503 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     amount_override: parcel?.amount_override?.toString() || "",
     items: parcel?.items?.length
       ? parcel.items
-      : [
-          {
-            description: "",
-            quantity: 1,
-            unit_price: 0,
-            hs_code: "",
-            total: 0,
-          },
-        ],
+      : [{ description: "", quantity: 1, unit_price: 0, hs_code: "", total: 0 }],
   });
-  const [isLoading, setIsLoading] = useState(false);
-  const [trackingIdLoading, setTrackingIdLoading] = useState(false);
-  const { toast } = useToast();
 
-  // In create mode, pre-generate a suggested tracking ID so the admin can see
-  // (and optionally override) it before the parcel is actually saved.
-  useEffect(() => {
-    if (parcel) return; // edit mode already has a real tracking_id
-
-    const fetchSuggestedTrackingId = async () => {
-      setTrackingIdLoading(true);
-      const { data, error } = await supabase.rpc("generate_numeric_tracking");
-      if (!error && data) {
-        setFormData((prev) => (prev.tracking_id ? prev : { ...prev, tracking_id: data }));
-      }
-      setTrackingIdLoading(false);
-    };
-
-    fetchSuggestedTrackingId();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Quick-fill: search previous parcels by sender/receiver name or phone
+  // Quick fill states
   const [senderSearch, setSenderSearch] = useState("");
   const [senderResults, setSenderResults] = useState<any[]>([]);
   const [senderSearching, setSenderSearching] = useState(false);
-  const [showSenderResults, setShowSenderResults] = useState(false);
-
   const [receiverSearch, setReceiverSearch] = useState("");
   const [receiverResults, setReceiverResults] = useState<any[]>([]);
   const [receiverSearching, setReceiverSearching] = useState(false);
-  const [showReceiverResults, setShowReceiverResults] = useState(false);
 
-  // Fetch countries from Supabase 'countries' table on mount
+  // Load countries
   useEffect(() => {
-    const fetchCountries = async () => {
-      setCountriesLoading(true);
-      const { data, error } = await supabase
-        .from("countries")
-        .select("code, name, continent")
-        .order("name", { ascending: true });
-
-      if (error) {
-        console.error("Error fetching countries:", error);
-        toast({
-          title: "Error",
-          description: "Failed to load countries list",
-          variant: "destructive",
-        });
-      } else if (data) {
-        setCountries(data as Country[]);
-      }
+    supabase.from("countries").select("code, name, continent").order("name").then(({ data }) => {
+      setCountries(data || []);
       setCountriesLoading(false);
-    };
-
-    fetchCountries();
+    });
   }, []);
 
-  // Debounced search for previous senders (from past parcels)
+  // Auto-generate tracking ID
   useEffect(() => {
-    if (senderSearch.trim().length < 2) {
-      setSenderResults([]);
-      return;
-    }
-    const handle = setTimeout(async () => {
-      setSenderSearching(true);
-      const { data, error } = await supabase
-        .from("parcels")
-        .select(
-          "sender_name, sender_company, sender_phone, sender_email, sender_cnic, sender_address, sender_city, sender_country"
-        )
-        .or(`sender_name.ilike.%${senderSearch}%,sender_phone.ilike.%${senderSearch}%`)
-        .order("created_at", { ascending: false })
-        .limit(8);
+    if (isEdit) return;
+    setTrackingIdLoading(true);
+    supabase.rpc("generate_numeric_tracking").then(({ data, error }) => {
+      if (!error && data) setFormData((prev) => prev.tracking_id ? prev : { ...prev, tracking_id: data });
+      setTrackingIdLoading(false);
+    });
+  }, []);
 
-      if (!error && data) {
+  // Debounced sender search
+  useEffect(() => {
+    if (senderSearch.trim().length < 2) { setSenderResults([]); return; }
+    const t = setTimeout(async () => {
+      setSenderSearching(true);
+      const { data } = await supabase.from("parcels")
+        .select("sender_name,sender_company,sender_phone,sender_email,sender_cnic,sender_address,sender_city,sender_country")
+        .or(`sender_name.ilike.%${senderSearch}%,sender_phone.ilike.%${senderSearch}%`)
+        .order("created_at", { ascending: false }).limit(8);
+      if (data) {
         const seen = new Set<string>();
-        const unique = data.filter((row: any) => {
-          const key = `${row.sender_name}|${row.sender_phone}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        setSenderResults(unique);
+        setSenderResults(data.filter((r: any) => {
+          const k = `${r.sender_name}|${r.sender_phone}`; if (seen.has(k)) return false; seen.add(k); return true;
+        }));
       }
       setSenderSearching(false);
     }, 350);
-
-    return () => clearTimeout(handle);
+    return () => clearTimeout(t);
   }, [senderSearch]);
 
-  // Debounced search for previous receivers (from past parcels)
+  // Debounced receiver search
   useEffect(() => {
-    if (receiverSearch.trim().length < 2) {
-      setReceiverResults([]);
-      return;
-    }
-    const handle = setTimeout(async () => {
+    if (receiverSearch.trim().length < 2) { setReceiverResults([]); return; }
+    const t = setTimeout(async () => {
       setReceiverSearching(true);
-      const { data, error } = await supabase
-        .from("parcels")
-        .select(
-          "receiver_name, receiver_company, receiver_phone, receiver_email, receiver_address, receiver_city, receiver_state, receiver_postal_code, receiver_country"
-        )
+      const { data } = await supabase.from("parcels")
+        .select("receiver_name,receiver_company,receiver_phone,receiver_email,receiver_address,receiver_city,receiver_state,receiver_postal_code,receiver_country")
         .or(`receiver_name.ilike.%${receiverSearch}%,receiver_phone.ilike.%${receiverSearch}%`)
-        .order("created_at", { ascending: false })
-        .limit(8);
-
-      if (!error && data) {
+        .order("created_at", { ascending: false }).limit(8);
+      if (data) {
         const seen = new Set<string>();
-        const unique = data.filter((row: any) => {
-          const key = `${row.receiver_name}|${row.receiver_phone}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        setReceiverResults(unique);
+        setReceiverResults(data.filter((r: any) => {
+          const k = `${r.receiver_name}|${r.receiver_phone}`; if (seen.has(k)) return false; seen.add(k); return true;
+        }));
       }
       setReceiverSearching(false);
     }, 350);
-
-    return () => clearTimeout(handle);
+    return () => clearTimeout(t);
   }, [receiverSearch]);
 
-  const selectSenderResult = (row: any) => {
-    setFormData((prev) => ({
-      ...prev,
-      sender_name: row.sender_name || "",
-      sender_company: row.sender_company || "",
-      sender_phone: row.sender_phone || "",
-      sender_email: row.sender_email || "",
-      sender_cnic: row.sender_cnic || "",
-      sender_address: row.sender_address || "",
-      sender_city: row.sender_city || "",
-      sender_country: row.sender_country || "",
-    }));
-    setSenderSearch("");
-    setSenderResults([]);
-    setShowSenderResults(false);
-    toast({ title: "Filled", description: "Sender details filled from a previous parcel" });
+  const set = (field: keyof FormData, value: any) => setFormData((prev) => ({ ...prev, [field]: value }));
+
+  const fillSender = (row: any) => {
+    setFormData((prev) => ({ ...prev, sender_name: row.sender_name || "", sender_company: row.sender_company || "", sender_phone: row.sender_phone || "", sender_email: row.sender_email || "", sender_cnic: row.sender_cnic || "", sender_address: row.sender_address || "", sender_city: row.sender_city || "", sender_country: row.sender_country || "" }));
+    setSenderSearch(""); setSenderResults([]);
+    toast({ title: "Sender filled", description: "Details copied from a previous parcel." });
   };
 
-  const selectReceiverResult = (row: any) => {
-    setFormData((prev) => ({
-      ...prev,
-      receiver_name: row.receiver_name || "",
-      receiver_company: row.receiver_company || "",
-      receiver_phone: row.receiver_phone || "",
-      receiver_email: row.receiver_email || "",
-      receiver_address: row.receiver_address || "",
-      receiver_city: row.receiver_city || "",
-      receiver_state: row.receiver_state || "",
-      receiver_postal_code: row.receiver_postal_code || "",
-      receiver_country: row.receiver_country || "",
-    }));
-    setReceiverSearch("");
-    setReceiverResults([]);
-    setShowReceiverResults(false);
-    toast({ title: "Filled", description: "Receiver details filled from a previous parcel" });
+  const fillReceiver = (row: any) => {
+    setFormData((prev) => ({ ...prev, receiver_name: row.receiver_name || "", receiver_company: row.receiver_company || "", receiver_phone: row.receiver_phone || "", receiver_email: row.receiver_email || "", receiver_address: row.receiver_address || "", receiver_city: row.receiver_city || "", receiver_state: row.receiver_state || "", receiver_postal_code: row.receiver_postal_code || "", receiver_country: row.receiver_country || "" }));
+    setReceiverSearch(""); setReceiverResults([]);
+    toast({ title: "Receiver filled", description: "Details copied from a previous parcel." });
   };
 
-  const handleInputChange = (field: keyof FormData, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleItemChange = (index: number, field: string, value: any) => {
-    const newItems = [...formData.items];
-    newItems[index] = { ...newItems[index], [field]: value };
-
-    // Auto-calculate total
+  const setItem = (i: number, field: string, value: any) => {
+    const items = [...formData.items];
+    items[i] = { ...items[i], [field]: value };
     if (field === "quantity" || field === "unit_price") {
-      newItems[index].total = newItems[index].quantity * newItems[index].unit_price;
+      items[i].total = items[i].quantity * items[i].unit_price;
     }
-
-    setFormData((prev) => ({ ...prev, items: newItems }));
+    set("items", items);
   };
 
-  const addItem = () => {
-    setFormData((prev) => ({
-      ...prev,
-      items: [...prev.items, { description: "", quantity: 1, unit_price: 0, hs_code: "", total: 0 }],
-    }));
+  const subtotal = formData.items.reduce((s, it) => s + it.total, 0);
+
+  const describeDupError = (msg?: string) => {
+    if (!msg) return "One of the values you entered is already in use.";
+    if (msg.includes("tracking_id")) return "That Tracking ID is already taken.";
+    if (msg.includes("reference_id")) return "That Reference ID is already taken.";
+    return "A duplicate value was detected.";
   };
 
-  const removeItem = (index: number) => {
-    if (formData.items.length > 1) {
-      setFormData((prev) => ({
-        ...prev,
-        items: prev.items.filter((_, i) => i !== index),
-      }));
-    }
-  };
-
-  const calculateSubtotal = () => {
-    return formData.items.reduce((sum, item) => sum + item.total, 0);
-  };
-
-  const calculatePrice = (weight: number, length: number, width: number, height: number) => {
-    // Basic pricing calculation - should be enhanced with actual rate logic
-    const volumetricWeight = (length * width * height) / 5000;
-    const chargeableWeight = Math.max(weight, volumetricWeight);
-    const baseRate = 20; // $20 per kg base rate
-    return chargeableWeight * baseRate;
-  };
-
-  const describeDuplicateError = (message: string | undefined) => {
-    if (!message) return "One of the values you entered is already in use.";
-    if (message.includes("tracking_id")) return "That Tracking ID is already in use.";
-    if (message.includes("reference_id")) return "That Reference ID is already in use.";
-    return "One of the values you entered is already in use.";
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (parcel && !formData.tracking_id.trim()) {
-      toast({
-        title: "Error",
-        description: "Tracking ID cannot be empty",
-        variant: "destructive",
-      });
-      return;
-    }
-
+  const handleSubmit = async () => {
     setIsLoading(true);
-
     try {
-      // Prepare parcel data
-      const weight = parseFloat(formData.weight);
-      const length = parseFloat(formData.length);
-      const width = parseFloat(formData.width);
-      const height = parseFloat(formData.height);
-      const declaredValue = parseFloat(formData.declared_value || "0");
-      const freightAmountPkr = parseFloat(formData.freight_amount_pkr || "0");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { toast({ title: "Session expired", variant: "destructive" }); setIsLoading(false); return; }
 
-      const totalPrice = calculatePrice(weight, length, width, height);
+      const { data: profile } = await supabase.from("profiles").select("partner_id, office_id").eq("user_id", session.user.id).single();
 
-      const dimWeightOverride = formData.dim_weight_override.trim()
-        ? parseFloat(formData.dim_weight_override)
-        : null;
-      const amountOverride = formData.amount_override.trim()
-        ? parseFloat(formData.amount_override)
-        : null;
-
-      const parcelData: Record<string, any> = {
-        sender_name: formData.sender_name,
-        sender_company: formData.sender_company,
-        sender_phone: formData.sender_phone,
-        sender_email: formData.sender_email,
-        sender_cnic: formData.sender_cnic,
-        sender_address: formData.sender_address,
-        sender_address_2: formData.sender_address_2 || null,
-        sender_address_3: formData.sender_address_3 || null,
-        sender_city: formData.sender_city,
-        sender_country: formData.sender_country,
-        receiver_name: formData.receiver_name,
-        receiver_company: formData.receiver_company,
-        receiver_email: formData.receiver_email,
-        receiver_phone: formData.receiver_phone,
-        receiver_address: formData.receiver_address,
-        receiver_address_2: formData.receiver_address_2 || null,
-        receiver_address_3: formData.receiver_address_3 || null,
-        receiver_city: formData.receiver_city,
-        receiver_state: formData.receiver_state,
-        receiver_postal_code: formData.receiver_postal_code,
-        receiver_country: formData.receiver_country,
-        parcel_type: formData.parcel_type,
-        weight,
-        length,
-        width,
-        height,
-        declared_value: declaredValue,
-        service_type: formData.service_type,
-        document_type: formData.document_type,
-        from_country: formData.from_country,
-        to_country: formData.to_country,
-        special_instructions: formData.special_instructions,
-        total_price: totalPrice,
-        items: formData.items,
-        pieces: formData.pieces,
-        freight_amount_pkr: freightAmountPkr,
-        dim_weight_override: dimWeightOverride,
-        amount_override: amountOverride,
+      const payload: any = {
+        ...formData,
+        weight: parseFloat(formData.weight) || null,
+        length: parseFloat(formData.length) || null,
+        width: parseFloat(formData.width) || null,
+        height: parseFloat(formData.height) || null,
+        declared_value: parseFloat(formData.declared_value) || null,
+        freight_amount_pkr: parseFloat(formData.freight_amount_pkr) || null,
+        dim_weight_override: parseFloat(formData.dim_weight_override) || null,
+        amount_override: parseFloat(formData.amount_override) || null,
+        partner_id: profile?.partner_id || null,
+        office_id: profile?.office_id || null,
+        created_by: session.user.id,
       };
 
-      // Only send reference_id if the admin actually typed one; otherwise let the DB default generate it
-      const trimmedReferenceId = formData.reference_id?.trim();
-      if (trimmedReferenceId) {
-        parcelData.reference_id = trimmedReferenceId;
-      }
-
-      if (parcel) {
-        // UPDATE existing parcel
-        parcelData.tracking_id = formData.tracking_id.trim();
-
-        const { error } = await supabase.from("parcels").update(parcelData).eq("id", parcel.id);
-
+      if (isEdit) {
+        delete payload.created_by;
+        const { error } = await supabase.from("parcels").update(payload).eq("id", parcel.id);
         if (error) throw error;
-
-        toast({
-          title: "Success!",
-          description: `Parcel ${parcel.tracking_id} updated successfully`,
-        });
+        toast({ title: "Parcel updated ✓" });
       } else {
-        // CREATE new parcel
-        // Use the (possibly admin-edited) suggested tracking ID; if it was
-        // somehow left blank, fall back to generating a fresh one now.
-        let trackingId = formData.tracking_id.trim();
-        if (!trackingId) {
-          const { data: trackingData, error: trackingError } = await supabase.rpc(
-            "generate_numeric_tracking"
-          );
-          if (trackingError) throw trackingError;
-          trackingId = trackingData;
+        const { error } = await supabase.from("parcels").insert(payload);
+        if (error) {
+          if (error.code === "23505") {
+            toast({ title: "Duplicate value", description: describeDupError(error.message), variant: "destructive" });
+            setIsLoading(false); return;
+          }
+          throw error;
         }
-
-        const { error } = await supabase.from("parcels").insert([
-          {
-            ...parcelData,
-            tracking_id: trackingId,
-            request_status: "pending",
-            current_status: "created",
-          },
-        ]);
-
-        if (error) throw error;
-
-        toast({
-          title: "Success!",
-          description: `Parcel request submitted with tracking ID: ${trackingId}`,
-        });
+        toast({ title: "Parcel created! 🎉", description: `Tracking: ${formData.tracking_id}` });
       }
-
       onSuccess();
-    } catch (error: any) {
-      console.error("Error saving parcel:", error);
-      const isDuplicate = error?.code === "23505";
-      toast({
-        title: "Error",
-        description: isDuplicate ? describeDuplicateError(error.message) : error.message || "Failed to save parcel",
-        variant: "destructive",
-      });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Something went wrong.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Tracking ID & Reference ID */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Identifiers</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="tracking_id">Tracking ID {parcel ? "*" : ""}</Label>
-            <Input
-              id="tracking_id"
-              value={formData.tracking_id}
-              onChange={(e) => handleInputChange("tracking_id", e.target.value)}
-              placeholder={trackingIdLoading ? "Generating..." : "Tracking ID"}
-              required={!!parcel}
-            />
-            {!parcel && (
-              <p className="text-xs text-muted-foreground">
-                Auto-generated — edit it if you'd like to set a custom one.
-              </p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="reference_id">Reference ID</Label>
-            <Input
-              id="reference_id"
-              value={formData.reference_id}
-              onChange={(e) => handleInputChange("reference_id", e.target.value)}
-              placeholder="Leave blank to auto-generate"
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Sender Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Sender Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="relative space-y-2">
-            <Label htmlFor="sender_search" className="flex items-center gap-1.5">
-              <History className="h-3.5 w-3.5" />
-              Quick-fill from a previous sender
-            </Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="sender_search"
-                placeholder="Search by name or phone..."
-                value={senderSearch}
-                onChange={(e) => {
-                  setSenderSearch(e.target.value);
-                  setShowSenderResults(true);
-                }}
-                onFocus={() => setShowSenderResults(true)}
-                onBlur={() => setTimeout(() => setShowSenderResults(false), 150)}
-                className="pl-10"
-                autoComplete="off"
-              />
-            </div>
-            {showSenderResults && senderSearch.trim().length >= 2 && (
-              <div className="absolute z-20 w-full bg-popover border rounded-md shadow-md mt-1 max-h-60 overflow-y-auto">
-                {senderSearching ? (
-                  <div className="p-3 text-sm text-muted-foreground">Searching...</div>
-                ) : senderResults.length > 0 ? (
-                  senderResults.map((row, i) => (
-                    <button
-                      type="button"
-                      key={i}
-                      className="w-full text-left p-3 hover:bg-accent border-b last:border-b-0"
-                      onMouseDown={() => selectSenderResult(row)}
-                    >
-                      <div className="font-medium">{row.sender_name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {row.sender_phone}
-                        {row.sender_city ? ` • ${row.sender_city}` : ""}
-                      </div>
-                    </button>
-                  ))
-                ) : (
-                  <div className="p-3 text-sm text-muted-foreground">No matches found</div>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="sender_name">Full Name *</Label>
-              <Input
-                id="sender_name"
-                value={formData.sender_name}
-                onChange={(e) => handleInputChange("sender_name", e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sender_company">Company Name</Label>
-              <Input
-                id="sender_company"
-                value={formData.sender_company}
-                onChange={(e) => handleInputChange("sender_company", e.target.value)}
-                placeholder="Optional"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sender_phone">Phone Number *</Label>
-              <Input
-                id="sender_phone"
-                type="tel"
-                value={formData.sender_phone}
-                onChange={(e) => handleInputChange("sender_phone", e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sender_email">Email Address *</Label>
-              <Input
-                id="sender_email"
-                type="email"
-                value={formData.sender_email}
-                onChange={(e) => handleInputChange("sender_email", e.target.value)}
-                required
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="sender_cnic">CNIC Number</Label>
-              <Input
-                id="sender_cnic"
-                value={formData.sender_cnic}
-                onChange={(e) => handleInputChange("sender_cnic", e.target.value)}
-                placeholder="e.g., 1234567890123"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sender_city">City *</Label>
-              <Input
-                id="sender_city"
-                value={formData.sender_city}
-                onChange={(e) => handleInputChange("sender_city", e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sender_country">Country *</Label>
-              <Select
-                value={formData.sender_country}
-                onValueChange={(value) => handleInputChange("sender_country", value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={countriesLoading ? "Loading countries..." : "Select country"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {countries.map((country) => (
-                    <SelectItem key={country.code} value={country.code}>
-                      {country.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="sender_address">Full Address *</Label>
-            <Textarea
-              id="sender_address"
-              value={formData.sender_address}
-              onChange={(e) => handleInputChange("sender_address", e.target.value)}
-              required
-            />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="sender_address_2">Address Line 2</Label>
-              <Input
-                id="sender_address_2"
-                value={formData.sender_address_2}
-                onChange={(e) => handleInputChange("sender_address_2", e.target.value)}
-                placeholder="Optional (shown on bills)"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sender_address_3">Address Line 3</Label>
-              <Input
-                id="sender_address_3"
-                value={formData.sender_address_3}
-                onChange={(e) => handleInputChange("sender_address_3", e.target.value)}
-                placeholder="Optional (shown on bills)"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Receiver Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Receiver Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="relative space-y-2">
-            <Label htmlFor="receiver_search" className="flex items-center gap-1.5">
-              <History className="h-3.5 w-3.5" />
-              Quick-fill from a previous receiver
-            </Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="receiver_search"
-                placeholder="Search by name or phone..."
-                value={receiverSearch}
-                onChange={(e) => {
-                  setReceiverSearch(e.target.value);
-                  setShowReceiverResults(true);
-                }}
-                onFocus={() => setShowReceiverResults(true)}
-                onBlur={() => setTimeout(() => setShowReceiverResults(false), 150)}
-                className="pl-10"
-                autoComplete="off"
-              />
-            </div>
-            {showReceiverResults && receiverSearch.trim().length >= 2 && (
-              <div className="absolute z-20 w-full bg-popover border rounded-md shadow-md mt-1 max-h-60 overflow-y-auto">
-                {receiverSearching ? (
-                  <div className="p-3 text-sm text-muted-foreground">Searching...</div>
-                ) : receiverResults.length > 0 ? (
-                  receiverResults.map((row, i) => (
-                    <button
-                      type="button"
-                      key={i}
-                      className="w-full text-left p-3 hover:bg-accent border-b last:border-b-0"
-                      onMouseDown={() => selectReceiverResult(row)}
-                    >
-                      <div className="font-medium">{row.receiver_name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {row.receiver_phone}
-                        {row.receiver_city ? ` • ${row.receiver_city}` : ""}
-                      </div>
-                    </button>
-                  ))
-                ) : (
-                  <div className="p-3 text-sm text-muted-foreground">No matches found</div>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="receiver_name">Full Name *</Label>
-              <Input
-                id="receiver_name"
-                value={formData.receiver_name}
-                onChange={(e) => handleInputChange("receiver_name", e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="receiver_company">Company Name</Label>
-              <Input
-                id="receiver_company"
-                value={formData.receiver_company}
-                onChange={(e) => handleInputChange("receiver_company", e.target.value)}
-                placeholder="Optional"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="receiver_phone">Phone Number *</Label>
-              <Input
-                id="receiver_phone"
-                type="tel"
-                value={formData.receiver_phone}
-                onChange={(e) => handleInputChange("receiver_phone", e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="receiver_email">Email Address</Label>
-              <Input
-                id="receiver_email"
-                type="email"
-                value={formData.receiver_email}
-                onChange={(e) => handleInputChange("receiver_email", e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="receiver_city">City *</Label>
-              <Input
-                id="receiver_city"
-                value={formData.receiver_city}
-                onChange={(e) => handleInputChange("receiver_city", e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="receiver_state">State / Province</Label>
-              <Input
-                id="receiver_state"
-                value={formData.receiver_state}
-                onChange={(e) => handleInputChange("receiver_state", e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="receiver_postal_code">Postal Code</Label>
-              <Input
-                id="receiver_postal_code"
-                value={formData.receiver_postal_code}
-                onChange={(e) => handleInputChange("receiver_postal_code", e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="receiver_country">Country *</Label>
-              <Select
-                value={formData.receiver_country}
-                onValueChange={(value) => handleInputChange("receiver_country", value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={countriesLoading ? "Loading countries..." : "Select country"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {countries.map((country) => (
-                    <SelectItem key={country.code} value={country.code}>
-                      {country.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="receiver_address">Full Address *</Label>
-            <Textarea
-              id="receiver_address"
-              value={formData.receiver_address}
-              onChange={(e) => handleInputChange("receiver_address", e.target.value)}
-              required
-            />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="receiver_address_2">Address Line 2</Label>
-              <Input
-                id="receiver_address_2"
-                value={formData.receiver_address_2}
-                onChange={(e) => handleInputChange("receiver_address_2", e.target.value)}
-                placeholder="Optional (shown on bills)"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="receiver_address_3">Address Line 3</Label>
-              <Input
-                id="receiver_address_3"
-                value={formData.receiver_address_3}
-                onChange={(e) => handleInputChange("receiver_address_3", e.target.value)}
-                placeholder="Optional (shown on bills)"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Route */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Route</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="from_country">From Country *</Label>
-              <Select
-                value={formData.from_country}
-                onValueChange={(value) => handleInputChange("from_country", value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={countriesLoading ? "Loading countries..." : "Select country"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {countries.map((country) => (
-                    <SelectItem key={country.code} value={country.code}>
-                      {country.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="to_country">To Country *</Label>
-              <Select
-                value={formData.to_country}
-                onValueChange={(value) => handleInputChange("to_country", value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={countriesLoading ? "Loading countries..." : "Select country"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {countries.map((country) => (
-                    <SelectItem key={country.code} value={country.code}>
-                      {country.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Parcel Details */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5" />
-            Parcel Details
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="parcel_type">Parcel Type</Label>
-              <Select
-                value={formData.parcel_type}
-                onValueChange={(value) => handleInputChange("parcel_type", value)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {parcelTypes.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="document_type">Document Type</Label>
-              <Select
-                value={formData.document_type}
-                onValueChange={(value) => handleInputChange("document_type", value)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {documentTypes.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="service_type">Service Type</Label>
-              <Select
-                value={formData.service_type}
-                onValueChange={(value) => handleInputChange("service_type", value)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {serviceTypes.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="weight">Weight (kg) *</Label>
-              <Input
-                id="weight"
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={formData.weight}
-                onChange={(e) => handleInputChange("weight", e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="length">Length (cm) *</Label>
-              <Input
-                id="length"
-                type="number"
-                step="0.01"
-                min="1"
-                value={formData.length}
-                onChange={(e) => handleInputChange("length", e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="width">Width (cm) *</Label>
-              <Input
-                id="width"
-                type="number"
-                step="0.01"
-                min="1"
-                value={formData.width}
-                onChange={(e) => handleInputChange("width", e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="height">Height (cm) *</Label>
-              <Input
-                id="height"
-                type="number"
-                step="0.01"
-                min="1"
-                value={formData.height}
-                onChange={(e) => handleInputChange("height", e.target.value)}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="declared_value">Declared Value</Label>
-              <Input
-                id="declared_value"
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.declared_value}
-                onChange={(e) => handleInputChange("declared_value", e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="pieces">Pieces</Label>
-              <Input
-                id="pieces"
-                type="number"
-                min="1"
-                value={formData.pieces}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, pieces: parseInt(e.target.value, 10) || 1 }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="freight_amount_pkr">Freight Amount (PKR)</Label>
-              <Input
-                id="freight_amount_pkr"
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.freight_amount_pkr}
-                onChange={(e) => handleInputChange("freight_amount_pkr", e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="dim_weight_override">
-                Dim Weight Override (kg)
-              </Label>
-              <Input
-                id="dim_weight_override"
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.dim_weight_override}
-                onChange={(e) => handleInputChange("dim_weight_override", e.target.value)}
-                placeholder={
-                  formData.length && formData.width && formData.height
-                    ? `Auto: ${((parseFloat(formData.length || "0") * parseFloat(formData.width || "0") * parseFloat(formData.height || "0")) / 5000).toFixed(2)} kg`
-                    : "Leave blank to auto-calculate"
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Leave blank to use formula (L×W×H÷5000). Enter a value to override on all bills.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="amount_override">
-                Freight Amount Override (PKR)
-              </Label>
-              <Input
-                id="amount_override"
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.amount_override}
-                onChange={(e) => handleInputChange("amount_override", e.target.value)}
-                placeholder={
-                  formData.freight_amount_pkr
-                    ? `Default: PKR ${formData.freight_amount_pkr}`
-                    : "Leave blank to use Freight Amount"
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Leave blank to use the Freight Amount field. Enter a value to override on the Sender Copy bill.
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="special_instructions">Special Instructions</Label>
-            <Textarea
-              id="special_instructions"
-              value={formData.special_instructions}
-              onChange={(e) => handleInputChange("special_instructions", e.target.value)}
-              placeholder="Optional"
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Items */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Items</CardTitle>
-            <Button type="button" variant="outline" size="sm" onClick={addItem}>
-              <Plus className="h-4 w-4 mr-1" />
-              Add Item
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {formData.items.map((item, index) => (
-            <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end border-b pb-4 last:border-b-0">
-              <div className="md:col-span-4 space-y-2">
-                <Label>Description</Label>
-                <Input
-                  value={item.description}
-                  onChange={(e) => handleItemChange(index, "description", e.target.value)}
-                />
-              </div>
-              <div className="md:col-span-2 space-y-2">
-                <Label>Quantity</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={item.quantity}
-                  onChange={(e) => handleItemChange(index, "quantity", parseInt(e.target.value, 10) || 0)}
-                />
-              </div>
-              <div className="md:col-span-2 space-y-2">
-                <Label>Unit Price</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={item.unit_price}
-                  onChange={(e) => handleItemChange(index, "unit_price", parseFloat(e.target.value) || 0)}
-                />
-              </div>
-              <div className="md:col-span-2 space-y-2">
-                <Label>HS Code</Label>
-                <Input
-                  value={item.hs_code}
-                  onChange={(e) => handleItemChange(index, "hs_code", e.target.value)}
-                />
-              </div>
-              <div className="md:col-span-1 space-y-2">
-                <Label>Total</Label>
-                <div className="h-10 flex items-center font-medium">{item.total.toFixed(2)}</div>
-              </div>
-              <div className="md:col-span-1 flex justify-end">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => removeItem(index)}
-                  disabled={formData.items.length === 1}
-                >
-                  <Trash2 className="h-4 w-4 text-red-600" />
-                </Button>
-              </div>
-            </div>
-          ))}
-          <div className="flex justify-end pt-2 text-sm font-semibold">
-            Items Subtotal: {calculateSubtotal().toFixed(2)}
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex justify-end gap-3">
-        <Button type="submit" disabled={isLoading}>
-          {isLoading ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Saving...
-            </>
-          ) : parcel ? (
-            "Update Parcel"
-          ) : (
-            "Create Parcel"
+  // ─── Step content renderers ─────────────────────────────────────────────────
+  const renderStep0 = () => (
+    <SectionCard title="Shipment Details" icon={Hash} color="#C98A2B">
+      <Field label="Tracking ID" required>
+        <div className="relative">
+          <StyledInput
+            value={formData.tracking_id}
+            onChange={(e: any) => set("tracking_id", e.target.value)}
+            placeholder={trackingIdLoading ? "Generating…" : "Auto-generated"}
+            className="font-mono"
+          />
+          {trackingIdLoading && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-white/30" />
           )}
-        </Button>
+        </div>
+      </Field>
+      <Field label="Reference ID" hint="Optional internal ref">
+        <StyledInput value={formData.reference_id} onChange={(e: any) => set("reference_id", e.target.value)} placeholder="e.g. ORD-00123" />
+      </Field>
+      <Field label="Pieces">
+        <StyledInput type="number" min={1} value={formData.pieces} onChange={(e: any) => set("pieces", parseInt(e.target.value) || 1)} />
+      </Field>
+      <div className="col-span-2">
+        <Field label="Shipment Type">
+          <DocTypePicker value={formData.document_type} onChange={(v) => set("document_type", v)} />
+        </Field>
       </div>
-    </form>
+      <div className="col-span-2">
+        <Field label="Service Type">
+          <ServicePicker value={formData.service_type} onChange={(v) => set("service_type", v)} />
+        </Field>
+      </div>
+    </SectionCard>
+  );
+
+  const renderStep1 = () => (
+    <SectionCard title="Sender Information" icon={User} color="#8B5CF6">
+      <QuickFill
+        value={senderSearch}
+        onChange={setSenderSearch}
+        onBlur={() => setTimeout(() => setSenderResults([]), 200)}
+        searching={senderSearching}
+        results={senderResults}
+        onSelect={fillSender}
+        placeholder="Quick-fill from previous parcel…"
+      />
+      <Field label="Full Name" required>
+        <StyledInput value={formData.sender_name} onChange={(e: any) => set("sender_name", e.target.value)} placeholder="John Smith" />
+      </Field>
+      <Field label="Company">
+        <StyledInput value={formData.sender_company} onChange={(e: any) => set("sender_company", e.target.value)} placeholder="Optional" />
+      </Field>
+      <Field label="Phone" required>
+        <StyledInput type="tel" value={formData.sender_phone} onChange={(e: any) => set("sender_phone", e.target.value)} placeholder="+92 300 0000000" />
+      </Field>
+      <Field label="Email" required>
+        <StyledInput type="email" value={formData.sender_email} onChange={(e: any) => set("sender_email", e.target.value)} placeholder="john@email.com" />
+      </Field>
+      <Field label="CNIC">
+        <StyledInput value={formData.sender_cnic} onChange={(e: any) => set("sender_cnic", e.target.value)} placeholder="1234567890123" />
+      </Field>
+      <Field label="City" required>
+        <StyledInput value={formData.sender_city} onChange={(e: any) => set("sender_city", e.target.value)} placeholder="Lahore" />
+      </Field>
+      <Field label="Country" required>
+        <CountrySelect value={formData.sender_country} onValueChange={(v: string) => set("sender_country", v)} countries={countries} loading={countriesLoading} />
+      </Field>
+      <div className="col-span-2">
+        <Field label="Address" required>
+          <textarea
+            value={formData.sender_address}
+            onChange={(e) => set("sender_address", e.target.value)}
+            rows={2}
+            placeholder="Street address"
+            className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-white/25 resize-none"
+          />
+        </Field>
+      </div>
+      <Field label="Address Line 2">
+        <StyledInput value={formData.sender_address_2} onChange={(e: any) => set("sender_address_2", e.target.value)} placeholder="Optional" />
+      </Field>
+      <Field label="Address Line 3">
+        <StyledInput value={formData.sender_address_3} onChange={(e: any) => set("sender_address_3", e.target.value)} placeholder="Optional" />
+      </Field>
+    </SectionCard>
+  );
+
+  const renderStep2 = () => (
+    <SectionCard title="Receiver Information" icon={MapPin} color="#3B82F6">
+      <QuickFill
+        value={receiverSearch}
+        onChange={setReceiverSearch}
+        onBlur={() => setTimeout(() => setReceiverResults([]), 200)}
+        searching={receiverSearching}
+        results={receiverResults}
+        onSelect={fillReceiver}
+        placeholder="Quick-fill from previous parcel…"
+      />
+      <Field label="Full Name" required>
+        <StyledInput value={formData.receiver_name} onChange={(e: any) => set("receiver_name", e.target.value)} placeholder="Jane Doe" />
+      </Field>
+      <Field label="Company">
+        <StyledInput value={formData.receiver_company} onChange={(e: any) => set("receiver_company", e.target.value)} placeholder="Optional" />
+      </Field>
+      <Field label="Phone" required>
+        <StyledInput type="tel" value={formData.receiver_phone} onChange={(e: any) => set("receiver_phone", e.target.value)} placeholder="+44 7700 900000" />
+      </Field>
+      <Field label="Email">
+        <StyledInput type="email" value={formData.receiver_email} onChange={(e: any) => set("receiver_email", e.target.value)} placeholder="jane@email.com" />
+      </Field>
+      <Field label="City" required>
+        <StyledInput value={formData.receiver_city} onChange={(e: any) => set("receiver_city", e.target.value)} placeholder="London" />
+      </Field>
+      <Field label="State / Province">
+        <StyledInput value={formData.receiver_state} onChange={(e: any) => set("receiver_state", e.target.value)} placeholder="England" />
+      </Field>
+      <Field label="Postal Code">
+        <StyledInput value={formData.receiver_postal_code} onChange={(e: any) => set("receiver_postal_code", e.target.value)} placeholder="SW1A 1AA" />
+      </Field>
+      <Field label="Country" required>
+        <CountrySelect value={formData.receiver_country} onValueChange={(v: string) => set("receiver_country", v)} countries={countries} loading={countriesLoading} />
+      </Field>
+      <div className="col-span-2">
+        <Field label="Address" required>
+          <textarea
+            value={formData.receiver_address}
+            onChange={(e) => set("receiver_address", e.target.value)}
+            rows={2}
+            placeholder="Street address"
+            className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-white/25 resize-none"
+          />
+        </Field>
+      </div>
+      <Field label="Address Line 2">
+        <StyledInput value={formData.receiver_address_2} onChange={(e: any) => set("receiver_address_2", e.target.value)} placeholder="Optional" />
+      </Field>
+      <Field label="Address Line 3">
+        <StyledInput value={formData.receiver_address_3} onChange={(e: any) => set("receiver_address_3", e.target.value)} placeholder="Optional" />
+      </Field>
+    </SectionCard>
+  );
+
+  const renderStep3 = () => {
+    const w = parseFloat(formData.weight) || 0;
+    const l = parseFloat(formData.length) || 0;
+    const wi = parseFloat(formData.width) || 0;
+    const h = parseFloat(formData.height) || 0;
+    const volWeight = l * wi * h / 5000;
+    const chargeable = Math.max(w, volWeight);
+    return (
+      <SectionCard title="Package Details" icon={Package} color="#F97316">
+        <div className="col-span-2">
+          <Field label="Package Type">
+            <TypePicker value={formData.parcel_type} onChange={(v) => set("parcel_type", v)} />
+          </Field>
+        </div>
+        <Field label="Weight (kg)" required hint="Actual weight">
+          <StyledInput type="number" step="0.1" value={formData.weight} onChange={(e: any) => set("weight", e.target.value)} placeholder="0.00" />
+        </Field>
+        <Field label="Pieces">
+          <StyledInput type="number" min={1} value={formData.pieces} onChange={(e: any) => set("pieces", parseInt(e.target.value) || 1)} />
+        </Field>
+        <Field label="Length (cm)">
+          <StyledInput type="number" step="0.1" value={formData.length} onChange={(e: any) => set("length", e.target.value)} placeholder="0" />
+        </Field>
+        <Field label="Width (cm)">
+          <StyledInput type="number" step="0.1" value={formData.width} onChange={(e: any) => set("width", e.target.value)} placeholder="0" />
+        </Field>
+        <Field label="Height (cm)">
+          <StyledInput type="number" step="0.1" value={formData.height} onChange={(e: any) => set("height", e.target.value)} placeholder="0" />
+        </Field>
+        <Field label="Declared Value ($)">
+          <StyledInput type="number" step="0.01" value={formData.declared_value} onChange={(e: any) => set("declared_value", e.target.value)} placeholder="0.00" />
+        </Field>
+        <Field label="Freight (PKR)">
+          <StyledInput type="number" step="0.01" value={formData.freight_amount_pkr} onChange={(e: any) => set("freight_amount_pkr", e.target.value)} placeholder="0.00" />
+        </Field>
+        <Field label="Dim Weight Override">
+          <StyledInput type="number" step="0.01" value={formData.dim_weight_override} onChange={(e: any) => set("dim_weight_override", e.target.value)} placeholder="Auto" />
+        </Field>
+        <Field label="Amount Override ($)">
+          <StyledInput type="number" step="0.01" value={formData.amount_override} onChange={(e: any) => set("amount_override", e.target.value)} placeholder="Auto" />
+        </Field>
+        <Field label="Origin Country">
+          <CountrySelect value={formData.from_country} onValueChange={(v: string) => set("from_country", v)} countries={countries} loading={countriesLoading} />
+        </Field>
+        <Field label="Destination Country">
+          <CountrySelect value={formData.to_country} onValueChange={(v: string) => set("to_country", v)} countries={countries} loading={countriesLoading} />
+        </Field>
+        {/* Weight summary */}
+        {(w > 0 || volWeight > 0) && (
+          <div className="col-span-2 rounded-xl border border-[#F97316]/20 bg-[#F97316]/8 p-3 grid grid-cols-3 gap-3">
+            {[
+              { label: "Actual", value: `${w.toFixed(2)} kg` },
+              { label: "Volumetric", value: `${volWeight.toFixed(2)} kg` },
+              { label: "Chargeable", value: `${chargeable.toFixed(2)} kg` },
+            ].map(({ label, value }) => (
+              <div key={label} className="text-center">
+                <p className="text-xs text-white/40">{label}</p>
+                <p className="text-sm font-bold text-[#F97316]">{value}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="col-span-2">
+          <Field label="Special Instructions">
+            <textarea
+              value={formData.special_instructions}
+              onChange={(e) => set("special_instructions", e.target.value)}
+              rows={2}
+              placeholder="Fragile, Handle with care, etc."
+              className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-white/25 resize-none"
+            />
+          </Field>
+        </div>
+      </SectionCard>
+    );
+  };
+
+  const renderStep4 = () => (
+    <SectionCard title="Contents Declaration" icon={ClipboardList} color="#22C55E">
+      <div className="col-span-2 space-y-3">
+        {formData.items.map((item, i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl border border-white/8 bg-white/3 p-3 grid grid-cols-12 gap-2 items-end"
+          >
+            {/* Description */}
+            <div className="col-span-12 sm:col-span-4 space-y-1">
+              <label className="text-[10px] text-white/35 uppercase tracking-wide">Description</label>
+              <StyledInput value={item.description} onChange={(e: any) => setItem(i, "description", e.target.value)} placeholder="e.g. Electronics" />
+            </div>
+            {/* Qty */}
+            <div className="col-span-3 sm:col-span-2 space-y-1">
+              <label className="text-[10px] text-white/35 uppercase tracking-wide">Qty</label>
+              <StyledInput type="number" min={1} value={item.quantity} onChange={(e: any) => setItem(i, "quantity", parseInt(e.target.value) || 1)} />
+            </div>
+            {/* Unit Price */}
+            <div className="col-span-4 sm:col-span-2 space-y-1">
+              <label className="text-[10px] text-white/35 uppercase tracking-wide">Unit $</label>
+              <StyledInput type="number" step="0.01" value={item.unit_price} onChange={(e: any) => setItem(i, "unit_price", parseFloat(e.target.value) || 0)} />
+            </div>
+            {/* HS Code */}
+            <div className="col-span-4 sm:col-span-2 space-y-1">
+              <label className="text-[10px] text-white/35 uppercase tracking-wide">HS Code</label>
+              <StyledInput value={item.hs_code} onChange={(e: any) => setItem(i, "hs_code", e.target.value)} placeholder="Optional" />
+            </div>
+            {/* Total */}
+            <div className="col-span-4 sm:col-span-1 space-y-1">
+              <label className="text-[10px] text-white/35 uppercase tracking-wide">Total</label>
+              <div className="h-9 flex items-center text-sm font-semibold text-[#22C55E]">
+                ${item.total.toFixed(2)}
+              </div>
+            </div>
+            {/* Delete */}
+            <div className="col-span-1 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  if (formData.items.length > 1) set("items", formData.items.filter((_, j) => j !== i));
+                }}
+                disabled={formData.items.length === 1}
+                className="h-9 w-9 rounded-lg flex items-center justify-center text-red-400/50 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-20 transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        ))}
+
+        {/* Add item */}
+        <button
+          type="button"
+          onClick={() => set("items", [...formData.items, { description: "", quantity: 1, unit_price: 0, hs_code: "", total: 0 }])}
+          className="w-full rounded-xl border border-dashed border-white/15 py-2.5 text-xs text-white/35 hover:text-white/60 hover:border-white/25 transition-all flex items-center justify-center gap-2"
+        >
+          <Plus className="h-3.5 w-3.5" /> Add Item
+        </button>
+
+        {/* Subtotal */}
+        <div className="flex justify-end">
+          <div className="rounded-xl border border-[#22C55E]/20 bg-[#22C55E]/8 px-5 py-2.5 flex items-center gap-3">
+            <span className="text-xs text-white/40">Items Subtotal</span>
+            <span className="text-lg font-bold text-[#22C55E]">${subtotal.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+    </SectionCard>
+  );
+
+  const stepRenderers = [renderStep0, renderStep1, renderStep2, renderStep3, renderStep4];
+  const isLastStep = step === STEPS.length - 1;
+
+  return (
+    <div className="space-y-6">
+      {/* Step bar */}
+      <div className="px-1">
+        <StepBar step={step} total={STEPS.length} steps={STEPS} />
+      </div>
+
+      {/* Step content */}
+      <AnimatePresence mode="wait">
+        <motion.div key={step}>
+          {stepRenderers[step]()}
+        </motion.div>
+      </AnimatePresence>
+
+      {/* Navigation */}
+      <div className="flex items-center justify-between pt-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setStep((s) => Math.max(0, s - 1))}
+          disabled={step === 0}
+          className="gap-2 border-white/10 bg-white/5 text-white hover:bg-white/10 disabled:opacity-30"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back
+        </Button>
+
+        <div className="flex items-center gap-1.5">
+          {STEPS.map((_, i) => (
+            <div key={i} className={`h-1.5 rounded-full transition-all ${i === step ? "w-5 bg-[#C98A2B]" : i < step ? "w-1.5 bg-emerald-500/60" : "w-1.5 bg-white/15"}`} />
+          ))}
+        </div>
+
+        {isLastStep ? (
+          <Button
+            onClick={handleSubmit}
+            disabled={isLoading}
+            className="gap-2 bg-[#C98A2B] hover:bg-[#B8791A] text-white border-none min-w-32"
+          >
+            {isLoading ? (
+              <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>
+            ) : (
+              <><Sparkles className="h-4 w-4" /> {isEdit ? "Update Parcel" : "Create Parcel"}</>
+            )}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
+            className="gap-2 bg-white/10 hover:bg-white/15 text-white border-none"
+          >
+            Next <ArrowRight className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+    </div>
   );
 };
