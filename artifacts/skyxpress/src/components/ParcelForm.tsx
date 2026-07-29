@@ -481,11 +481,13 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     });
   }, []);
 
-  // Auto-generate Reference ID (sequential, +1 from Supabase, e.g. 0002122103 -> 0002122104)
+  // Preview Reference ID (does NOT consume the sequence — safe to call every
+  // time the form opens; the number only actually advances when the parcel
+  // is saved, in handleSubmit)
   useEffect(() => {
     if (isEdit) return;
     setReferenceIdLoading(true);
-    supabase.rpc("generate_sequential_reference").then(({ data, error }) => {
+    supabase.rpc("peek_sequential_reference").then(({ data, error }) => {
       if (!error && data) setFormData((prev) => prev.reference_id ? prev : { ...prev, reference_id: data });
       setReferenceIdLoading(false);
     });
@@ -571,8 +573,18 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
 
       const { data: profile } = await supabase.from("profiles").select("partner_id, office_id").eq("user_id", session.user.id).single();
 
+      // Only now — at the moment of actually saving — do we consume the
+      // sequence and lock in the real reference_id. This guarantees no
+      // numbers are skipped just because someone opened and closed the form.
+      let finalReferenceId = formData.reference_id;
+      if (!isEdit) {
+        const { data: genRef, error: genRefError } = await supabase.rpc("generate_sequential_reference");
+        if (!genRefError && genRef) finalReferenceId = genRef;
+      }
+
       const payload: any = {
         ...formData,
+        reference_id: finalReferenceId,
         weight: parseFloat(formData.weight) || null,
         length: parseFloat(formData.length) || null,
         width: parseFloat(formData.width) || null,
@@ -626,7 +638,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
           )}
         </div>
       </Field>
-      <Field label="Reference ID" hint="Auto-generated, sequential">
+      <Field label="Reference ID" hint="Locked in only when you save">
         <div className="relative">
           <StyledInput
             value={formData.reference_id}
