@@ -501,10 +501,6 @@ export const ManifestStock = () => {
               )}
             </CardTitle>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowSQL(true)}
-                className="gap-2 border-slate-300 text-slate-600 hover:text-blue-700 hover:border-blue-300">
-                <Database className="h-3.5 w-3.5" /> SQL Setup
-              </Button>
               <Button variant="outline" size="sm" onClick={reload} className="gap-2 border-slate-300">
                 <RefreshCw className="h-3.5 w-3.5" /> Refresh
               </Button>
