@@ -117,7 +117,49 @@ export async function getNextManifestId(): Promise<string> {
   return formatManifestId(next);
 }
 
-// ── camelCase ↔ snake_case mapping ──────────────────────────────────────────
+// ── camelCase → snake_case (partial update — only maps keys present in the object) ──
+function toPartialDbRow(updates: Partial<ManifestStockEntry>): Record<string, any> {
+  const row: Record<string, any> = {};
+  const set = (dbKey: string, val: any) => { row[dbKey] = val; };
+  if ("manifestStatus"    in updates) set("manifest_status",     updates.manifestStatus    ?? null);
+  if ("isLocked"          in updates) set("is_locked",           updates.isLocked          ?? false);
+  if ("bookingFromDate"   in updates) set("booking_from_date",   updates.bookingFromDate   ?? null);
+  if ("bookingTillDate"   in updates) set("booking_till_date",   updates.bookingTillDate   ?? null);
+  if ("manifestDate"      in updates) set("manifest_date",       updates.manifestDate      ?? null);
+  if ("manifestTime"      in updates) set("manifest_time",       updates.manifestTime      ?? null);
+  if ("runNumber"         in updates) set("run_number",          updates.runNumber         ?? null);
+  if ("flightNo"          in updates) set("flight_no",           updates.flightNo          ?? null);
+  if ("noOfBags"          in updates) set("no_of_bags",          updates.noOfBags          ?? 0);
+  if ("arrivalDate"       in updates) set("arrival_date",        updates.arrivalDate       ?? null);
+  if ("arrivalTime"       in updates) set("arrival_time",        updates.arrivalTime       ?? null);
+  if ("forwarder"         in updates) set("forwarder",           updates.forwarder         ?? null);
+  if ("service"           in updates) set("service",             updates.service           ?? null);
+  if ("masterNo"          in updates) set("master_no",           updates.masterNo          ?? null);
+  if ("masterEdiBagNo"    in updates) set("master_edi_bag_no",   updates.masterEdiBagNo    ?? null);
+  if ("remark"            in updates) set("remark",              updates.remark            ?? null);
+  if ("createdByUser"     in updates) set("created_by_user",     updates.createdByUser     ?? null);
+  if ("company"           in updates) set("company",             updates.company           ?? null);
+  if ("license"           in updates) set("license",             updates.license           ?? null);
+  if ("vendorWeight"      in updates) set("vendor_weight",       updates.vendorWeight      ?? 0);
+  if ("totalActualWt"     in updates) set("total_actual_wt",     updates.totalActualWt     ?? 0);
+  if ("totalVolumetricWt" in updates) set("total_volumetric_wt", updates.totalVolumetricWt ?? 0);
+  if ("totalChargeableWt" in updates) set("total_chargeable_wt", updates.totalChargeableWt ?? 0);
+  if ("originHub"         in updates) set("origin_hub",          updates.originHub         ?? null);
+  if ("destinationHub"    in updates) set("destination_hub",     updates.destinationHub    ?? null);
+  if ("parcelCount"       in updates) set("parcel_count",        updates.parcelCount       ?? 0);
+  if ("totalWeight"       in updates) set("total_weight",        updates.totalWeight       ?? 0);
+  if ("totalValue"        in updates) set("total_value",         updates.totalValue        ?? 0);
+  if ("currency"          in updates) set("currency",            updates.currency          ?? "USD");
+  if ("serviceType"       in updates) set("service_type",        updates.serviceType       ?? null);
+  if ("fromCountry"       in updates) set("from_country",        updates.fromCountry       ?? null);
+  if ("toCountry"         in updates) set("to_country",          updates.toCountry         ?? null);
+  if ("trackingIds"       in updates) set("tracking_ids",        updates.trackingIds       ?? []);
+  if ("parcels"           in updates) set("parcels",             updates.parcels           ?? []);
+  if ("trackingEvents"    in updates) set("tracking_events",     updates.trackingEvents    ?? []);
+  return row;
+}
+
+// ── camelCase → snake_case (full row) ───────────────────────────────────────
 function toDbRow(entry: ManifestStockEntry): Record<string, any> {
   return {
     manifest_id:         entry.manifestId,
@@ -265,33 +307,34 @@ export function saveManifestToStock(entry: ManifestStockEntry): void {
 
 /**
  * Apply partial updates to a manifest (status, lock, detail fields, etc.).
+ * Uses a direct .update() so only the changed columns are patched — no
+ * fetch-then-upsert race condition and no silent full-row overwrites.
  */
 export async function updateManifestInStockDB(
   manifestId: string,
   updates: Partial<ManifestStockEntry>
 ): Promise<void> {
-  // Update localStorage cache immediately
+  // Optimistically update localStorage so the UI responds instantly
   const stock = loadManifestStock().map((e) =>
     e.manifestId === manifestId ? { ...e, ...updates } : e
   );
   saveLocalCache(stock);
 
   try {
-    // Fetch the current DB row, merge, upsert
-    const { data } = await supabase
-      .from("manifests_detail")
-      .select("*")
-      .eq("manifest_id", manifestId)
-      .single();
+    const partial = toPartialDbRow(updates);
+    if (Object.keys(partial).length === 0) return;
 
-    const base: ManifestStockEntry = data
-      ? fromDbRow(data)
-      : (stock.find((e) => e.manifestId === manifestId) ?? ({ manifestId } as ManifestStockEntry));
-
-    await supabase
+    const { error } = await supabase
       .from("manifests_detail")
-      .upsert(toDbRow({ ...base, ...updates }), { onConflict: "manifest_id" });
-  } catch (_) {}
+      .update(partial)
+      .eq("manifest_id", manifestId);
+
+    if (error) {
+      console.error("[ManifestStorage] update failed:", error.message, error.details);
+    }
+  } catch (err) {
+    console.error("[ManifestStorage] updateManifestInStockDB error:", err);
+  }
 }
 
 /** @deprecated use updateManifestInStockDB */
