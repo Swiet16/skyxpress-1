@@ -178,6 +178,7 @@ export async function generateBulkManifestPDF(
       pdf.text(lines[0], ML + ox + 1, y + 5);
     };
 
+    pdf.setFont("helvetica", "normal"); pdf.setFontSize(6.8);
     row(String(i + 1),                                   0,   5);
     row(p.reference_id || p.tracking_id || "",           7,   24);
     row(p.sender_name || "",                              33,  31);
@@ -188,16 +189,23 @@ export async function generateBulkManifestPDF(
     row(String(p.pieces ?? 1),                            164, 8);
     row(Number(p.weight ?? 0).toFixed(2),                 174, 15);
     row(`${p.currency || ""} ${Number(p.total_price ?? 0).toFixed(2)}`, 191, 21);
-    row(p.service_type || "",                             214, 25);
 
-    // Status badge
+    // SERVICE — smaller font, truncate long names
+    const svc = (p.service_type || "").replace(/_/g, " ");
+    const svcShort = svc.length > 13 ? svc.slice(0, 12) + "…" : svc;
+    pdf.setFont("helvetica", "normal"); pdf.setFontSize(5.8);
+    tc(pdf, DARK);
+    pdf.text(svcShort, ML + 214 + 1, y + 5);
+
+    // STATUS badge — compact
     const raw = (p.current_status || "").replace(/_/g, " ").toUpperCase();
+    const rawShort = raw.length > 12 ? raw.slice(0, 11) + "…" : raw;
     const stC = ST_COLORS[raw] || { bg: [100, 116, 139] as RGB, text: WHITE };
     cc(pdf, stC.bg as RGB);
-    pdf.roundedRect(ML + 241 + 1, y + 1.2, 33, ROW_H - 2.4, 1.5, 1.5, "F");
+    pdf.roundedRect(ML + 241 + 1, y + 1.3, 34, ROW_H - 2.6, 1.5, 1.5, "F");
     tc(pdf, stC.text as RGB);
-    pdf.setFont("helvetica", "bold"); pdf.setFontSize(5.5);
-    pdf.text(raw, ML + 241 + 17.5, y + 5.2, { align: "center" });
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(5);
+    pdf.text(rawShort, ML + 241 + 18, y + 5.1, { align: "center" });
 
     y += ROW_H;
   }
