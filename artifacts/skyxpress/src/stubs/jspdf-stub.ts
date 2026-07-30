@@ -1,4 +1,5 @@
-// Stub — jsPDF unavailable in this environment
+// Stub — jsPDF is replaced by the real package at runtime via CDN/npm.
+// This stub is only active when the real package fails to resolve.
 export class jsPDF {
   constructor(..._args: any[]) {}
   addImage(..._args: any[]) { return this; }
@@ -10,11 +11,16 @@ export class jsPDF {
   setFillColor(..._args: any[]) { return this; }
   setLineWidth(..._args: any[]) { return this; }
   rect(..._args: any[]) { return this; }
+  roundedRect(..._args: any[]) { return this; }
+  circle(..._args: any[]) { return this; }
+  ellipse(..._args: any[]) { return this; }
   line(..._args: any[]) { return this; }
+  lines(..._args: any[]) { return this; }
   text(..._args: any[]) { return this; }
+  splitTextToSize(text: string, _maxW: number): string[] { return [text]; }
   save(..._args: any[]) { alert("PDF generation is not available in this environment."); }
   output(..._args: any[]) { return ""; }
-  internal = { pageSize: { getWidth: () => 210, getHeight: () => 297 } };
+  internal = { pageSize: { getWidth: () => 297, getHeight: () => 210 } };
   getNumberOfPages() { return 1; }
   setPage(..._args: any[]) { return this; }
 }

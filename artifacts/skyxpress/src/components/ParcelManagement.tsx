@@ -44,7 +44,7 @@ import { ParcelDetails } from "./ParcelDetails";
 import { ParcelAttachmentsDialog } from "./ParcelAttachments";
 import { SkyXpressAWBInvoice } from "./SkyXpressAWBInvoice";
 import { exportManifestToExcel } from "@/utils/manifestExport";
-import { buildManifestEntry, saveManifestToStock, getNextManifestId, type ManifestStockEntry } from "@/utils/manifestStorage";
+import { buildManifestEntry, saveManifestToStockDB, getNextManifestId, type ManifestStockEntry } from "@/utils/manifestStorage";
 import { generateBulkManifestPDF } from "@/utils/bulkManifestPDF";
 import {
   Dialog as ManifestDialog,
@@ -270,13 +270,13 @@ export const ParcelManagement = () => {
   };
 
   // ── Phase 2: user confirmed ID → build entry, save, show downloads ────────
-  const handleConfirmManifest = () => {
+  const handleConfirmManifest = async () => {
     const trimmed = pendingManifestId.trim();
     if (!trimmed) { setIdError("Manifest ID cannot be empty."); return; }
     if (trimmed.length < 4) { setIdError("ID must be at least 4 characters."); return; }
     setIdError("");
     const entry = buildManifestEntry(pendingParcels, countryMap, trimmed);
-    saveManifestToStock(entry);
+    await saveManifestToStockDB(entry);
     setShowConfirmDialog(false);
     setGeneratedEntry(entry);
     setSelectedIds(new Set());

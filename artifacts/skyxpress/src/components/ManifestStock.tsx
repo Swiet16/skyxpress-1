@@ -73,9 +73,10 @@ import {
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  loadManifestStock,
-  deleteManifestFromStock,
-  updateManifestInStock,
+  loadManifestStockDB,
+  saveManifestToStockDB,
+  updateManifestInStockDB,
+  deleteManifestFromStockDB,
   type ManifestStockEntry,
 } from "@/utils/manifestStorage";
 import { exportManifestToExcel } from "@/utils/manifestExport";
@@ -166,6 +167,7 @@ CREATE TABLE IF NOT EXISTS manifests_detail (
   origin_hub          text,
   destination_hub     text,
   is_locked           boolean DEFAULT false,
+  manifest_status     text DEFAULT 'pending',
   parcel_count        integer DEFAULT 0,
   total_weight        numeric DEFAULT 0,
   total_value         numeric DEFAULT 0,
@@ -180,16 +182,40 @@ CREATE TABLE IF NOT EXISTS manifests_detail (
   updated_at          timestamptz DEFAULT now()
 );
 
--- 5. Enable Row Level Security (optional)
-ALTER TABLE manifests       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE manifests_detail ENABLE ROW LEVEL SECURITY;
+-- Add manifest_status if table already existed without it
+ALTER TABLE manifests_detail ADD COLUMN IF NOT EXISTS manifest_status text DEFAULT 'pending';
+
+-- 5. Enable Row Level Security
+ALTER TABLE manifests        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE manifests_detail  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE manifest_sequence ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow all for authenticated" ON manifests
-  FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Allow all for authenticated" ON manifests_detail
-  FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Allow all" ON manifest_sequence FOR ALL USING (true);
+-- Policies (IF NOT EXISTS is safe to re-run)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'manifests' AND policyname = 'Allow all for authenticated'
+  ) THEN
+    CREATE POLICY "Allow all for authenticated" ON manifests
+      FOR ALL USING (auth.role() = 'authenticated');
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'manifests_detail' AND policyname = 'Allow all for authenticated'
+  ) THEN
+    CREATE POLICY "Allow all for authenticated" ON manifests_detail
+      FOR ALL USING (auth.role() = 'authenticated');
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'manifest_sequence' AND policyname = 'Allow all'
+  ) THEN
+    CREATE POLICY "Allow all" ON manifest_sequence FOR ALL USING (true);
+  END IF;
+END $$;
 `;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -286,7 +312,10 @@ export const ManifestStock = () => {
   const [showBulkDialog, setShowBulkDialog] = useState(false);
   const { toast } = useToast();
 
-  const reload = useCallback(() => setEntries(loadManifestStock()), []);
+  const reload = useCallback(async () => {
+    const data = await loadManifestStockDB();
+    setEntries(data);
+  }, []);
 
   useEffect(() => {
     reload();
@@ -310,19 +339,20 @@ export const ManifestStock = () => {
     setAwbSearch("");
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editing) return;
     setSaving(true);
-    setTimeout(() => {
-      updateManifestInStock(editing.manifestId, editing);
-      reload();
+    try {
+      await updateManifestInStockDB(editing.manifestId, editing);
+      await reload();
       setSelected(editing);
-      setSaving(false);
       toast({ title: "Manifest updated ✓", description: `Manifest ${editing.manifestId} saved.` });
-    }, 400);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleClone = () => {
+  const handleClone = async () => {
     if (!editing) return;
     const clone: ManifestStockEntry = {
       ...editing,
@@ -330,28 +360,25 @@ export const ManifestStock = () => {
       createdAt: new Date().toISOString(),
       isLocked: false,
     };
-    updateManifestInStock(clone.manifestId, clone);
-    const stock = loadManifestStock();
-    stock.unshift(clone);
-    localStorage.setItem("skyxpress_manifest_stock", JSON.stringify(stock));
-    reload();
+    await saveManifestToStockDB(clone);
+    await reload();
     toast({ title: "Cloned", description: `Created ${clone.manifestId}` });
     closeDetail();
   };
 
-  const handleLockToggle = () => {
+  const handleLockToggle = async () => {
     if (!editing) return;
     const locked = !editing.isLocked;
     setEditing((e) => e ? { ...e, isLocked: locked } : e);
-    updateManifestInStock(editing.manifestId, { isLocked: locked });
-    reload();
+    await updateManifestInStockDB(editing.manifestId, { isLocked: locked });
+    await reload();
     toast({ title: locked ? "Manifest locked 🔒" : "Manifest unlocked 🔓" });
   };
 
-  const handleDelete = (manifestId: string) => {
+  const handleDelete = async (manifestId: string) => {
     if (!window.confirm(`Delete manifest ${manifestId}? This cannot be undone.`)) return;
-    deleteManifestFromStock(manifestId);
-    reload();
+    await deleteManifestFromStockDB(manifestId);
+    await reload();
     if (selected?.manifestId === manifestId) closeDetail();
     toast({ title: "Manifest deleted", description: manifestId });
   };
@@ -393,10 +420,10 @@ export const ManifestStock = () => {
   const toggleSelectAll = () =>
     setSelectedIds((prev) => prev.size === filtered.length ? new Set() : new Set(filtered.map((e) => e.manifestId)));
 
-  const handleBulkStatusApply = () => {
+  const handleBulkStatusApply = async () => {
     if (!bulkStatus || selectedIds.size === 0) return;
-    selectedIds.forEach((id) => updateManifestInStock(id, { manifestStatus: bulkStatus }));
-    reload();
+    await Promise.all([...selectedIds].map((id) => updateManifestInStockDB(id, { manifestStatus: bulkStatus })));
+    await reload();
     setSelectedIds(new Set());
     setShowBulkDialog(false);
     const label = MANIFEST_STATUSES.find((s) => s.value === bulkStatus)?.label || bulkStatus;
@@ -404,9 +431,9 @@ export const ManifestStock = () => {
     setBulkStatus("");
   };
 
-  const handleSingleStatus = (manifestId: string, status: string) => {
-    updateManifestInStock(manifestId, { manifestStatus: status });
-    reload();
+  const handleSingleStatus = async (manifestId: string, status: string) => {
+    await updateManifestInStockDB(manifestId, { manifestStatus: status });
+    await reload();
     if (editing?.manifestId === manifestId) setEditing((e) => e ? { ...e, manifestStatus: status } : e);
     const label = MANIFEST_STATUSES.find((s) => s.value === status)?.label || status;
     toast({ title: "Status updated ✓", description: `${manifestId} → ${label}` });
