@@ -44,7 +44,7 @@ import { ParcelDetails } from "./ParcelDetails";
 import { ParcelAttachmentsDialog } from "./ParcelAttachments";
 import { SkyXpressAWBInvoice } from "./SkyXpressAWBInvoice";
 import { exportManifestToExcel } from "@/utils/manifestExport";
-import { buildManifestEntry, saveManifestToStock, type ManifestStockEntry } from "@/utils/manifestStorage";
+import { buildManifestEntry, saveManifestToStock, getNextManifestId, type ManifestStockEntry } from "@/utils/manifestStorage";
 import { generateBulkManifestPDF } from "@/utils/bulkManifestPDF";
 import {
   Dialog as ManifestDialog,
@@ -131,6 +131,12 @@ export const ParcelManagement = () => {
   const [exportingManifest, setExportingManifest] = useState(false);
   const [generatedEntry, setGeneratedEntry] = useState<ManifestStockEntry | null>(null);
   const [downloadingFormat, setDownloadingFormat] = useState<"xls" | "pdf" | null>(null);
+
+  // Two-step manifest flow: step 1 = confirm ID, step 2 = show downloads
+  const [pendingParcels, setPendingParcels] = useState<any[]>([]);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [pendingManifestId, setPendingManifestId] = useState("");
+  const [idError, setIdError] = useState("");
 
   const { toast } = useToast();
 
@@ -231,7 +237,7 @@ export const ParcelManagement = () => {
 
   const selectedCount = selectedIds.size;
 
-  // ── Manifest generation + stock ──────────────────────────────────────
+  // ── Manifest generation — Phase 1: fetch parcels + next ID, show confirm ──
   const handleGenerateManifest = async () => {
     const toExport = parcels.filter((p) => selectedIds.has(p.id));
     if (toExport.length === 0) {
@@ -240,7 +246,6 @@ export const ParcelManagement = () => {
     }
     setExportingManifest(true);
     try {
-      // Fetch full item data
       const ids = toExport.map((p) => p.id);
       const { data } = await supabase.from("parcels").select("*").in("id", ids).order("created_at", { ascending: false });
       const enriched = (data || toExport).map((row: any) => ({
@@ -252,15 +257,30 @@ export const ParcelManagement = () => {
           total: Number(item.total || item.total_amount || 0),
         })),
       }));
-      const entry = buildManifestEntry(enriched, countryMap);
-      saveManifestToStock(entry);
-      setGeneratedEntry(entry);
-      setSelectedIds(new Set());
+      const nextId = await getNextManifestId();
+      setPendingParcels(enriched);
+      setPendingManifestId(nextId);
+      setIdError("");
+      setShowConfirmDialog(true);
     } catch (err: any) {
       toast({ title: "Generation failed", description: err.message || "Could not generate manifest.", variant: "destructive" });
     } finally {
       setExportingManifest(false);
     }
+  };
+
+  // ── Phase 2: user confirmed ID → build entry, save, show downloads ────────
+  const handleConfirmManifest = () => {
+    const trimmed = pendingManifestId.trim();
+    if (!trimmed) { setIdError("Manifest ID cannot be empty."); return; }
+    if (trimmed.length < 4) { setIdError("ID must be at least 4 characters."); return; }
+    setIdError("");
+    const entry = buildManifestEntry(pendingParcels, countryMap, trimmed);
+    saveManifestToStock(entry);
+    setShowConfirmDialog(false);
+    setGeneratedEntry(entry);
+    setSelectedIds(new Set());
+    setPendingParcels([]);
   };
 
   const handleDownloadExcel = async () => {
@@ -721,7 +741,65 @@ export const ParcelManagement = () => {
         />
       )}
 
-      {/* ── Manifest Generated Dialog ─────────────────────────────────────── */}
+      {/* ── Step 1: Confirm / Edit Manifest ID ───────────────────────────── */}
+      <ManifestDialog open={showConfirmDialog} onOpenChange={(o) => { if (!o) { setShowConfirmDialog(false); setPendingParcels([]); } }}>
+        <ManifestDialogContent className="max-w-md">
+          <ManifestDialogHeader>
+            <ManifestDialogTitle className="flex items-center gap-2 text-lg">
+              <Sparkles className="h-5 w-5 text-orange-500" />
+              Confirm Manifest ID
+            </ManifestDialogTitle>
+          </ManifestDialogHeader>
+
+          <div className="space-y-5 pt-1">
+            <p className="text-sm text-muted-foreground">
+              The ID below was auto-generated sequentially. You can edit it before finalising.
+            </p>
+
+            {/* ID input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-blue-700 uppercase tracking-wide">Manifest ID</label>
+              <Input
+                value={pendingManifestId}
+                onChange={(e) => { setPendingManifestId(e.target.value.toUpperCase()); setIdError(""); }}
+                className="font-mono text-xl font-bold tracking-widest text-center h-12 border-2 border-orange-300 focus:border-orange-500"
+                placeholder="00191100"
+                maxLength={20}
+              />
+              {idError && <p className="text-xs text-red-600">{idError}</p>}
+              <p className="text-xs text-muted-foreground text-center">
+                Format: 8-digit number (e.g. <span className="font-mono font-semibold">00191100</span>) or any custom code
+              </p>
+            </div>
+
+            {/* Summary */}
+            <div className="grid grid-cols-3 gap-2 bg-slate-50 rounded-lg p-3 border border-slate-100 text-center text-sm">
+              {[
+                ["Parcels",  String(pendingParcels.length)],
+                ["Weight",   `${pendingParcels.reduce((s, p) => s + Number(p.weight ?? 0), 0).toFixed(2)} kg`],
+                ["Value",    `${pendingParcels[0]?.currency || "USD"} ${pendingParcels.reduce((s, p) => s + Number(p.total_price ?? 0), 0).toFixed(2)}`],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">{label}</p>
+                  <p className="font-semibold text-slate-800 mt-0.5 text-xs">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => { setShowConfirmDialog(false); setPendingParcels([]); }}>
+                Cancel
+              </Button>
+              <Button className="flex-1 bg-orange-500 hover:bg-orange-600 text-white gap-2" onClick={handleConfirmManifest}>
+                <Sparkles className="h-4 w-4" />
+                Generate Manifest
+              </Button>
+            </div>
+          </div>
+        </ManifestDialogContent>
+      </ManifestDialog>
+
+      {/* ── Step 2: Manifest Generated — Download ────────────────────────── */}
       <ManifestDialog open={!!generatedEntry} onOpenChange={(o) => { if (!o) setGeneratedEntry(null); }}>
         <ManifestDialogContent className="max-w-lg">
           <ManifestDialogHeader>

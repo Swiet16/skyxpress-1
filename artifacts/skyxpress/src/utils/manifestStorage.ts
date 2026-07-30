@@ -1,5 +1,6 @@
 // Manifest Stock — localStorage-based storage for generated manifests
 // Works offline / without Supabase credentials
+import { supabase } from "@/integrations/supabase/client";
 
 export interface ManifestStockParcel {
   id: string;
@@ -33,7 +34,7 @@ export interface ManifestStockParcel {
 }
 
 export interface ManifestStockEntry {
-  manifestId: string;      // e.g. "SKX-A3F7K2P1"
+  manifestId: string;      // 8-digit zero-padded e.g. "00191100"
   createdAt: string;       // ISO timestamp
   parcelCount: number;
   trackingIds: string[];
@@ -47,19 +48,48 @@ export interface ManifestStockEntry {
   parcels: ManifestStockParcel[];
 }
 
-const STORAGE_KEY = "skyxpress_manifest_stock";
+const STORAGE_KEY      = "skyxpress_manifest_stock";
+const SEQ_STORAGE_KEY  = "skyxpress_manifest_seq";
+const SEQ_START        = 191099; // first generated = 191100 → padded "00191100"
 
-// ── ID generation ─────────────────────────────────────────────────────────────
-const CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars (0/O, 1/I)
+// ── Sequential ID generation ───────────────────────────────────────────────────
+// Primary: increments the manifest_sequence row in Supabase.
+// Fallback: increments a localStorage counter when Supabase is not configured.
 
-export function generateManifestId(): string {
-  let id = "";
-  const array = new Uint8Array(8);
-  crypto.getRandomValues(array);
-  for (let i = 0; i < 8; i++) {
-    id += CHARS[array[i] % CHARS.length];
-  }
-  return `SKX-${id}`;
+export function formatManifestId(num: number): string {
+  return String(num).padStart(8, "0");
+}
+
+export async function getNextManifestId(): Promise<string> {
+  try {
+    // Try Supabase first
+    const { data, error } = await supabase
+      .rpc("increment_manifest_sequence")
+      .single();
+    if (!error && data) {
+      return formatManifestId(Number(data));
+    }
+    // Fallback: direct table update (if rpc not set up yet)
+    const { data: row, error: fetchErr } = await supabase
+      .from("manifest_sequence")
+      .select("last_number")
+      .eq("id", 1)
+      .single();
+    if (!fetchErr && row) {
+      const next = Number(row.last_number) + 1;
+      await supabase
+        .from("manifest_sequence")
+        .update({ last_number: next })
+        .eq("id", 1);
+      return formatManifestId(next);
+    }
+  } catch (_) {}
+
+  // localStorage fallback (no Supabase)
+  const stored = parseInt(localStorage.getItem(SEQ_STORAGE_KEY) || String(SEQ_START), 10);
+  const next = stored + 1;
+  localStorage.setItem(SEQ_STORAGE_KEY, String(next));
+  return formatManifestId(next);
 }
 
 // ── CRUD ──────────────────────────────────────────────────────────────────────
@@ -86,9 +116,12 @@ export function deleteManifestFromStock(manifestId: string): void {
 }
 
 // ── Build a manifest entry from selected parcels ──────────────────────────────
+// manifestId must be supplied (fetched via getNextManifestId() + optionally
+// edited by the user before calling this).
 export function buildManifestEntry(
   parcels: ManifestStockParcel[],
-  countryMap: Record<string, string>
+  countryMap: Record<string, string>,
+  manifestId: string
 ): ManifestStockEntry {
   const totalWeight = parcels.reduce((s, p) => s + Number(p.weight ?? 0), 0);
   const totalPieces = parcels.reduce((s, p) => s + (p.pieces ?? 1), 0);
@@ -99,7 +132,7 @@ export function buildManifestEntry(
   const toCountry   = [...new Set(parcels.map((p) => countryMap[p.to_country] || p.to_country))].join(", ");
 
   return {
-    manifestId: generateManifestId(),
+    manifestId,
     createdAt: new Date().toISOString(),
     parcelCount: parcels.length,
     trackingIds: parcels.map((p) => p.tracking_id),
