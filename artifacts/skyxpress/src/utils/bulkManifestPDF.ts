@@ -87,7 +87,7 @@ export async function generateBulkManifestPDF(
   tc(pdf, WHITE);
   pdf.setFont("helvetica", "bold"); pdf.setFontSize(6);
   pdf.text("MANIFEST ID", bX + bW / 2, bY + 6, { align: "center" });
-  pdf.setFontSize(15.5);
+  pdf.setFontSize(10);
   pdf.setFont("helvetica", "bold");
   pdf.text(entry.manifestId, bX + bW / 2, bY + 20, { align: "center" });
 
