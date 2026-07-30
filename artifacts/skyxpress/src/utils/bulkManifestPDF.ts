@@ -1,6 +1,6 @@
 // @ts-nocheck
 // Bulk Manifest PDF — premium redesign with SkyXpress branding
-import jsPDF from "jspdf";
+import { jsPDF } from "jspdf";
 import logoUrl from "@/assets/skyxpress_logo.png";
 import type { ManifestStockEntry } from "./manifestStorage";
 
@@ -9,7 +9,6 @@ type RGB = [number, number, number];
 const NAVY:    RGB = [15, 35, 85];
 const NAVY2:   RGB = [22, 52, 120];
 const ORANGE:  RGB = [226, 84, 20];
-const ORANGE2: RGB = [245, 115, 50];
 const WHITE:   RGB = [255, 255, 255];
 const OFFWHITE:RGB = [248, 249, 252];
 const LGRAY:   RGB = [237, 240, 248];
@@ -49,11 +48,6 @@ function country(code: string, map: Record<string, string>) {
   return map[code] || code || "—";
 }
 
-function label(pdf: jsPDF, text: string, x: number, y: number, maxW: number) {
-  const lines = pdf.splitTextToSize(text || "—", maxW) as string[];
-  pdf.text(lines[0], x, y);
-}
-
 export async function generateBulkManifestPDF(
   entry: ManifestStockEntry,
   countryMap: Record<string, string>
@@ -80,9 +74,14 @@ export async function generateBulkManifestPDF(
 
   // ── Logo (top-left) ──────────────────────────────────────────────────────
   try {
-    const img = new Image(); img.src = logoUrl;
-    await new Promise(res => { img.onload = res; img.onerror = res; });
-    pdf.addImage(img, "PNG", ML, 3, 44, 20);
+    const resp = await fetch(logoUrl);
+    const blob = await resp.blob();
+    const b64 = await new Promise<string>((res) => {
+      const reader = new FileReader();
+      reader.onload = () => res(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+    pdf.addImage(b64, "PNG", ML, 3, 44, 20);
   } catch (_) {}
 
   // ── Manifest ID block — top-left, directly under the logo ────────────────
