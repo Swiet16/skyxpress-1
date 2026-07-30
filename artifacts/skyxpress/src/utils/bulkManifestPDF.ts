@@ -64,64 +64,94 @@ export async function generateBulkManifestPDF(
   const CW = PW - ML - MR; // content width = 277
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // HEADER
+  // HEADER  (total height 44mm — logo + manifest ID block on left, title
+  //          centred, status pill on right)
   // ═══════════════════════════════════════════════════════════════════════════
+  const HDR_H = 44;
 
   // Navy base
-  cc(pdf, NAVY); pdf.rect(0, 0, PW, 36, "F");
-  // Subtle lighter stripe on top
+  cc(pdf, NAVY); pdf.rect(0, 0, PW, HDR_H, "F");
+  // Lighter top edge stripe
   cc(pdf, NAVY2); pdf.rect(0, 0, PW, 5, "F");
+  // Diagonal shine band — subtle premium feel
+  cc(pdf, [30, 60, 130]); pdf.rect(0, 0, PW * 0.55, HDR_H, "F");
   // Orange accent bar at bottom of header
-  cc(pdf, ORANGE); pdf.rect(0, 36, PW, 3, "F");
+  cc(pdf, ORANGE); pdf.rect(0, HDR_H, PW, 3, "F");
 
-  // Logo (left)
+  // ── Logo (top-left) ──────────────────────────────────────────────────────
   try {
     const img = new Image(); img.src = logoUrl;
     await new Promise(res => { img.onload = res; img.onerror = res; });
-    pdf.addImage(img, "PNG", ML, 3, 44, 22);
+    pdf.addImage(img, "PNG", ML, 3, 44, 20);
   } catch (_) {}
 
-  // Center title block
+  // ── Manifest ID block — top-left, directly under the logo ────────────────
+  //   Styled like a boarding-pass / courier label:
+  //   [ ▌ MANIFEST ID  ]
+  //   [ ▌  SX-191234   ]  ← monospaced, large, white on dark
+  const midX = ML;
+  const midY = 25.5;   // just below logo bottom (3 + 20 = 23, +2.5 gap)
+  const midW = 56;     // same width as logo area
+  const midH = 15.5;
+
+  // Outer box — very dark navy, rounded
+  cc(pdf, [8, 18, 55]); pdf.roundedRect(midX, midY, midW, midH, 2, 2, "F");
+  // Orange left-accent stripe (4 mm wide)
+  cc(pdf, ORANGE); pdf.roundedRect(midX, midY, 4, midH, 2, 2, "F");
+  pdf.rect(midX + 2, midY, 2, midH, "F");  // square right edge of stripe
+  // Subtle inner-top highlight line
+  cc(pdf, [40, 80, 170]); pdf.rect(midX + 4, midY, midW - 4, 0.8, "F");
+
+  // "MANIFEST ID" micro-label
+  tc(pdf, ORANGE);
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(5.2);
+  pdf.text("MANIFEST  ID", midX + midW / 2 + 2, midY + 5.5, { align: "center" });
+
+  // Manifest ID value — large, white, monospace-style
   tc(pdf, WHITE);
-  pdf.setFont("helvetica", "bold"); pdf.setFontSize(19);
-  pdf.text("SHIPMENT MANIFEST", PW / 2, 16, { align: "center" });
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(11);
+  pdf.text(entry.manifestId, midX + midW / 2 + 2, midY + 13, { align: "center" });
+
+  // Subtle scan-line dashes at the bottom of the box for a courier-label feel
+  dc(pdf, ORANGE); pdf.setLineWidth(0.25);
+  for (let xi = midX + 4; xi < midX + midW - 1; xi += 3) {
+    pdf.line(xi, midY + midH - 1.5, xi + 1.5, midY + midH - 1.5);
+  }
+
+  // ── Center title block ───────────────────────────────────────────────────
+  tc(pdf, WHITE);
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(20);
+  pdf.text("SHIPMENT MANIFEST", PW / 2, 17, { align: "center" });
   pdf.setFont("helvetica", "normal"); pdf.setFontSize(8);
   tc(pdf, MGRAY);
-  pdf.text("SkyXpress International Courier & Cargo  ·  skyxpress.site", PW / 2, 23, { align: "center" });
+  pdf.text("SkyXpress International Courier & Cargo  ·  skyxpress.site", PW / 2, 25, { align: "center" });
 
-  // Manifest ID badge (right)
-  const bW = 62, bH = 26, bX = PW - MR - bW, bY = 4;
-  cc(pdf, ORANGE); pdf.roundedRect(bX, bY, bW, bH, 3, 3, "F");
-  // inner dark stripe for label
-  cc(pdf, [190, 60, 10]); pdf.roundedRect(bX, bY, bW, 9, 3, 3, "F");
-  cc(pdf, [190, 60, 10]); pdf.rect(bX, bY + 6, bW, 3, "F"); // square bottom corners of label
-  tc(pdf, WHITE);
-  pdf.setFont("helvetica", "bold"); pdf.setFontSize(6);
-  pdf.text("MANIFEST ID", bX + bW / 2, bY + 6, { align: "center" });
-  pdf.setFontSize(10);
-  pdf.setFont("helvetica", "bold");
-  pdf.text(entry.manifestId, bX + bW / 2, bY + 20, { align: "center" });
-
-  // Manifest status badge — rendered right below the manifest ID badge
+  // ── Manifest status pill — top-right ─────────────────────────────────────
   const mStatus = (entry as any).manifestStatus as string | undefined;
   if (mStatus && MANIFEST_STATUS_STYLES[mStatus]) {
     const ms = MANIFEST_STATUS_STYLES[mStatus];
-    const sbW = bW, sbH = 12, sbX = bX, sbY = bY + bH + 2;
-    cc(pdf, ms.bg); pdf.roundedRect(sbX, sbY, sbW, sbH, 2, 2, "F");
-    // Subtle left stripe / icon band
-    cc(pdf, [ms.bg[0] * 0.8, ms.bg[1] * 0.8, ms.bg[2] * 0.8] as RGB);
-    pdf.roundedRect(sbX, sbY, 10, sbH, 2, 2, "F");
-    pdf.rect(sbX + 8, sbY, 4, sbH, "F");
-    // Icon
-    tc(pdf, WHITE);
-    pdf.setFont("helvetica", "bold"); pdf.setFontSize(7);
-    pdf.text(ms.icon, sbX + 5, sbY + 7.5, { align: "center" });
-    // Label
-    pdf.setFont("helvetica", "bold"); pdf.setFontSize(7.5);
-    pdf.text(ms.label, sbX + sbW / 2 + 2, sbY + 7.5, { align: "center" });
+    const spW = 58, spH = 14, spX = PW - MR - spW, spY = 15;
+    // Background pill
+    cc(pdf, ms.bg); pdf.roundedRect(spX, spY, spW, spH, 7, 7, "F");
+    // Darker inner-left icon zone
+    const iconBg: RGB = [Math.round(ms.bg[0] * 0.72), Math.round(ms.bg[1] * 0.72), Math.round(ms.bg[2] * 0.72)];
+    cc(pdf, iconBg); pdf.roundedRect(spX, spY, 18, spH, 7, 7, "F");
+    pdf.rect(spX + 11, spY, 7, spH, "F");
+    // Icon (centred in left zone)
+    tc(pdf, WHITE); pdf.setFont("helvetica", "bold"); pdf.setFontSize(9);
+    pdf.text(ms.icon, spX + 9, spY + 9.5, { align: "center" });
+    // Status label
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(8.5);
+    pdf.text(ms.label, spX + 18 + (spW - 18) / 2, spY + 9.2, { align: "center" });
+  } else {
+    // No status — show a ghost pill placeholder
+    dc(pdf, [60, 90, 160]); pdf.setLineWidth(0.4);
+    pdf.roundedRect(PW - MR - 58, 15, 58, 14, 7, 7, "S");
+    tc(pdf, [80, 110, 180]); pdf.setFont("helvetica", "normal"); pdf.setFontSize(7.5);
+    pdf.text("NO STATUS SET", PW - MR - 29, 23.5, { align: "center" });
   }
 
-  let y = 43;
+  let y = HDR_H + 6;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // SUMMARY STATS — 6 cards in a row

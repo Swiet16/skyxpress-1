@@ -217,7 +217,6 @@ const statusColors: Record<string, string> = {
 
 // ── Manifest-level status ──────────────────────────────────────────────────────
 export const MANIFEST_STATUSES = [
-  { value: "live",             label: "Live",             icon: "⚡", tw: "bg-emerald-500 text-white border-emerald-600",  dot: "bg-emerald-400" },
   { value: "pending",          label: "Pending",          icon: "⏳", tw: "bg-amber-400 text-white border-amber-500",     dot: "bg-amber-300"   },
   { value: "picked_up",        label: "Picked Up",        icon: "📦", tw: "bg-violet-500 text-white border-violet-600",   dot: "bg-violet-400"  },
   { value: "in_transit",       label: "In Transit",       icon: "✈️",  tw: "bg-blue-600 text-white border-blue-700",       dot: "bg-blue-400"    },
