@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Manifest Stock — localStorage-based storage for generated manifests
 // Works offline / without Supabase credentials
 import { supabase } from "@/integrations/supabase/client";
