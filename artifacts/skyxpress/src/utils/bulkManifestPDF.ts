@@ -99,29 +99,46 @@ export async function generateBulkManifestPDF(
   const dateStr = new Date(entry.createdAt).toLocaleDateString("en-GB", {
     day: "2-digit", month: "short", year: "numeric",
   });
+  // Normalise service type: underscores → spaces, comma-separated → newline-friendly
+  const svcRaw = entry.serviceType.replace(/_/g, " ");
+
   const stats = [
     { label: "GENERATED",     value: dateStr },
     { label: "TOTAL PARCELS", value: String(entry.parcelCount) },
     { label: "TOTAL PIECES",  value: String(entry.totalPieces) },
     { label: "TOTAL WEIGHT",  value: `${entry.totalWeight.toFixed(2)} kg` },
     { label: "TOTAL VALUE",   value: `${entry.currency} ${entry.totalValue.toFixed(2)}` },
-    { label: "SERVICE TYPE",  value: entry.serviceType.length > 22 ? entry.serviceType.slice(0, 20) + "…" : entry.serviceType },
+    { label: "SERVICE TYPE",  value: svcRaw, wrap: true },
   ];
 
   const cardW = (CW - 5 * 2) / 6; // 6 cards with 2mm gaps
-  const cardH = 14;
+  const cardH = 16; // slightly taller to accommodate 2-line service
 
-  stats.forEach((s, i) => {
+  stats.forEach((s: any, i) => {
     const cx = ML + i * (cardW + 2);
     cc(pdf, LGRAY); pdf.roundedRect(cx, y, cardW, cardH, 1.5, 1.5, "F");
-    // top accent line
     cc(pdf, ORANGE); pdf.rect(cx, y, cardW, 1.5, "F");
+
+    // Label
     tc(pdf, ORANGE);
     pdf.setFont("helvetica", "bold"); pdf.setFontSize(5.5);
-    pdf.text(s.label, cx + cardW / 2, y + 5.5, { align: "center" });
+    pdf.text(s.label, cx + cardW / 2, y + 6, { align: "center" });
+
+    // Value — wrap long service types across 2 lines at smaller font
     tc(pdf, DARK);
-    pdf.setFont("helvetica", "bold"); pdf.setFontSize(8.5);
-    pdf.text(s.value, cx + cardW / 2, y + 11.5, { align: "center" });
+    if (s.wrap) {
+      pdf.setFont("helvetica", "bold"); pdf.setFontSize(6.5);
+      const lines = pdf.splitTextToSize(s.value, cardW - 2) as string[];
+      const maxLines = lines.slice(0, 2);
+      const lineH = 4;
+      const startY = y + 10 + (maxLines.length === 1 ? 2 : 0);
+      maxLines.forEach((line, li) => {
+        pdf.text(line, cx + cardW / 2, startY + li * lineH, { align: "center" });
+      });
+    } else {
+      pdf.setFont("helvetica", "bold"); pdf.setFontSize(8.5);
+      pdf.text(s.value, cx + cardW / 2, y + 12.5, { align: "center" });
+    }
   });
   y += cardH + 5;
 
