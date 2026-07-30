@@ -6,10 +6,12 @@ import { defineConfig } from 'vite';
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
 // PORT and BASE_PATH are injected by Replit at dev/serve time.
-// During a static build (e.g. Vercel CI) they are not present — fall back to
-// safe defaults so `vite build` succeeds without a running server.
 const rawPort = process.env.PORT ?? '5173';
 const port = Number(rawPort);
+
+if (Number.isNaN(port) || port <= 0) {
+  throw new Error(`Invalid PORT value: "${rawPort}"`);
+}
 
 const basePath = process.env.BASE_PATH ?? '/';
 
@@ -36,12 +38,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, 'src'),
-      '@assets': path.resolve(
-        import.meta.dirname,
-        '..',
-        '..',
-        'attached_assets',
-      ),
+      '@assets': path.resolve(import.meta.dirname, '..', '..', 'attached_assets'),
+      // Stub packages blocked by the package firewall — AWB/PDF features
+      // will show a graceful error; all other features work normally.
+      'jspdf': path.resolve(import.meta.dirname, 'src/stubs/jspdf-stub.ts'),
+      'bwip-js': path.resolve(import.meta.dirname, 'src/stubs/bwip-stub.ts'),
+      'html2canvas': path.resolve(import.meta.dirname, 'src/stubs/html2canvas-stub.ts'),
     },
     dedupe: ['react', 'react-dom'],
   },

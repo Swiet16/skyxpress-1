@@ -47,30 +47,58 @@ export interface ManifestStockEntry {
   fromCountry: string;
   toCountry: string;
   parcels: ManifestStockParcel[];
+
+  // ── Manifest Detail fields (optional, editable after creation) ────────────
+  bookingFromDate?: string;
+  bookingTillDate?: string;
+  manifestDate?: string;
+  manifestTime?: string;
+  runNumber?: string;
+  flightNo?: string;
+  noOfBags?: number;
+  arrivalDate?: string;
+  arrivalTime?: string;
+  forwarder?: string;
+  service?: string;
+  masterNo?: string;
+  masterEdiBagNo?: string;
+  remark?: string;
+  createdByUser?: string;
+  company?: string;
+  license?: string;
+  vendorWeight?: number;
+  totalActualWt?: number;
+  totalVolumetricWt?: number;
+  totalChargeableWt?: number;
+  originHub?: string;
+  destinationHub?: string;
+  isLocked?: boolean;
+  trackingEvents?: Array<{
+    id: string;
+    awb: string;
+    event: string;
+    location: string;
+    timestamp: string;
+    notes?: string;
+  }>;
 }
 
 const STORAGE_KEY      = "skyxpress_manifest_stock";
 const SEQ_STORAGE_KEY  = "skyxpress_manifest_seq";
 const SEQ_START        = 191099; // first generated = 191100 → padded "00191100"
 
-// ── Sequential ID generation ───────────────────────────────────────────────────
-// Primary: increments the manifest_sequence row in Supabase.
-// Fallback: increments a localStorage counter when Supabase is not configured.
-
+// ── Sequential ID generation ────────────────────────────────────────────────
 export function formatManifestId(num: number): string {
   return String(num).padStart(8, "0");
 }
 
 export async function getNextManifestId(): Promise<string> {
   try {
-    // Try Supabase first
     const { data, error } = await supabase
       .rpc("increment_manifest_sequence")
       .single();
-    if (!error && data) {
-      return formatManifestId(Number(data));
-    }
-    // Fallback: direct table update (if rpc not set up yet)
+    if (!error && data) return formatManifestId(Number(data));
+
     const { data: row, error: fetchErr } = await supabase
       .from("manifest_sequence")
       .select("last_number")
@@ -78,22 +106,18 @@ export async function getNextManifestId(): Promise<string> {
       .single();
     if (!fetchErr && row) {
       const next = Number(row.last_number) + 1;
-      await supabase
-        .from("manifest_sequence")
-        .update({ last_number: next })
-        .eq("id", 1);
+      await supabase.from("manifest_sequence").update({ last_number: next }).eq("id", 1);
       return formatManifestId(next);
     }
   } catch (_) {}
 
-  // localStorage fallback (no Supabase)
   const stored = parseInt(localStorage.getItem(SEQ_STORAGE_KEY) || String(SEQ_START), 10);
   const next = stored + 1;
   localStorage.setItem(SEQ_STORAGE_KEY, String(next));
   return formatManifestId(next);
 }
 
-// ── CRUD ──────────────────────────────────────────────────────────────────────
+// ── CRUD ─────────────────────────────────────────────────────────────────────
 export function loadManifestStock(): ManifestStockEntry[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -106,8 +130,14 @@ export function loadManifestStock(): ManifestStockEntry[] {
 
 export function saveManifestToStock(entry: ManifestStockEntry): void {
   const stock = loadManifestStock();
-  // Prepend (newest first)
   stock.unshift(entry);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(stock));
+}
+
+export function updateManifestInStock(manifestId: string, updates: Partial<ManifestStockEntry>): void {
+  const stock = loadManifestStock().map((e) =>
+    e.manifestId === manifestId ? { ...e, ...updates } : e
+  );
   localStorage.setItem(STORAGE_KEY, JSON.stringify(stock));
 }
 
@@ -116,34 +146,36 @@ export function deleteManifestFromStock(manifestId: string): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(stock));
 }
 
-// ── Build a manifest entry from selected parcels ──────────────────────────────
-// manifestId must be supplied (fetched via getNextManifestId() + optionally
-// edited by the user before calling this).
 export function buildManifestEntry(
   parcels: ManifestStockParcel[],
   countryMap: Record<string, string>,
   manifestId: string
 ): ManifestStockEntry {
-  const totalWeight = parcels.reduce((s, p) => s + Number(p.weight ?? 0), 0);
-  const totalPieces = parcels.reduce((s, p) => s + (p.pieces ?? 1), 0);
-  const totalValue  = parcels.reduce((s, p) => s + Number(p.total_price ?? 0), 0);
-  const currency    = parcels[0]?.currency || "USD";
-  const serviceType = [...new Set(parcels.map((p) => p.service_type).filter(Boolean))].join(", ") || "Mixed";
-  const fromCountry = countryMap[parcels[0]?.from_country] || parcels[0]?.from_country || "";
-  const toCountry   = [...new Set(parcels.map((p) => countryMap[p.to_country] || p.to_country))].join(", ");
+  const totalWeight  = parcels.reduce((s, p) => s + Number(p.weight ?? 0), 0);
+  const totalPieces  = parcels.reduce((s, p) => s + (p.pieces ?? 1), 0);
+  const totalValue   = parcels.reduce((s, p) => s + Number(p.total_price ?? 0), 0);
+  const currency     = parcels[0]?.currency || "USD";
+  const serviceType  = [...new Set(parcels.map((p) => p.service_type).filter(Boolean))].join(", ") || "Mixed";
+  const fromCountry  = countryMap[parcels[0]?.from_country] || parcels[0]?.from_country || "";
+  const toCountry    = [...new Set(parcels.map((p) => countryMap[p.to_country] || p.to_country))].join(", ");
 
   return {
     manifestId,
-    createdAt: new Date().toISOString(),
-    parcelCount: parcels.length,
-    trackingIds: parcels.map((p) => p.tracking_id),
-    totalWeight: Math.round(totalWeight * 100) / 100,
+    createdAt:    new Date().toISOString(),
+    parcelCount:  parcels.length,
+    trackingIds:  parcels.map((p) => p.tracking_id),
+    totalWeight:  Math.round(totalWeight * 100) / 100,
     totalPieces,
-    totalValue: Math.round(totalValue * 100) / 100,
+    totalValue:   Math.round(totalValue * 100) / 100,
     currency,
     serviceType,
     fromCountry,
     toCountry,
     parcels,
+    manifestDate: new Date().toISOString().split("T")[0],
+    manifestTime: new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+    totalActualWt:     Math.round(totalWeight * 100) / 100,
+    totalVolumetricWt: 0,
+    totalChargeableWt: Math.round(totalWeight * 100) / 100,
   };
 }
