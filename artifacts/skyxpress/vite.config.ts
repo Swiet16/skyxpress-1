@@ -56,9 +56,8 @@ export default defineConfig({
         '..',
         'attached_assets',
       ),
-      // Stub packages blocked by the package firewall — AWB/PDF features
-      // will show a graceful error; all other features work normally.
-      'jspdf': path.resolve(import.meta.dirname, 'src/stubs/jspdf-stub.ts'),
+      // bwip-js and html2canvas are not available in this environment;
+      // stub them so the rest of the app works normally.
       'bwip-js': path.resolve(import.meta.dirname, 'src/stubs/bwip-stub.ts'),
       'html2canvas': path.resolve(import.meta.dirname, 'src/stubs/html2canvas-stub.ts'),
     },
