@@ -1,23 +1,46 @@
 // @ts-nocheck
-// Bulk manifest PDF generator — styled with SkyXpress branding + manifest ID
+// Bulk Manifest PDF — premium redesign with SkyXpress branding
 import jsPDF from "jspdf";
 import logoUrl from "@/assets/skyxpress_logo.png";
 import type { ManifestStockEntry } from "./manifestStorage";
 
+// ── Brand palette ─────────────────────────────────────────────────────────────
 type RGB = [number, number, number];
-
-const NAVY:    RGB = [18, 42, 100];
-const ORANGE:  RGB = [230, 88, 30];
-const BLUE:    RGB = [30, 80, 200];
+const NAVY:    RGB = [15, 35, 85];
+const NAVY2:   RGB = [22, 52, 120];
+const ORANGE:  RGB = [226, 84, 20];
+const ORANGE2: RGB = [245, 115, 50];
 const WHITE:   RGB = [255, 255, 255];
-const LGRAY:   RGB = [245, 246, 250];
-const MGRAY:   RGB = [180, 186, 200];
-const DARK:    RGB = [20, 20, 40];
-const ALTROW:  RGB = [235, 242, 255];
+const OFFWHITE:RGB = [248, 249, 252];
+const LGRAY:   RGB = [237, 240, 248];
+const MGRAY:   RGB = [160, 170, 195];
+const DARK:    RGB = [18, 22, 45];
+const ALT:     RGB = [242, 245, 255];
 
-function getCountryDisplay(code: string, countryMap: Record<string, string>): string {
-  if (!code) return "";
-  return countryMap[code] || code;
+// Status colour map
+const ST_COLORS: Record<string, { bg: RGB; text: RGB }> = {
+  "DELIVERED":        { bg: [16, 150, 72],   text: WHITE },
+  "IN TRANSIT":       { bg: [37, 99, 235],   text: WHITE },
+  "PICKED UP":        { bg: [99, 102, 241],  text: WHITE },
+  "PROCESSING":       { bg: [202, 138, 4],   text: WHITE },
+  "CREATED":          { bg: [202, 138, 4],   text: WHITE },
+  "OUT FOR DELIVERY": { bg: [99, 102, 241],  text: WHITE },
+  "CUSTOMS":          { bg: [234, 88, 12],   text: WHITE },
+  "CANCELLED":        { bg: [220, 38, 38],   text: WHITE },
+  "CUSTOM HOLD":      { bg: [220, 38, 38],   text: WHITE },
+};
+
+function cc(pdf: jsPDF, r: RGB) { pdf.setFillColor(r[0], r[1], r[2]); }
+function tc(pdf: jsPDF, r: RGB) { pdf.setTextColor(r[0], r[1], r[2]); }
+function dc(pdf: jsPDF, r: RGB) { pdf.setDrawColor(r[0], r[1], r[2]); }
+
+function country(code: string, map: Record<string, string>) {
+  return map[code] || code || "—";
+}
+
+function label(pdf: jsPDF, text: string, x: number, y: number, maxW: number) {
+  const lines = pdf.splitTextToSize(text || "—", maxW) as string[];
+  pdf.text(lines[0], x, y);
 }
 
 export async function generateBulkManifestPDF(
@@ -25,160 +48,217 @@ export async function generateBulkManifestPDF(
   countryMap: Record<string, string>
 ): Promise<void> {
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  const W = 297, H = 210, M = 12;
+  const PW = 297, PH = 210;
+  const ML = 10, MR = 10; // margins
+  const CW = PW - ML - MR; // content width = 277
 
-  // ── Header ────────────────────────────────────────────────────────────────
-  pdf.setFillColor(...NAVY); pdf.rect(0, 0, W, 32, "F");
-  pdf.setFillColor(...ORANGE); pdf.rect(0, 32, W, 2.5, "F");
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HEADER
+  // ═══════════════════════════════════════════════════════════════════════════
 
-  // Logo
+  // Navy base
+  cc(pdf, NAVY); pdf.rect(0, 0, PW, 36, "F");
+  // Subtle lighter stripe on top
+  cc(pdf, NAVY2); pdf.rect(0, 0, PW, 5, "F");
+  // Orange accent bar at bottom of header
+  cc(pdf, ORANGE); pdf.rect(0, 36, PW, 3, "F");
+
+  // Logo (left)
   try {
     const img = new Image(); img.src = logoUrl;
-    await new Promise((res) => { img.onload = res; img.onerror = res; });
-    pdf.addImage(img, "PNG", M, 3, 46, 24);
+    await new Promise(res => { img.onload = res; img.onerror = res; });
+    pdf.addImage(img, "PNG", ML, 3, 44, 22);
   } catch (_) {}
 
-  // Title block
-  pdf.setTextColor(...WHITE); pdf.setFont("helvetica", "bold"); pdf.setFontSize(17);
-  pdf.text("SHIPMENT MANIFEST", W / 2, 14, { align: "center" });
-  pdf.setFontSize(9); pdf.setFont("helvetica", "normal"); pdf.setTextColor(...MGRAY);
-  pdf.text("SkyXpress International Courier & Cargo  •  skyxpress.site", W / 2, 20, { align: "center" });
+  // Center title block
+  tc(pdf, WHITE);
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(19);
+  pdf.text("SHIPMENT MANIFEST", PW / 2, 16, { align: "center" });
+  pdf.setFont("helvetica", "normal"); pdf.setFontSize(8);
+  tc(pdf, MGRAY);
+  pdf.text("SkyXpress International Courier & Cargo  ·  skyxpress.site", PW / 2, 23, { align: "center" });
 
-  // Manifest ID — prominent badge style on the right
-  const midX = W - M - 60;
-  pdf.setFillColor(...ORANGE); pdf.roundedRect(midX, 6, 65, 20, 3, 3, "F");
-  pdf.setTextColor(...WHITE); pdf.setFont("helvetica", "bold"); pdf.setFontSize(7.5);
-  pdf.text("MANIFEST ID", midX + 32.5, 12.5, { align: "center" });
-  pdf.setFontSize(14);
-  pdf.text(entry.manifestId, midX + 32.5, 22, { align: "center" });
+  // Manifest ID badge (right)
+  const bW = 62, bH = 26, bX = PW - MR - bW, bY = 4;
+  cc(pdf, ORANGE); pdf.roundedRect(bX, bY, bW, bH, 3, 3, "F");
+  // inner dark stripe for label
+  cc(pdf, [190, 60, 10]); pdf.roundedRect(bX, bY, bW, 9, 3, 3, "F");
+  cc(pdf, [190, 60, 10]); pdf.rect(bX, bY + 6, bW, 3, "F"); // square bottom corners of label
+  tc(pdf, WHITE);
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(6);
+  pdf.text("MANIFEST ID", bX + bW / 2, bY + 6, { align: "center" });
+  pdf.setFontSize(15.5);
+  pdf.setFont("helvetica", "bold");
+  pdf.text(entry.manifestId, bX + bW / 2, bY + 20, { align: "center" });
 
-  let y = 40;
+  let y = 43;
 
-  // ── Summary strip ─────────────────────────────────────────────────────────
-  pdf.setFillColor(...LGRAY); pdf.roundedRect(M, y, W - M * 2, 14, 2, 2, "F");
-  const dateStr = new Date(entry.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-  const summaryFields: [string, string, number][] = [
-    ["Generated", dateStr, M + 3],
-    ["Total Parcels", String(entry.parcelCount), M + 52],
-    ["Total Pieces", String(entry.totalPieces), M + 100],
-    ["Total Weight", `${entry.totalWeight.toFixed(2)} kg`, M + 145],
-    ["Total Value", `${entry.currency} ${entry.totalValue.toFixed(2)}`, M + 195],
-    ["Service", entry.serviceType, M + 248],
-  ];
-  summaryFields.forEach(([lbl, val, x]) => {
-    pdf.setFont("helvetica", "bold"); pdf.setFontSize(6); pdf.setTextColor(...BLUE);
-    pdf.text(lbl.toUpperCase(), x, y + 5);
-    pdf.setFont("helvetica", "bold"); pdf.setFontSize(8.5); pdf.setTextColor(...DARK);
-    pdf.text(val, x, y + 11.5);
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SUMMARY STATS — 6 cards in a row
+  // ═══════════════════════════════════════════════════════════════════════════
+  const dateStr = new Date(entry.createdAt).toLocaleDateString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
   });
-  y += 19;
+  const stats = [
+    { label: "GENERATED",     value: dateStr },
+    { label: "TOTAL PARCELS", value: String(entry.parcelCount) },
+    { label: "TOTAL PIECES",  value: String(entry.totalPieces) },
+    { label: "TOTAL WEIGHT",  value: `${entry.totalWeight.toFixed(2)} kg` },
+    { label: "TOTAL VALUE",   value: `${entry.currency} ${entry.totalValue.toFixed(2)}` },
+    { label: "SERVICE TYPE",  value: entry.serviceType.length > 22 ? entry.serviceType.slice(0, 20) + "…" : entry.serviceType },
+  ];
 
-  // ── Table header ──────────────────────────────────────────────────────────
+  const cardW = (CW - 5 * 2) / 6; // 6 cards with 2mm gaps
+  const cardH = 14;
+
+  stats.forEach((s, i) => {
+    const cx = ML + i * (cardW + 2);
+    cc(pdf, LGRAY); pdf.roundedRect(cx, y, cardW, cardH, 1.5, 1.5, "F");
+    // top accent line
+    cc(pdf, ORANGE); pdf.rect(cx, y, cardW, 1.5, "F");
+    tc(pdf, ORANGE);
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(5.5);
+    pdf.text(s.label, cx + cardW / 2, y + 5.5, { align: "center" });
+    tc(pdf, DARK);
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(8.5);
+    pdf.text(s.value, cx + cardW / 2, y + 11.5, { align: "center" });
+  });
+  y += cardH + 5;
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TABLE
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Column definitions: [label, x-offset from ML, width]
   const cols: [string, number, number][] = [
-    ["#",              M,      8],
-    ["HAWB / REF",     M + 9,  28],
-    ["SHIPPER",        M + 38, 35],
-    ["CONSIGNEE",      M + 74, 35],
-    ["FROM",           M + 110, 22],
-    ["TO",             M + 133, 22],
-    ["PKG TYPE",       M + 156, 24],
-    ["PCS",            M + 181, 10],
-    ["WT (kg)",        M + 192, 16],
-    ["VALUE",          M + 209, 20],
-    ["SERVICE",        M + 230, 22],
-    ["STATUS",         M + 253, 28],
+    ["#",          0,    6],
+    ["HAWB / REF", 7,   25],
+    ["SHIPPER",    33,  32],
+    ["CONSIGNEE",  66,  32],
+    ["FROM",       99,  22],
+    ["TO",         122, 22],
+    ["PKG",        145, 18],
+    ["PCS",        164, 9],
+    ["WT (kg)",    174, 16],
+    ["VALUE",      191, 22],
+    ["SERVICE",    214, 26],
+    ["STATUS",     241, 36],
   ];
 
-  const rowH = 7;
-  pdf.setFillColor(...NAVY); pdf.rect(M, y, W - M * 2, rowH + 1, "F");
-  cols.forEach(([label, x]) => {
-    pdf.setFont("helvetica", "bold"); pdf.setFontSize(6.5); pdf.setTextColor(...WHITE);
-    pdf.text(label, x + 1, y + 5.5);
-  });
-  y += rowH + 1;
+  const ROW_H = 7;
 
-  // ── Data rows ─────────────────────────────────────────────────────────────
-  const maxRows = Math.min(entry.parcels.length, 22); // fit on one page
+  // Header row
+  cc(pdf, NAVY);
+  pdf.rect(ML, y, CW, ROW_H + 1, "F");
+  cols.forEach(([lbl, ox]) => {
+    tc(pdf, WHITE);
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(6);
+    pdf.text(lbl, ML + ox + 1, y + 5.5);
+  });
+  y += ROW_H + 1;
+
+  // Data rows
+  const maxRows = Math.min(entry.parcels.length, 20);
   for (let i = 0; i < maxRows; i++) {
     const p = entry.parcels[i];
     const isAlt = i % 2 === 1;
-    if (isAlt) { pdf.setFillColor(...ALTROW); pdf.rect(M, y, W - M * 2, rowH, "F"); }
 
-    pdf.setFont("helvetica", "normal"); pdf.setFontSize(7); pdf.setTextColor(...DARK);
+    // Row background
+    if (isAlt) { cc(pdf, ALT); pdf.rect(ML, y, CW, ROW_H, "F"); }
 
-    const desc = (v: string, x: number, maxW: number) => {
-      const lines = pdf.splitTextToSize(v || "—", maxW) as string[];
-      pdf.text(lines[0], x + 1, y + 5);
+    // Row separator
+    dc(pdf, [220, 225, 240]); pdf.setLineWidth(0.12);
+    pdf.line(ML, y + ROW_H, ML + CW, y + ROW_H);
+
+    tc(pdf, DARK);
+    pdf.setFont("helvetica", "normal"); pdf.setFontSize(6.8);
+
+    const row = (v: string, ox: number, w: number) => {
+      const lines = pdf.splitTextToSize(v || "—", w - 1) as string[];
+      pdf.text(lines[0], ML + ox + 1, y + 5);
     };
 
-    desc(String(i + 1),                                            M,       7);
-    desc(p.reference_id || p.tracking_id || "",                    M + 9,   27);
-    desc(p.sender_name || "",                                       M + 38,  34);
-    desc(p.receiver_name || "",                                     M + 74,  34);
-    desc(getCountryDisplay(p.from_country, countryMap),             M + 110, 21);
-    desc(getCountryDisplay(p.to_country, countryMap),               M + 133, 21);
-    desc(p.parcel_type || "",                                       M + 156, 23);
-    desc(String(p.pieces ?? 1),                                     M + 181, 9);
-    desc(Number(p.weight ?? 0).toFixed(2),                          M + 192, 15);
-    desc(`${p.currency || ""} ${Number(p.total_price ?? 0).toFixed(2)}`, M + 209, 19);
-    desc(p.service_type || "",                                      M + 230, 21);
+    row(String(i + 1),                                   0,   5);
+    row(p.reference_id || p.tracking_id || "",           7,   24);
+    row(p.sender_name || "",                              33,  31);
+    row(p.receiver_name || "",                            66,  31);
+    row(country(p.from_country, countryMap),              99,  21);
+    row(country(p.to_country,   countryMap),              122, 21);
+    row(p.parcel_type || "",                              145, 17);
+    row(String(p.pieces ?? 1),                            164, 8);
+    row(Number(p.weight ?? 0).toFixed(2),                 174, 15);
+    row(`${p.currency || ""} ${Number(p.total_price ?? 0).toFixed(2)}`, 191, 21);
+    row(p.service_type || "",                             214, 25);
 
     // Status badge
-    const st = (p.current_status || "").replace(/_/g, " ").toUpperCase();
-    const stColors: Record<string, RGB> = {
-      "DELIVERED": [22, 163, 74], "IN TRANSIT": [37, 99, 235], "PENDING": [202, 138, 4],
-      "CREATED": [202, 138, 4], "CANCELLED": [220, 38, 38], "OUT FOR DELIVERY": [99, 102, 241],
-    };
-    const stC: RGB = stColors[st] || [100, 116, 139];
-    pdf.setFillColor(...stC);
-    pdf.roundedRect(M + 253, y + 1.5, 28, rowH - 3, 1.5, 1.5, "F");
-    pdf.setTextColor(...WHITE); pdf.setFont("helvetica", "bold"); pdf.setFontSize(5.5);
-    pdf.text(st, M + 267, y + 5.5, { align: "center" });
+    const raw = (p.current_status || "").replace(/_/g, " ").toUpperCase();
+    const stC = ST_COLORS[raw] || { bg: [100, 116, 139] as RGB, text: WHITE };
+    cc(pdf, stC.bg as RGB);
+    pdf.roundedRect(ML + 241 + 1, y + 1.2, 33, ROW_H - 2.4, 1.5, 1.5, "F");
+    tc(pdf, stC.text as RGB);
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(5.5);
+    pdf.text(raw, ML + 241 + 17.5, y + 5.2, { align: "center" });
 
-    // Thin separator
-    pdf.setDrawColor(220, 225, 235); pdf.setLineWidth(0.15);
-    pdf.line(M, y + rowH, M + W - M * 2, y + rowH);
-    y += rowH;
+    y += ROW_H;
   }
 
+  // Overflow note
   if (entry.parcels.length > maxRows) {
-    pdf.setFont("helvetica", "italic"); pdf.setFontSize(7); pdf.setTextColor(...MGRAY);
-    pdf.text(`… and ${entry.parcels.length - maxRows} more parcels (see Excel export for full list)`, M + 2, y + 5);
-    y += 8;
+    tc(pdf, MGRAY); pdf.setFont("helvetica", "italic"); pdf.setFontSize(6.5);
+    pdf.text(
+      `… ${entry.parcels.length - maxRows} additional parcels — see Excel export for full list.`,
+      ML + 2, y + 5
+    );
+    y += 7;
   }
 
   // ── Totals row ─────────────────────────────────────────────────────────────
-  pdf.setFillColor(...ORANGE); pdf.rect(M, y, W - M * 2, rowH + 1, "F");
-  pdf.setFont("helvetica", "bold"); pdf.setFontSize(8); pdf.setTextColor(...WHITE);
-  pdf.text("TOTALS", M + 2, y + 5.5);
-  pdf.text(String(entry.totalPieces), M + 182, y + 5.5);
-  pdf.text(`${entry.totalWeight.toFixed(2)} kg`, M + 193, y + 5.5);
-  pdf.text(`${entry.currency} ${entry.totalValue.toFixed(2)}`, M + 210, y + 5.5);
-  y += rowH + 5;
+  cc(pdf, ORANGE); pdf.rect(ML, y, CW, ROW_H + 1.5, "F");
+  tc(pdf, WHITE); pdf.setFont("helvetica", "bold"); pdf.setFontSize(8);
+  pdf.text("TOTALS", ML + 2, y + 6);
+  pdf.text(String(entry.totalPieces),                        ML + 165, y + 6);
+  pdf.text(`${entry.totalWeight.toFixed(2)} kg`,             ML + 175, y + 6);
+  pdf.text(`${entry.currency} ${entry.totalValue.toFixed(2)}`, ML + 192, y + 6);
+  y += ROW_H + 6;
 
-  // ── Signature strip ────────────────────────────────────────────────────────
-  const sigW = (W - M * 2) / 3 - 4;
-  [
-    ["PREPARED BY", "Authorized Signatory"],
-    ["VERIFIED BY", "Supervisor"],
-    ["CARRIER'S SIGNATURE", "Agent / Carrier"],
-  ].forEach(([title, sub], i) => {
-    const x = M + i * (sigW + 4);
-    pdf.setFillColor(...LGRAY); pdf.roundedRect(x, y, sigW, 18, 2, 2, "F");
-    pdf.setFont("helvetica", "bold"); pdf.setFontSize(6.5); pdf.setTextColor(...BLUE);
-    pdf.text(title, x + 3, y + 6);
-    pdf.setDrawColor(...ORANGE); pdf.setLineWidth(0.4);
-    pdf.line(x + 4, y + 13, x + sigW - 4, y + 13);
-    pdf.setFont("helvetica", "normal"); pdf.setFontSize(6); pdf.setTextColor(...MGRAY);
-    pdf.text(sub, x + 3, y + 17);
-  });
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SIGNATURE STRIP
+  // ═══════════════════════════════════════════════════════════════════════════
+  const remaining = PH - 14 - y; // space before footer
+  const sigH = Math.min(remaining - 2, 20);
+  if (sigH > 10) {
+    const sigW = (CW - 8) / 3;
+    const sigs = [
+      { title: "PREPARED BY",        sub: "Authorized Signatory" },
+      { title: "VERIFIED BY",        sub: "Supervisor / Manager" },
+      { title: "CARRIER'S SIGNATURE", sub: "Agent / Carrier" },
+    ];
+    sigs.forEach((s, i) => {
+      const sx = ML + i * (sigW + 4);
+      cc(pdf, OFFWHITE); pdf.roundedRect(sx, y, sigW, sigH, 2, 2, "F");
+      dc(pdf, LGRAY); pdf.setLineWidth(0.3);
+      pdf.roundedRect(sx, y, sigW, sigH, 2, 2, "S");
 
-  // ── Footer ─────────────────────────────────────────────────────────────────
-  pdf.setFillColor(...NAVY); pdf.rect(0, H - 10, W, 10, "F");
-  pdf.setFont("helvetica", "normal"); pdf.setFontSize(6.5); pdf.setTextColor(...MGRAY);
+      tc(pdf, ORANGE); pdf.setFont("helvetica", "bold"); pdf.setFontSize(6);
+      pdf.text(s.title, sx + 3, y + 6);
+
+      dc(pdf, ORANGE); pdf.setLineWidth(0.5);
+      pdf.line(sx + 4, y + sigH - 5, sx + sigW - 4, y + sigH - 5);
+
+      tc(pdf, MGRAY); pdf.setFont("helvetica", "normal"); pdf.setFontSize(5.5);
+      pdf.text(s.sub, sx + 3, y + sigH - 1.5);
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FOOTER
+  // ═══════════════════════════════════════════════════════════════════════════
+  cc(pdf, NAVY); pdf.rect(0, PH - 10, PW, 10, "F");
+  cc(pdf, ORANGE); pdf.rect(0, PH - 11, PW, 1, "F");
+  tc(pdf, MGRAY); pdf.setFont("helvetica", "normal"); pdf.setFontSize(6.5);
   pdf.text(
-    `SkyXpress International Courier & Cargo  •  Manifest ID: ${entry.manifestId}  •  Generated: ${new Date().toLocaleString()}`,
-    W / 2, H - 4, { align: "center" }
+    `SkyXpress International Courier & Cargo  ·  Manifest ID: ${entry.manifestId}  ·  Generated: ${new Date().toLocaleString()}  ·  This document is system-generated and does not require a wet signature.`,
+    PW / 2, PH - 4, { align: "center" }
   );
 
   pdf.save(`SkyXpress_Manifest_${entry.manifestId}.pdf`);
