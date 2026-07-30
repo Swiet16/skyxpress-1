@@ -73,6 +73,7 @@ export interface ManifestStockEntry {
   originHub?: string;
   destinationHub?: string;
   isLocked?: boolean;
+  manifestStatus?: string; // live | pending | picked_up | in_transit | out_for_delivery | delivered | returned
   trackingEvents?: Array<{
     id: string;
     awb: string;

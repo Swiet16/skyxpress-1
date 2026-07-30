@@ -62,7 +62,16 @@ import {
   FileText,
   History,
   Download,
+  Tag,
+  Zap,
+  Truck,
+  Home,
+  RotateCcw,
+  Square,
+  CheckSquare,
+  ListChecks,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   loadManifestStock,
   deleteManifestFromStock,
@@ -206,6 +215,32 @@ const statusColors: Record<string, string> = {
   cancelled:        "bg-red-100 text-red-800 border-red-200",
 };
 
+// ── Manifest-level status ──────────────────────────────────────────────────────
+export const MANIFEST_STATUSES = [
+  { value: "live",             label: "Live",             icon: "⚡", tw: "bg-emerald-500 text-white border-emerald-600",  dot: "bg-emerald-400" },
+  { value: "pending",          label: "Pending",          icon: "⏳", tw: "bg-amber-400 text-white border-amber-500",     dot: "bg-amber-300"   },
+  { value: "picked_up",        label: "Picked Up",        icon: "📦", tw: "bg-violet-500 text-white border-violet-600",   dot: "bg-violet-400"  },
+  { value: "in_transit",       label: "In Transit",       icon: "✈️",  tw: "bg-blue-600 text-white border-blue-700",       dot: "bg-blue-400"    },
+  { value: "out_for_delivery", label: "Out for Delivery", icon: "🚚", tw: "bg-orange-500 text-white border-orange-600",   dot: "bg-orange-400"  },
+  { value: "delivered",        label: "Delivered",        icon: "✅", tw: "bg-green-600 text-white border-green-700",     dot: "bg-green-400"   },
+  { value: "returned",         label: "Returned",         icon: "↩️",  tw: "bg-red-500 text-white border-red-600",         dot: "bg-red-400"     },
+] as const;
+
+function ManifestStatusBadge({ status, size = "sm" }: { status?: string; size?: "sm" | "xs" }) {
+  if (!status) return <span className="text-slate-300 text-xs">—</span>;
+  const s = MANIFEST_STATUSES.find((x) => x.value === status);
+  if (!s) return <span className="text-xs text-slate-500 capitalize">{status.replace(/_/g, " ")}</span>;
+  const base = size === "xs"
+    ? "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border tracking-wide"
+    : "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border tracking-wide";
+  return (
+    <span className={`${base} ${s.tw}`}>
+      <span className="text-[11px] leading-none">{s.icon}</span>
+      {s.label}
+    </span>
+  );
+}
+
 // ── Field component ───────────────────────────────────────────────────────────
 function Field({
   label, value, onChange, type = "text", placeholder, disabled = false,
@@ -247,6 +282,9 @@ export const ManifestStock = () => {
   const [saving, setSaving]           = useState(false);
   const [awbSearch, setAwbSearch]     = useState("");
   const [csvFile, setCsvFile]         = useState<File | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus]   = useState<string>("");
+  const [showBulkDialog, setShowBulkDialog] = useState(false);
   const { toast } = useToast();
 
   const reload = useCallback(() => setEntries(loadManifestStock()), []);
@@ -349,6 +387,32 @@ export const ManifestStock = () => {
   const setEditField = (key: keyof ManifestStockEntry, val: any) =>
     setEditing((e) => e ? { ...e, [key]: val } : e);
 
+  // ── Selection helpers ──────────────────────────────────────────────────────
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  const toggleSelectAll = () =>
+    setSelectedIds((prev) => prev.size === filtered.length ? new Set() : new Set(filtered.map((e) => e.manifestId)));
+
+  const handleBulkStatusApply = () => {
+    if (!bulkStatus || selectedIds.size === 0) return;
+    selectedIds.forEach((id) => updateManifestInStock(id, { manifestStatus: bulkStatus }));
+    reload();
+    setSelectedIds(new Set());
+    setShowBulkDialog(false);
+    const label = MANIFEST_STATUSES.find((s) => s.value === bulkStatus)?.label || bulkStatus;
+    toast({ title: `Status updated ✓`, description: `${selectedIds.size} manifest(s) → ${label}` });
+    setBulkStatus("");
+  };
+
+  const handleSingleStatus = (manifestId: string, status: string) => {
+    updateManifestInStock(manifestId, { manifestStatus: status });
+    reload();
+    if (editing?.manifestId === manifestId) setEditing((e) => e ? { ...e, manifestStatus: status } : e);
+    const label = MANIFEST_STATUSES.find((s) => s.value === status)?.label || status;
+    toast({ title: "Status updated ✓", description: `${manifestId} → ${label}` });
+  };
+
   const filtered = entries.filter((e) => {
     const q = search.toLowerCase();
     return (
@@ -441,102 +505,169 @@ export const ManifestStock = () => {
               </div>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-100">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gradient-to-r from-slate-800 to-blue-900 hover:from-slate-800 hover:to-blue-900">
-                    {["Manifest ID","Date","Parcels","Route","Weight","Value","Service","Flight","Status","Actions"].map(h => (
-                      <TableHead key={h} className="text-white font-bold text-xs py-3">{h}</TableHead>
+            <>
+              {/* ── Bulk action toolbar ────────────────────────────── */}
+              {selectedIds.size > 0 && (
+                <div className="mb-3 flex items-center gap-3 bg-gradient-to-r from-blue-700 to-blue-900 rounded-xl px-4 py-3 flex-wrap shadow-md">
+                  <ListChecks className="h-4 w-4 text-blue-200" />
+                  <span className="text-white text-sm font-semibold">{selectedIds.size} manifest{selectedIds.size > 1 ? "s" : ""} selected</span>
+                  <div className="flex items-center gap-2 ml-auto flex-wrap">
+                    <span className="text-blue-200 text-xs font-medium">Set status:</span>
+                    {MANIFEST_STATUSES.map((s) => (
+                      <button
+                        key={s.value}
+                        onClick={() => { setBulkStatus(s.value); setShowBulkDialog(true); }}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer transition-transform hover:scale-105 active:scale-95 ${s.tw}`}
+                      >
+                        <span>{s.icon}</span>{s.label}
+                      </button>
                     ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((entry, i) => (
-                    <TableRow key={entry.manifestId}
-                      className={`cursor-pointer transition-colors ${i % 2 === 0 ? "bg-white hover:bg-blue-50/50" : "bg-slate-50/40 hover:bg-blue-50/50"}`}
-                      onClick={() => openDetail(entry)}>
-                      <TableCell>
-                        <div className="flex items-center gap-1.5">
-                          {entry.isLocked && <Lock className="h-3 w-3 text-slate-400 flex-shrink-0" />}
-                          <span className="font-mono font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded text-sm tracking-wider border border-orange-100">
-                            {entry.manifestId}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1.5 text-sm text-slate-700">
-                          <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                          {new Date(entry.createdAt).toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" })}
-                        </div>
-                        <div className="text-[11px] text-muted-foreground mt-0.5">
-                          {new Date(entry.createdAt).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1.5">
-                          <Package className="h-3.5 w-3.5 text-blue-400" />
-                          <span className="font-semibold text-slate-800">{entry.parcelCount}</span>
-                          <span className="text-xs text-muted-foreground">AWBs</span>
-                        </div>
-                        <div className="text-[11px] text-muted-foreground font-mono mt-0.5">
-                          {entry.trackingIds.slice(0, 2).join(", ")}{entry.trackingIds.length > 2 && ` +${entry.trackingIds.length - 2}`}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm font-medium text-slate-700">{entry.fromCountry || "—"}</div>
-                        <div className="text-xs text-muted-foreground">→ {entry.toCountry || "—"}</div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-semibold text-slate-800">{entry.totalWeight.toFixed(2)}</span>
-                        <span className="text-xs text-muted-foreground ml-1">kg</span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-xs text-muted-foreground">{entry.currency} </span>
-                        <span className="font-semibold text-slate-800">{entry.totalValue.toFixed(2)}</span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs border-slate-200 text-slate-600">{entry.serviceType}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        {entry.flightNo ? (
-                          <div className="flex items-center gap-1 text-xs text-slate-700">
-                            <Plane className="h-3 w-3 text-blue-400" />{entry.flightNo}
-                          </div>
-                        ) : <span className="text-slate-300 text-xs">—</span>}
-                      </TableCell>
-                      <TableCell>
-                        {entry.isLocked ? (
-                          <Badge className="bg-slate-700 text-white text-[10px] gap-1"><Lock className="h-2.5 w-2.5" /> Locked</Badge>
-                        ) : (
-                          <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px]">Open</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-1 justify-end">
-                          <Button variant="ghost" size="sm" title="Excel"
-                            className="gap-1 text-green-700 hover:bg-green-50 h-7 px-2"
-                            onClick={() => handleExcelDownload(entry)}
-                            disabled={downloading === entry.manifestId + "-xls"}>
-                            <FileSpreadsheet className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="sm" title="PDF"
-                            className="gap-1 text-blue-700 hover:bg-blue-50 h-7 px-2"
-                            onClick={() => handlePDFDownload(entry)}
-                            disabled={downloading === entry.manifestId + "-pdf"}>
-                            <FileDown className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="sm" title="Delete"
-                            className="text-red-400 hover:text-red-600 hover:bg-red-50 h-7 px-2"
-                            onClick={() => handleDelete(entry.manifestId)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </TableCell>
+                    <button
+                      onClick={() => setSelectedIds(new Set())}
+                      className="text-blue-300 hover:text-white text-xs underline ml-1"
+                    >
+                      Deselect all
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="overflow-x-auto rounded-xl border border-slate-100">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gradient-to-r from-slate-800 to-blue-900 hover:from-slate-800 hover:to-blue-900">
+                      <TableHead className="text-white w-10 py-3">
+                        <Checkbox
+                          checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                          onCheckedChange={toggleSelectAll}
+                          className="border-white/40 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
+                        />
+                      </TableHead>
+                      {["Manifest ID","Date","Parcels","Route","Weight","Value","Service","Flight","Ship Status","Lock","Actions"].map(h => (
+                        <TableHead key={h} className="text-white font-bold text-xs py-3">{h}</TableHead>
+                      ))}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map((entry, i) => (
+                      <TableRow key={entry.manifestId}
+                        className={`cursor-pointer transition-colors ${selectedIds.has(entry.manifestId) ? "bg-blue-50 ring-1 ring-blue-300" : i % 2 === 0 ? "bg-white hover:bg-blue-50/50" : "bg-slate-50/40 hover:bg-blue-50/50"}`}
+                        onClick={() => openDetail(entry)}>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selectedIds.has(entry.manifestId)}
+                            onCheckedChange={() => toggleSelect(entry.manifestId)}
+                            className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            {entry.isLocked && <Lock className="h-3 w-3 text-slate-400 flex-shrink-0" />}
+                            <span className="font-mono font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded text-sm tracking-wider border border-orange-100">
+                              {entry.manifestId}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5 text-sm text-slate-700">
+                            <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                            {new Date(entry.createdAt).toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" })}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground mt-0.5">
+                            {new Date(entry.createdAt).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            <Package className="h-3.5 w-3.5 text-blue-400" />
+                            <span className="font-semibold text-slate-800">{entry.parcelCount}</span>
+                            <span className="text-xs text-muted-foreground">AWBs</span>
+                          </div>
+                          <div className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                            {entry.trackingIds.slice(0, 2).join(", ")}{entry.trackingIds.length > 2 && ` +${entry.trackingIds.length - 2}`}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm font-medium text-slate-700">{entry.fromCountry || "—"}</div>
+                          <div className="text-xs text-muted-foreground">→ {entry.toCountry || "—"}</div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-semibold text-slate-800">{entry.totalWeight.toFixed(2)}</span>
+                          <span className="text-xs text-muted-foreground ml-1">kg</span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-xs text-muted-foreground">{entry.currency} </span>
+                          <span className="font-semibold text-slate-800">{entry.totalValue.toFixed(2)}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs border-slate-200 text-slate-600">{entry.serviceType}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          {entry.flightNo ? (
+                            <div className="flex items-center gap-1 text-xs text-slate-700">
+                              <Plane className="h-3 w-3 text-blue-400" />{entry.flightNo}
+                            </div>
+                          ) : <span className="text-slate-300 text-xs">—</span>}
+                        </TableCell>
+                        {/* Manifest status column */}
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Select
+                            value={entry.manifestStatus || ""}
+                            onValueChange={(v) => handleSingleStatus(entry.manifestId, v)}
+                          >
+                            <SelectTrigger className="h-7 w-[150px] text-[11px] border-slate-200 bg-white px-2 py-0">
+                              <SelectValue placeholder="Set status…">
+                                {entry.manifestStatus
+                                  ? <ManifestStatusBadge status={entry.manifestStatus} size="xs" />
+                                  : <span className="text-slate-400 text-[11px]">Set status…</span>}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {MANIFEST_STATUSES.map((s) => (
+                                <SelectItem key={s.value} value={s.value}>
+                                  <span className="flex items-center gap-2">
+                                    <span>{s.icon}</span>
+                                    <span>{s.label}</span>
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          {entry.isLocked ? (
+                            <Badge className="bg-slate-700 text-white text-[10px] gap-1"><Lock className="h-2.5 w-2.5" /> Locked</Badge>
+                          ) : (
+                            <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px]">Open</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-1 justify-end">
+                            <Button variant="ghost" size="sm" title="Excel"
+                              className="gap-1 text-green-700 hover:bg-green-50 h-7 px-2"
+                              onClick={() => handleExcelDownload(entry)}
+                              disabled={downloading === entry.manifestId + "-xls"}>
+                              <FileSpreadsheet className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" title="PDF"
+                              className="gap-1 text-blue-700 hover:bg-blue-50 h-7 px-2"
+                              onClick={() => handlePDFDownload(entry)}
+                              disabled={downloading === entry.manifestId + "-pdf"}>
+                              <FileDown className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" title="Delete"
+                              className="text-red-400 hover:text-red-600 hover:bg-red-50 h-7 px-2"
+                              onClick={() => handleDelete(entry.manifestId)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -661,6 +792,38 @@ export const ManifestStock = () => {
                           </div>
                           <Field label="Created By User" value={editing.createdByUser}
                             onChange={(v) => setEditField("createdByUser", v)} disabled={editing.isLocked} />
+
+                          {/* ── Manifest Status picker ─────────────── */}
+                          <div className="space-y-1.5">
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1">
+                              <Tag className="h-3 w-3" /> Manifest Status
+                            </Label>
+                            <div className="grid grid-cols-1 gap-1.5">
+                              {MANIFEST_STATUSES.map((s) => {
+                                const active = (editing.manifestStatus || "") === s.value;
+                                return (
+                                  <button
+                                    key={s.value}
+                                    disabled={editing.isLocked}
+                                    onClick={() => {
+                                      setEditField("manifestStatus", s.value);
+                                      handleSingleStatus(editing.manifestId, s.value);
+                                    }}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border-2 transition-all text-left
+                                      ${active
+                                        ? `${s.tw} border-transparent shadow-md scale-[1.02]`
+                                        : "bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50"
+                                      }
+                                      ${editing.isLocked ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                                  >
+                                    <span className="text-base leading-none">{s.icon}</span>
+                                    <span>{s.label}</span>
+                                    {active && <CheckCircle2 className="h-3.5 w-3.5 ml-auto opacity-80" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
                         </div>
 
                         {/* MIDDLE column */}
@@ -1004,6 +1167,35 @@ export const ManifestStock = () => {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* ── Bulk Status Confirm Dialog ───────────────────────────────────── */}
+      <Dialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ListChecks className="h-5 w-5 text-blue-600" />
+              Bulk Status Update
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-slate-600">
+              Update <strong>{selectedIds.size}</strong> selected manifest{selectedIds.size > 1 ? "s" : ""} to:
+            </p>
+            {bulkStatus && (
+              <div className="flex justify-center">
+                <ManifestStatusBadge status={bulkStatus} />
+              </div>
+            )}
+            <p className="text-xs text-slate-500 text-center">This will overwrite the current status of all selected manifests.</p>
+            <div className="flex gap-3 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setShowBulkDialog(false)}>Cancel</Button>
+              <Button size="sm" className="bg-blue-700 hover:bg-blue-800 text-white gap-1.5" onClick={handleBulkStatusApply}>
+                <CheckCircle2 className="h-3.5 w-3.5" /> Apply to {selectedIds.size} Manifest{selectedIds.size > 1 ? "s" : ""}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── SQL Setup Dialog ─────────────────────────────────────────────── */}
       <Dialog open={showSQL} onOpenChange={setShowSQL}>

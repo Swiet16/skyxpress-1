@@ -17,7 +17,7 @@ const MGRAY:   RGB = [160, 170, 195];
 const DARK:    RGB = [18, 22, 45];
 const ALT:     RGB = [242, 245, 255];
 
-// Status colour map
+// Status colour map — AWB-level statuses
 const ST_COLORS: Record<string, { bg: RGB; text: RGB }> = {
   "DELIVERED":        { bg: [16, 150, 72],   text: WHITE },
   "IN TRANSIT":       { bg: [37, 99, 235],   text: WHITE },
@@ -28,6 +28,17 @@ const ST_COLORS: Record<string, { bg: RGB; text: RGB }> = {
   "CUSTOMS":          { bg: [234, 88, 12],   text: WHITE },
   "CANCELLED":        { bg: [220, 38, 38],   text: WHITE },
   "CUSTOM HOLD":      { bg: [220, 38, 38],   text: WHITE },
+};
+
+// Manifest-level status styles for PDF
+const MANIFEST_STATUS_STYLES: Record<string, { bg: RGB; text: RGB; label: string; icon: string }> = {
+  live:             { bg: [16, 185, 129],  text: WHITE, label: "LIVE",             icon: "⚡" },
+  pending:          { bg: [245, 158, 11],  text: WHITE, label: "PENDING",          icon: "⏳" },
+  picked_up:        { bg: [139, 92, 246],  text: WHITE, label: "PICKED UP",        icon: "📦" },
+  in_transit:       { bg: [37, 99, 235],   text: WHITE, label: "IN TRANSIT",       icon: "✈" },
+  out_for_delivery: { bg: [249, 115, 22],  text: WHITE, label: "OUT FOR DELIVERY", icon: "🚚" },
+  delivered:        { bg: [22, 163, 74],   text: WHITE, label: "DELIVERED",        icon: "✓" },
+  returned:         { bg: [239, 68, 68],   text: WHITE, label: "RETURNED",         icon: "↩" },
 };
 
 function cc(pdf: jsPDF, r: RGB) { pdf.setFillColor(r[0], r[1], r[2]); }
@@ -90,6 +101,25 @@ export async function generateBulkManifestPDF(
   pdf.setFontSize(10);
   pdf.setFont("helvetica", "bold");
   pdf.text(entry.manifestId, bX + bW / 2, bY + 20, { align: "center" });
+
+  // Manifest status badge — rendered right below the manifest ID badge
+  const mStatus = (entry as any).manifestStatus as string | undefined;
+  if (mStatus && MANIFEST_STATUS_STYLES[mStatus]) {
+    const ms = MANIFEST_STATUS_STYLES[mStatus];
+    const sbW = bW, sbH = 12, sbX = bX, sbY = bY + bH + 2;
+    cc(pdf, ms.bg); pdf.roundedRect(sbX, sbY, sbW, sbH, 2, 2, "F");
+    // Subtle left stripe / icon band
+    cc(pdf, [ms.bg[0] * 0.8, ms.bg[1] * 0.8, ms.bg[2] * 0.8] as RGB);
+    pdf.roundedRect(sbX, sbY, 10, sbH, 2, 2, "F");
+    pdf.rect(sbX + 8, sbY, 4, sbH, "F");
+    // Icon
+    tc(pdf, WHITE);
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(7);
+    pdf.text(ms.icon, sbX + 5, sbY + 7.5, { align: "center" });
+    // Label
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(7.5);
+    pdf.text(ms.label, sbX + sbW / 2 + 2, sbY + 7.5, { align: "center" });
+  }
 
   let y = 43;
 
