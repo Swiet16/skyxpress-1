@@ -779,8 +779,6 @@ export const ManifestStock = () => {
   const [editing, setEditing]         = useState<ManifestStockEntry | null>(null);
   const [countryMap, setCountryMap]   = useState<Record<string, string>>({});
   const [downloading, setDownloading] = useState<string | null>(null);
-  const [showSQL, setShowSQL]         = useState(false);
-  const [sqlCopied, setSqlCopied]     = useState(false);
   const [saving, setSaving]           = useState(false);
   const [awbSearch, setAwbSearch]     = useState("");
   const [csvFile, setCsvFile]         = useState<File | null>(null);
@@ -905,12 +903,6 @@ export const ManifestStock = () => {
     } finally { setDownloading(null); }
   };
 
-  const handleCopySQL = () => {
-    navigator.clipboard.writeText(SQL_SCHEMA).then(() => {
-      setSqlCopied(true);
-      setTimeout(() => setSqlCopied(false), 2000);
-    });
-  };
 
   const setEditField = (key: keyof ManifestStockEntry, val: any) =>
     setEditing((e) => e ? { ...e, [key]: val } : e);
@@ -1037,9 +1029,6 @@ export const ManifestStock = () => {
               )}
             </CardTitle>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowSQL(true)} className="gap-1.5 border-slate-300 text-slate-600">
-                <Database className="h-3.5 w-3.5" /> SQL Setup
-              </Button>
               <Button variant="outline" size="sm" onClick={reload} className="gap-2 border-slate-300">
                 <RefreshCw className="h-3.5 w-3.5" /> Refresh
               </Button>
@@ -1823,41 +1812,6 @@ export const ManifestStock = () => {
         </DialogContent>
       </Dialog>
 
-      {/* ── SQL Setup Dialog ──────────────────────────────────────────────────── */}
-      <Dialog open={showSQL} onOpenChange={setShowSQL}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2.5">
-              <Database className="h-5 w-5 text-blue-600" />
-              SQL Database Setup — Updated Schema
-              <Badge className="bg-blue-100 text-blue-700 text-xs ml-1">Supabase SQL Editor</Badge>
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-slate-600 -mt-1">
-            Run this SQL in your <strong>Supabase → SQL Editor</strong>. Includes <code className="text-xs bg-slate-100 px-1 rounded">manifest_history</code>, <code className="text-xs bg-slate-100 px-1 rounded">created_by_email</code>, and <code className="text-xs bg-slate-100 px-1 rounded">bagging_info</code> columns.
-          </p>
-          <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-900">
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-700">
-              <span className="text-xs text-slate-400 font-mono">manifest_setup_v2.sql</span>
-              <Button size="sm" variant="outline"
-                className={`h-7 text-xs gap-1.5 border-slate-600 ${sqlCopied ? "text-green-400 border-green-600" : "text-slate-300 hover:text-white"}`}
-                onClick={handleCopySQL}>
-                {sqlCopied ? <><CheckCircle2 className="h-3 w-3" /> Copied!</> : <><Copy className="h-3 w-3" /> Copy SQL</>}
-              </Button>
-            </div>
-            <pre className="text-xs text-green-300 font-mono p-4 overflow-x-auto whitespace-pre leading-5">
-              {SQL_SCHEMA}
-            </pre>
-          </div>
-          <div className="flex justify-end gap-2 pt-1">
-            <Button variant="outline" onClick={() => setShowSQL(false)}>Close</Button>
-            <Button className="bg-blue-700 hover:bg-blue-800 text-white gap-2" onClick={handleCopySQL}>
-              <Copy className="h-4 w-4" />
-              {sqlCopied ? "Copied!" : "Copy to Clipboard"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
     </div>
   );
