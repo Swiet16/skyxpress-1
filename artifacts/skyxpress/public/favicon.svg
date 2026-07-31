@@ -1,3 +1,19 @@
 <svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="180" height="180" rx="36" fill="#FF3C00"/>
+  <!-- Navy blue rounded background -->
+  <rect width="180" height="180" rx="36" fill="#1B2B6B"/>
+
+  <!-- Orange airplane silhouette (facing right, like the logo) -->
+  <!-- Fuselage -->
+  <path d="M32 95 L120 80 L148 88 L120 96 Z" fill="#FF5A00"/>
+  <!-- Nose cone -->
+  <path d="M120 80 L148 88 L138 84 Z" fill="#FF5A00"/>
+  <!-- Main wing -->
+  <path d="M72 84 L108 55 L115 60 L85 88 Z" fill="#FF5A00"/>
+  <!-- Rear wing / tail -->
+  <path d="M38 92 L56 78 L62 82 L48 95 Z" fill="#FF5A00"/>
+  <!-- Tail fin -->
+  <path d="M34 94 L44 85 L50 88 L42 97 Z" fill="#FF5A00"/>
+
+  <!-- "SX" text in white for legibility at small sizes -->
+  <text x="90" y="148" font-family="Arial Black, sans-serif" font-weight="900" font-size="38" fill="white" text-anchor="middle" letter-spacing="-1">SX</text>
 </svg>
