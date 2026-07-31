@@ -64,12 +64,8 @@ export async function generateBulkManifestPDF(
   // ═══════════════════════════════════════════════════════════════════════════
   const HDR_H = 44;
 
-  // Navy base
+  // Flat uniform navy header — no diagonal bands or shade variations
   cc(pdf, NAVY); pdf.rect(0, 0, PW, HDR_H, "F");
-  // Lighter top edge stripe
-  cc(pdf, NAVY2); pdf.rect(0, 0, PW, 5, "F");
-  // Diagonal shine band — subtle premium feel
-  cc(pdf, [30, 60, 130]); pdf.rect(0, 0, PW * 0.55, HDR_H, "F");
   // Orange accent bar at bottom of header
   cc(pdf, ORANGE); pdf.rect(0, HDR_H, PW, 3, "F");
 
@@ -126,43 +122,21 @@ export async function generateBulkManifestPDF(
   tc(pdf, MGRAY);
   pdf.text("SkyXpress International Courier & Cargo  ·  skyxpress.site", PW / 2, 25, { align: "center" });
 
-  // ── Manifest status pill — top-right (no emoji; jsPDF only renders ASCII) ─
+  // ── Manifest status pill — top-right (compact, label only, no tag zone) ───
   const mStatus = (entry as any).manifestStatus as string | undefined;
   if (mStatus && MANIFEST_STATUS_STYLES[mStatus]) {
     const ms = MANIFEST_STATUS_STYLES[mStatus];
-    const spW = 62, spH = 14, spX = PW - MR - spW, spY = 15;
-
-    // Main pill background
+    const spH = 10, spY = 17;
+    // Measure label width and size pill to fit snugly
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(8);
+    const labelW = pdf.getTextWidth(ms.label);
+    const spW = labelW + 14; // 7mm padding each side
+    const spX = PW - MR - spW;
+    // Single solid pill — status colour, label centred
     cc(pdf, ms.bg);
-    pdf.roundedRect(spX, spY, spW, spH, 7, 7, "F");
-
-    // Short tag zone (left side — darker shade, no emoji)
-    const tagBg: RGB = [
-      Math.round(ms.bg[0] * 0.68),
-      Math.round(ms.bg[1] * 0.68),
-      Math.round(ms.bg[2] * 0.68),
-    ];
-    cc(pdf, tagBg);
-    pdf.roundedRect(spX, spY, 16, spH, 7, 7, "F");
-    pdf.rect(spX + 9, spY, 7, spH, "F"); // square off right edge of tag zone
-
-    // Short ASCII tag
+    pdf.roundedRect(spX, spY, spW, spH, 5, 5, "F");
     tc(pdf, WHITE);
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(5.5);
-    pdf.text(ms.tag, spX + 8, spY + 8.8, { align: "center" });
-
-    // Status label
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(8);
-    pdf.text(ms.label, spX + 16 + (spW - 16) / 2, spY + 9.2, { align: "center" });
-  } else {
-    // No status — ghost outline pill
-    dc(pdf, [60, 90, 160]); pdf.setLineWidth(0.4);
-    pdf.roundedRect(PW - MR - 62, 15, 62, 14, 7, 7, "S");
-    tc(pdf, [80, 110, 180]);
-    pdf.setFont("helvetica", "normal"); pdf.setFontSize(7.5);
-    pdf.text("NO STATUS SET", PW - MR - 31, 23.5, { align: "center" });
+    pdf.text(ms.label, spX + spW / 2, spY + 6.8, { align: "center" });
   }
 
   let y = HDR_H + 6;
