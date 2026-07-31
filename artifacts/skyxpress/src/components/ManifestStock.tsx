@@ -1404,18 +1404,20 @@ export const ManifestStock = () => {
                           <Field label="Company" value={editing.company}
                             onChange={(v) => setEditField("company", v)} disabled={editing.isLocked} />
 
-                          {/* License — editable combobox */}
+                          {/* License — simple select */}
                           <div className="space-y-1">
-                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1">
-                              <Edit2 className="h-3 w-3" /> License <span className="text-slate-400 font-normal normal-case">(type or select)</span>
-                            </Label>
-                            <EditableCombobox
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">License</Label>
+                            <select
                               value={editing.license ?? ""}
-                              onChange={(v) => setEditField("license", v)}
-                              options={LICENSE_OPTIONS}
-                              placeholder="Type or select license…"
                               disabled={editing.isLocked}
-                            />
+                              onChange={(e) => setEditField("license", e.target.value)}
+                              className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <option value="">— Select license —</option>
+                              {LICENSE_OPTIONS.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
                           </div>
 
                           <Separator className="my-1" />
