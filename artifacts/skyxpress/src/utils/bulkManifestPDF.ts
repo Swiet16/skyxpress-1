@@ -30,14 +30,15 @@ const ST_COLORS: Record<string, { bg: RGB; text: RGB }> = {
 };
 
 // Manifest-level status styles for PDF
-const MANIFEST_STATUS_STYLES: Record<string, { bg: RGB; text: RGB; label: string; icon: string }> = {
-  live:             { bg: [16, 185, 129],  text: WHITE, label: "LIVE",             icon: "⚡" },
-  pending:          { bg: [245, 158, 11],  text: WHITE, label: "PENDING",          icon: "⏳" },
-  picked_up:        { bg: [139, 92, 246],  text: WHITE, label: "PICKED UP",        icon: "📦" },
-  in_transit:       { bg: [37, 99, 235],   text: WHITE, label: "IN TRANSIT",       icon: "✈" },
-  out_for_delivery: { bg: [249, 115, 22],  text: WHITE, label: "OUT FOR DELIVERY", icon: "🚚" },
-  delivered:        { bg: [22, 163, 74],   text: WHITE, label: "DELIVERED",        icon: "✓" },
-  returned:         { bg: [239, 68, 68],   text: WHITE, label: "RETURNED",         icon: "↩" },
+// No emoji — jsPDF cannot render Unicode emoji; use plain ASCII labels only.
+const MANIFEST_STATUS_STYLES: Record<string, { bg: RGB; text: RGB; label: string; tag: string }> = {
+  live:             { bg: [16, 185, 129],  text: WHITE, label: "LIVE",             tag: "LIVE"  },
+  pending:          { bg: [245, 158, 11],  text: WHITE, label: "PENDING",          tag: "PEND"  },
+  picked_up:        { bg: [139, 92, 246],  text: WHITE, label: "PICKED UP",        tag: "PKU"   },
+  in_transit:       { bg: [37, 99, 235],   text: WHITE, label: "IN TRANSIT",       tag: "AIR"   },
+  out_for_delivery: { bg: [249, 115, 22],  text: WHITE, label: "OUT FOR DELIVERY", tag: "OFD"   },
+  delivered:        { bg: [22, 163, 74],   text: WHITE, label: "DELIVERED",        tag: "DONE"  },
+  returned:         { bg: [239, 68, 68],   text: WHITE, label: "RETURNED",         tag: "RTN"   },
 };
 
 function cc(pdf: jsPDF, r: RGB) { pdf.setFillColor(r[0], r[1], r[2]); }
@@ -125,29 +126,43 @@ export async function generateBulkManifestPDF(
   tc(pdf, MGRAY);
   pdf.text("SkyXpress International Courier & Cargo  ·  skyxpress.site", PW / 2, 25, { align: "center" });
 
-  // ── Manifest status pill — top-right ─────────────────────────────────────
+  // ── Manifest status pill — top-right (no emoji; jsPDF only renders ASCII) ─
   const mStatus = (entry as any).manifestStatus as string | undefined;
   if (mStatus && MANIFEST_STATUS_STYLES[mStatus]) {
     const ms = MANIFEST_STATUS_STYLES[mStatus];
-    const spW = 58, spH = 14, spX = PW - MR - spW, spY = 15;
-    // Background pill
-    cc(pdf, ms.bg); pdf.roundedRect(spX, spY, spW, spH, 7, 7, "F");
-    // Darker inner-left icon zone
-    const iconBg: RGB = [Math.round(ms.bg[0] * 0.72), Math.round(ms.bg[1] * 0.72), Math.round(ms.bg[2] * 0.72)];
-    cc(pdf, iconBg); pdf.roundedRect(spX, spY, 18, spH, 7, 7, "F");
-    pdf.rect(spX + 11, spY, 7, spH, "F");
-    // Icon (centred in left zone)
-    tc(pdf, WHITE); pdf.setFont("helvetica", "bold"); pdf.setFontSize(9);
-    pdf.text(ms.icon, spX + 9, spY + 9.5, { align: "center" });
+    const spW = 62, spH = 14, spX = PW - MR - spW, spY = 15;
+
+    // Main pill background
+    cc(pdf, ms.bg);
+    pdf.roundedRect(spX, spY, spW, spH, 7, 7, "F");
+
+    // Short tag zone (left side — darker shade, no emoji)
+    const tagBg: RGB = [
+      Math.round(ms.bg[0] * 0.68),
+      Math.round(ms.bg[1] * 0.68),
+      Math.round(ms.bg[2] * 0.68),
+    ];
+    cc(pdf, tagBg);
+    pdf.roundedRect(spX, spY, 16, spH, 7, 7, "F");
+    pdf.rect(spX + 9, spY, 7, spH, "F"); // square off right edge of tag zone
+
+    // Short ASCII tag
+    tc(pdf, WHITE);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(5.5);
+    pdf.text(ms.tag, spX + 8, spY + 8.8, { align: "center" });
+
     // Status label
-    pdf.setFont("helvetica", "bold"); pdf.setFontSize(8.5);
-    pdf.text(ms.label, spX + 18 + (spW - 18) / 2, spY + 9.2, { align: "center" });
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.text(ms.label, spX + 16 + (spW - 16) / 2, spY + 9.2, { align: "center" });
   } else {
-    // No status — show a ghost pill placeholder
+    // No status — ghost outline pill
     dc(pdf, [60, 90, 160]); pdf.setLineWidth(0.4);
-    pdf.roundedRect(PW - MR - 58, 15, 58, 14, 7, 7, "S");
-    tc(pdf, [80, 110, 180]); pdf.setFont("helvetica", "normal"); pdf.setFontSize(7.5);
-    pdf.text("NO STATUS SET", PW - MR - 29, 23.5, { align: "center" });
+    pdf.roundedRect(PW - MR - 62, 15, 62, 14, 7, 7, "S");
+    tc(pdf, [80, 110, 180]);
+    pdf.setFont("helvetica", "normal"); pdf.setFontSize(7.5);
+    pdf.text("NO STATUS SET", PW - MR - 31, 23.5, { align: "center" });
   }
 
   let y = HDR_H + 6;
