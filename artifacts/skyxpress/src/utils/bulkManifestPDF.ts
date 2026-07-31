@@ -345,5 +345,14 @@ export async function generateBulkManifestPDF(
     PW / 2, PH - 4, { align: "center" }
   );
 
-  pdf.save(`SkyXpress_Manifest_${entry.manifestId}.pdf`);
+  // Use blob download instead of pdf.save() for cross-environment compatibility
+  const blob = pdf.output("blob");
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `SkyXpress_Manifest_${entry.manifestId}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

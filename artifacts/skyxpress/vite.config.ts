@@ -58,6 +58,11 @@ export default defineConfig({
       'html2canvas': path.resolve(import.meta.dirname, 'src/stubs/html2canvas-stub.ts'),
     },
     dedupe: ['react', 'react-dom'],
+    // Force browser condition so jsPDF loads the browser ES build, not the node build
+    conditions: ['browser', 'module', 'import', 'default'],
+  },
+  optimizeDeps: {
+    include: ['jspdf'],
   },
   root: path.resolve(import.meta.dirname),
   build: {
