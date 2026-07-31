@@ -73,6 +73,16 @@ export interface ManifestStockEntry {
   destinationHub?: string;
   isLocked?: boolean;
   manifestStatus?: string; // pending | picked_up | in_transit | out_for_delivery | delivered | returned
+  baggingInfo?: {
+    bags: Array<{
+      bagType: string;
+      bagSize: string;
+      quantity: number;
+      sealType: string;
+      sealNumber: string;
+      notes: string;
+    }>;
+  };
   trackingEvents?: Array<{
     id: string;
     awb: string;
@@ -81,6 +91,15 @@ export interface ManifestStockEntry {
     timestamp: string;
     notes?: string;
   }>;
+}
+
+export interface ManifestHistoryEntry {
+  id: string;
+  manifestId: string;
+  changedAt: string;
+  changedBy: string;
+  snapshot: Partial<ManifestStockEntry>;
+  changeNote?: string;
 }
 
 const STORAGE_KEY      = "skyxpress_manifest_stock";
@@ -156,6 +175,7 @@ function toPartialDbRow(updates: Partial<ManifestStockEntry>): Record<string, an
   if ("trackingIds"       in updates) set("tracking_ids",        updates.trackingIds       ?? []);
   if ("parcels"           in updates) set("parcels",             updates.parcels           ?? []);
   if ("trackingEvents"    in updates) set("tracking_events",     updates.trackingEvents    ?? []);
+  if ("baggingInfo"       in updates) set("bagging_info",        updates.baggingInfo       ?? {});
   return row;
 }
 
@@ -197,6 +217,7 @@ function toDbRow(entry: ManifestStockEntry): Record<string, any> {
     tracking_ids:        entry.trackingIds,
     parcels:             entry.parcels,
     tracking_events:     entry.trackingEvents    ?? [],
+    bagging_info:        entry.baggingInfo       ?? {},
     manifest_status:     entry.manifestStatus    || null,
     created_at:          entry.createdAt,
   };
@@ -242,6 +263,7 @@ function fromDbRow(row: Record<string, any>): ManifestStockEntry {
     isLocked:          row.is_locked          ?? false,
     manifestStatus:    row.manifest_status    || undefined,
     trackingEvents:    row.tracking_events    || [],
+    baggingInfo:       row.bagging_info       || undefined,
   };
 }
 
@@ -353,6 +375,53 @@ export async function deleteManifestFromStockDB(manifestId: string): Promise<voi
   try {
     await supabase.from("manifests_detail").delete().eq("manifest_id", manifestId);
   } catch (_) {}
+}
+
+// ── Manifest History ─────────────────────────────────────────────────────────
+
+/**
+ * Save a history snapshot whenever a manifest is updated.
+ */
+export async function saveManifestHistory(
+  manifestId: string,
+  snapshot: Partial<ManifestStockEntry>,
+  changedBy: string,
+  changeNote?: string
+): Promise<void> {
+  try {
+    await supabase.from("manifest_history").insert({
+      manifest_id:  manifestId,
+      changed_at:   new Date().toISOString(),
+      changed_by:   changedBy,
+      snapshot:     snapshot,
+      change_note:  changeNote || null,
+    });
+  } catch (_) {}
+}
+
+/**
+ * Load history entries for a given manifest, newest first.
+ */
+export async function loadManifestHistory(manifestId: string): Promise<ManifestHistoryEntry[]> {
+  try {
+    const { data, error } = await supabase
+      .from("manifest_history")
+      .select("*")
+      .eq("manifest_id", manifestId)
+      .order("changed_at", { ascending: false })
+      .limit(50);
+    if (!error && Array.isArray(data)) {
+      return data.map((row: any) => ({
+        id:         row.id,
+        manifestId: row.manifest_id,
+        changedAt:  row.changed_at,
+        changedBy:  row.changed_by || "unknown",
+        snapshot:   row.snapshot || {},
+        changeNote: row.change_note || undefined,
+      }));
+    }
+  } catch (_) {}
+  return [];
 }
 
 /** @deprecated use deleteManifestFromStockDB */

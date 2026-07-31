@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,81 +9,41 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Sheet, SheetContent, SheetHeader } from "@/components/ui/sheet";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-} from "@/components/ui/sheet";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  FileSpreadsheet,
-  FileDown,
-  Trash2,
-  Search,
-  ClipboardList,
-  Package,
-  Weight,
-  DollarSign,
-  Calendar,
-  RefreshCw,
-  Lock,
-  Unlock,
-  Copy,
-  MoreHorizontal,
-  Plane,
-  MapPin,
-  Clock,
-  Building2,
-  Database,
-  Plus,
-  X,
-  CheckCircle2,
-  ChevronDown,
-  FileText,
-  History,
-  Download,
-  Tag,
-  Zap,
-  Truck,
-  Home,
-  RotateCcw,
-  Square,
-  CheckSquare,
-  ListChecks,
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from "@/components/ui/command";
+import {
+  FileSpreadsheet, FileDown, Trash2, Search, ClipboardList, Package,
+  Weight, DollarSign, Calendar, RefreshCw, Lock, Unlock, Copy,
+  Plane, MapPin, Clock, Building2, Database, Plus, X, CheckCircle2,
+  ChevronDown, FileText, History, Download, Tag, Zap, Truck, Home,
+  RotateCcw, Square, CheckSquare, ListChecks, Check, ChevronsUpDown,
+  Archive, Box, Edit2, User, AlertCircle, UploadCloud,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  loadManifestStockDB,
-  saveManifestToStockDB,
-  updateManifestInStockDB,
-  deleteManifestFromStockDB,
-  type ManifestStockEntry,
+  loadManifestStockDB, saveManifestToStockDB, updateManifestInStockDB,
+  deleteManifestFromStockDB, saveManifestHistory, loadManifestHistory,
+  type ManifestStockEntry, type ManifestHistoryEntry,
 } from "@/utils/manifestStorage";
 import { exportManifestToExcel } from "@/utils/manifestExport";
 import { generateBulkManifestPDF } from "@/utils/bulkManifestPDF";
 import { supabase } from "@/integrations/supabase/client";
 
-// ── SQL Schema ────────────────────────────────────────────────────────────────
+// ── Updated SQL Schema ─────────────────────────────────────────────────────────
 const SQL_SCHEMA = `-- ============================================================
 -- SkyXpress Manifest Tables — run in Supabase SQL Editor
 -- ============================================================
@@ -156,6 +116,7 @@ CREATE TABLE IF NOT EXISTS manifests_detail (
   master_edi_bag_no   text,
   remark              text,
   created_by_user     text,
+  created_by_email    text,
   company             text,
   license             text,
   vendor_weight       numeric DEFAULT 0,
@@ -178,49 +139,62 @@ CREATE TABLE IF NOT EXISTS manifests_detail (
   tracking_ids        text[],
   parcels             jsonb,
   tracking_events     jsonb DEFAULT '[]',
+  bagging_info        jsonb DEFAULT '{}',
   created_at          timestamptz DEFAULT now(),
   updated_at          timestamptz DEFAULT now()
 );
 
--- Add manifest_status if table already existed without it
-ALTER TABLE manifests_detail ADD COLUMN IF NOT EXISTS manifest_status text DEFAULT 'pending';
+-- Add new columns if table already existed
+ALTER TABLE manifests_detail ADD COLUMN IF NOT EXISTS manifest_status   text DEFAULT 'pending';
+ALTER TABLE manifests_detail ADD COLUMN IF NOT EXISTS created_by_email  text;
+ALTER TABLE manifests_detail ADD COLUMN IF NOT EXISTS bagging_info      jsonb DEFAULT '{}';
 
--- 5. Enable Row Level Security
-ALTER TABLE manifests        ENABLE ROW LEVEL SECURITY;
+-- 5. Manifest history — audit trail of every save
+CREATE TABLE IF NOT EXISTS manifest_history (
+  id           uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  manifest_id  text NOT NULL,
+  changed_at   timestamptz DEFAULT now(),
+  changed_by   text,
+  snapshot     jsonb DEFAULT '{}',
+  change_note  text
+);
+
+CREATE INDEX IF NOT EXISTS manifest_history_manifest_id_idx ON manifest_history (manifest_id);
+
+-- 6. Enable Row Level Security
+ALTER TABLE manifests         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE manifests_detail  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE manifest_sequence ENABLE ROW LEVEL SECURITY;
+ALTER TABLE manifest_history  ENABLE ROW LEVEL SECURITY;
 
--- Policies (IF NOT EXISTS is safe to re-run)
+-- Policies
 DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE tablename = 'manifests' AND policyname = 'Allow all for authenticated'
-  ) THEN
-    CREATE POLICY "Allow all for authenticated" ON manifests
-      FOR ALL USING (auth.role() = 'authenticated');
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'manifests' AND policyname = 'Allow all for authenticated') THEN
+    CREATE POLICY "Allow all for authenticated" ON manifests FOR ALL USING (auth.role() = 'authenticated');
   END IF;
 END $$;
 
 DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE tablename = 'manifests_detail' AND policyname = 'Allow all for authenticated'
-  ) THEN
-    CREATE POLICY "Allow all for authenticated" ON manifests_detail
-      FOR ALL USING (auth.role() = 'authenticated');
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'manifests_detail' AND policyname = 'Allow all for authenticated') THEN
+    CREATE POLICY "Allow all for authenticated" ON manifests_detail FOR ALL USING (auth.role() = 'authenticated');
   END IF;
 END $$;
 
 DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE tablename = 'manifest_sequence' AND policyname = 'Allow all'
-  ) THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'manifest_sequence' AND policyname = 'Allow all') THEN
     CREATE POLICY "Allow all" ON manifest_sequence FOR ALL USING (true);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'manifest_history' AND policyname = 'Allow all for authenticated') THEN
+    CREATE POLICY "Allow all for authenticated" ON manifest_history FOR ALL USING (auth.role() = 'authenticated');
   END IF;
 END $$;
 `;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ORIGIN_HUBS = [
-  // Pakistan — major cities / airports
   "GRT - GUJRAT", "LHE - LAHORE", "KHI - KARACHI", "ISB - ISLAMABAD",
   "MUL - MULTAN", "FSD - FAISALABAD", "PEW - PESHAWAR", "QTA - QUETTA",
   "HYD - HYDERABAD", "SKT - SIALKOT", "GUJ - GUJRANWALA", "BHW - BAHAWALPUR",
@@ -309,7 +283,13 @@ const SERVICES = [
   "Freight", "Cargo", "DHL PK", "UPS PK", "SKYNET", "DPD UK",
   "DHL via UK", "UPS via Belfast", "UPS Saver",
 ];
-const LICENSES = ["Select License...", "EXP-001", "EXP-002", "IMP-001", "CARGO-001", "FREIGHT-001"];
+const LICENSE_OPTIONS = [
+  "EXP-001", "EXP-002", "IMP-001", "CARGO-001", "FREIGHT-001",
+  "IATA-2024", "CACL-PKR", "AFCA-0012", "MCS-LHE-01", "MCS-KHI-02",
+];
+const BAG_TYPES  = ["Standard Bag", "Heavy Duty Bag", "Cardboard Box", "Wooden Crate", "Pallet", "Sack", "Drum", "Tube/Roll"];
+const BAG_SIZES  = ["Extra Small (XS)", "Small (S)", "Medium (M)", "Large (L)", "Extra Large (XL)", "XXL", "Custom"];
+const SEAL_TYPES = ["Plastic Seal", "Metal Seal", "Zip Tie", "Tamper Tape", "No Seal"];
 
 const statusColors: Record<string, string> = {
   delivered:        "bg-green-100 text-green-800 border-green-200",
@@ -319,9 +299,9 @@ const statusColors: Record<string, string> = {
   customs:          "bg-orange-100 text-orange-800 border-orange-200",
   out_for_delivery: "bg-indigo-100 text-indigo-800 border-indigo-200",
   cancelled:        "bg-red-100 text-red-800 border-red-200",
+  processing:       "bg-purple-100 text-purple-800 border-purple-200",
 };
 
-// ── Manifest-level status ──────────────────────────────────────────────────────
 export const MANIFEST_STATUSES = [
   { value: "pending",          label: "Pending",          icon: "⏳", tw: "bg-amber-400 text-white border-amber-500",     dot: "bg-amber-300"   },
   { value: "picked_up",        label: "Picked Up",        icon: "📦", tw: "bg-violet-500 text-white border-violet-600",   dot: "bg-violet-400"  },
@@ -330,6 +310,77 @@ export const MANIFEST_STATUSES = [
   { value: "delivered",        label: "Delivered",        icon: "✅", tw: "bg-green-600 text-white border-green-700",     dot: "bg-green-400"   },
   { value: "returned",         label: "Returned",         icon: "↩️",  tw: "bg-red-500 text-white border-red-600",         dot: "bg-red-400"     },
 ] as const;
+
+// ── Sample CSV template columns ───────────────────────────────────────────────
+const CSV_SAMPLE_HEADERS = [
+  "tracking_id", "hawb_no", "sender_name", "sender_phone", "sender_city", "sender_country",
+  "receiver_name", "receiver_phone", "receiver_address", "receiver_city",
+  "receiver_postal_code", "receiver_country", "weight", "pieces", "value",
+  "currency", "service_type", "parcel_type", "description",
+];
+const CSV_SAMPLE_ROW = [
+  "TRK123456789", "HAWB001", "John Smith", "+923001234567", "Lahore", "PK",
+  "Jane Doe", "+447911123456", "10 Baker Street", "London",
+  "W1U 3FB", "GB", "2.5", "1", "150.00",
+  "GBP", "Express", "Documents", "Personal documents",
+];
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function downloadSampleCSV() {
+  const rows = [CSV_SAMPLE_HEADERS, CSV_SAMPLE_ROW];
+  const csv = rows.map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "SkyXpress_Import_Sample.csv"; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let cur = ""; let inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { inQuote = !inQuote; continue; }
+    if (ch === "," && !inQuote) { result.push(cur.trim()); cur = ""; continue; }
+    cur += ch;
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+function csvToParcel(row: string[], headers: string[]): any {
+  const map: Record<string, string> = {};
+  headers.forEach((h, i) => { map[h.trim().toLowerCase()] = row[i] || ""; });
+  return {
+    id:                   crypto.randomUUID(),
+    tracking_id:          map.tracking_id || map.hawb_no || `IMP-${Date.now()}`,
+    reference_id:         map.hawb_no || "",
+    sender_name:          map.sender_name || "",
+    sender_phone:         map.sender_phone || "",
+    sender_city:          map.sender_city || "",
+    sender_country:       map.sender_country || "",
+    receiver_name:        map.receiver_name || "",
+    receiver_phone:       map.receiver_phone || "",
+    receiver_address:     map.receiver_address || "",
+    receiver_city:        map.receiver_city || "",
+    receiver_postal_code: map.receiver_postal_code || "",
+    receiver_country:     map.receiver_country || "",
+    from_country:         map.sender_country || "",
+    to_country:           map.receiver_country || "",
+    weight:               parseFloat(map.weight) || 0,
+    pieces:               parseInt(map.pieces) || 1,
+    total_price:          parseFloat(map.value) || 0,
+    currency:             map.currency || "USD",
+    service_type:         map.service_type || "Standard",
+    parcel_type:          map.parcel_type || "Parcel",
+    current_status:       "processing",
+    created_at:           new Date().toISOString(),
+    items:                map.description ? [{ description: map.description, quantity: 1, unit_price: parseFloat(map.value) || 0 }] : [],
+  };
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
 
 function ManifestStatusBadge({ status, size = "sm" }: { status?: string; size?: "sm" | "xs" }) {
   if (!status) return <span className="text-slate-300 text-xs">—</span>;
@@ -346,7 +397,133 @@ function ManifestStatusBadge({ status, size = "sm" }: { status?: string; size?: 
   );
 }
 
-// ── Field component ───────────────────────────────────────────────────────────
+// Searchable combobox — replaces plain <Select> for hubs
+function SearchableSelect({
+  value, onChange, options, placeholder, disabled, className = "",
+}: {
+  value: string; onChange: (v: string) => void; options: string[];
+  placeholder?: string; disabled?: boolean; className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const filtered = query.length > 0
+    ? options.filter((o) => o.toLowerCase().includes(query.toLowerCase()))
+    : options;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          disabled={disabled}
+          className={`flex h-8 w-full items-center justify-between rounded border border-slate-200 bg-white px-2 text-sm text-left focus:outline-none focus:border-blue-400 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+        >
+          <span className={value ? "text-slate-800 truncate" : "text-slate-400"}>
+            {value || placeholder || "Select…"}
+          </span>
+          <ChevronsUpDown className="h-3.5 w-3.5 text-slate-400 flex-shrink-0 ml-1" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0 z-[9999]" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder="Search…"
+            value={query}
+            onValueChange={setQuery}
+            className="h-8 text-sm"
+          />
+          <CommandList className="max-h-60">
+            {filtered.length === 0 && <CommandEmpty>No results found.</CommandEmpty>}
+            <CommandGroup>
+              {filtered.map((opt) => (
+                <CommandItem
+                  key={opt}
+                  value={opt}
+                  onSelect={() => { onChange(opt); setOpen(false); setQuery(""); }}
+                  className="text-xs cursor-pointer"
+                >
+                  <Check className={`h-3.5 w-3.5 mr-2 flex-shrink-0 ${value === opt ? "opacity-100 text-blue-600" : "opacity-0"}`} />
+                  {opt}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// Editable combobox — can type a custom value OR pick from list (for License)
+function EditableCombobox({
+  value, onChange, options, placeholder, disabled, className = "",
+}: {
+  value: string; onChange: (v: string) => void; options: string[];
+  placeholder?: string; disabled?: boolean; className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [inputVal, setInputVal] = useState(value || "");
+  const filtered = inputVal.length > 0
+    ? options.filter((o) => o.toLowerCase().includes(inputVal.toLowerCase()))
+    : options;
+
+  useEffect(() => { setInputVal(value || ""); }, [value]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <div className="relative">
+          <Input
+            value={inputVal}
+            disabled={disabled}
+            placeholder={placeholder || "Type or select…"}
+            className={`h-8 text-sm border-slate-200 pr-7 ${className}`}
+            onChange={(e) => {
+              setInputVal(e.target.value);
+              onChange(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+          />
+          <button
+            type="button"
+            tabIndex={-1}
+            disabled={disabled}
+            onClick={() => setOpen((o) => !o)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          >
+            <ChevronsUpDown className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0 z-[9999]" align="start">
+        <Command shouldFilter={false}>
+          <CommandList className="max-h-48">
+            {filtered.length === 0 ? (
+              <CommandEmpty className="py-3 text-xs text-slate-500">
+                Press Enter or type to use "{inputVal}"
+              </CommandEmpty>
+            ) : (
+              <CommandGroup>
+                {filtered.map((opt) => (
+                  <CommandItem
+                    key={opt}
+                    value={opt}
+                    onSelect={() => { onChange(opt); setInputVal(opt); setOpen(false); }}
+                    className="text-xs cursor-pointer"
+                  >
+                    <Check className={`h-3.5 w-3.5 mr-2 flex-shrink-0 ${value === opt ? "opacity-100 text-blue-600" : "opacity-0"}`} />
+                    {opt}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function Field({
   label, value, onChange, type = "text", placeholder, disabled = false,
   className = "", readOnly = false,
@@ -360,7 +537,7 @@ function Field({
         {label}
       </Label>
       {readOnly || disabled ? (
-        <div className="h-8 px-2 flex items-center text-sm bg-slate-50 border border-slate-200 rounded text-slate-700 font-medium">
+        <div className="h-8 px-2 flex items-center text-sm bg-slate-50 border border-slate-200 rounded text-slate-700 font-medium truncate">
           {value || <span className="text-slate-400">—</span>}
         </div>
       ) : (
@@ -374,7 +551,227 @@ function Field({
   );
 }
 
-// ── Main Component ────────────────────────────────────────────────────────────
+// ── Bagging Dialog ─────────────────────────────────────────────────────────────
+function BaggingDialog({ open, onClose, onSave, initialData, disabled }: {
+  open: boolean; onClose: () => void;
+  onSave: (data: any) => void;
+  initialData?: any; disabled?: boolean;
+}) {
+  const [bags, setBags] = useState<any[]>(
+    initialData?.bags?.length > 0 ? initialData.bags : [
+      { bagType: "Standard Bag", bagSize: "Medium (M)", quantity: 1, sealType: "Plastic Seal", sealNumber: "", notes: "" },
+    ]
+  );
+
+  const addBag = () => setBags((b) => [...b, { bagType: "Standard Bag", bagSize: "Medium (M)", quantity: 1, sealType: "Plastic Seal", sealNumber: "", notes: "" }]);
+  const removeBag = (i: number) => setBags((b) => b.filter((_, idx) => idx !== i));
+  const updateBag = (i: number, key: string, val: any) =>
+    setBags((b) => b.map((item, idx) => idx === i ? { ...item, [key]: val } : item));
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Box className="h-5 w-5 text-blue-600" />
+            Bagging / Boxing Details
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+          {bags.map((bag, i) => (
+            <div key={i} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Bag / Box #{i + 1}</span>
+                {bags.length > 1 && !disabled && (
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                    onClick={() => removeBag(i)}>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Bag / Box Type</Label>
+                  <Select value={bag.bagType} onValueChange={(v) => updateBag(i, "bagType", v)} disabled={disabled}>
+                    <SelectTrigger className="h-8 text-sm border-slate-200">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BAG_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Size</Label>
+                  <Select value={bag.bagSize} onValueChange={(v) => updateBag(i, "bagSize", v)} disabled={disabled}>
+                    <SelectTrigger className="h-8 text-sm border-slate-200">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BAG_SIZES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Qty</Label>
+                  <Input type="number" min={1} value={bag.quantity} disabled={disabled}
+                    className="h-8 text-sm border-slate-200"
+                    onChange={(e) => updateBag(i, "quantity", parseInt(e.target.value) || 1)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Seal Type</Label>
+                  <Select value={bag.sealType} onValueChange={(v) => updateBag(i, "sealType", v)} disabled={disabled}>
+                    <SelectTrigger className="h-8 text-sm border-slate-200">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SEAL_TYPES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Seal Number</Label>
+                  <Input value={bag.sealNumber} disabled={disabled} placeholder="e.g. SL-00123"
+                    className="h-8 text-sm border-slate-200"
+                    onChange={(e) => updateBag(i, "sealNumber", e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Notes</Label>
+                  <Input value={bag.notes} disabled={disabled} placeholder="Optional notes"
+                    className="h-8 text-sm border-slate-200"
+                    onChange={(e) => updateBag(i, "notes", e.target.value)} />
+                </div>
+              </div>
+            </div>
+          ))}
+          {!disabled && (
+            <Button variant="outline" size="sm" className="w-full border-dashed border-slate-300 text-slate-500 gap-2"
+              onClick={addBag}>
+              <Plus className="h-3.5 w-3.5" /> Add Another Bag / Box
+            </Button>
+          )}
+        </div>
+        {/* Summary */}
+        <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-2 flex items-center gap-4">
+          <Box className="h-4 w-4 text-blue-600" />
+          <div className="flex gap-6 text-xs">
+            <span><span className="font-bold text-slate-700">{bags.length}</span> <span className="text-slate-500">types</span></span>
+            <span><span className="font-bold text-slate-700">{bags.reduce((s, b) => s + (b.quantity || 0), 0)}</span> <span className="text-slate-500">total bags</span></span>
+          </div>
+        </div>
+        <div className="flex gap-3 justify-end pt-1">
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          {!disabled && (
+            <Button size="sm" className="bg-blue-700 hover:bg-blue-800 text-white gap-1.5"
+              onClick={() => { onSave({ bags }); onClose(); }}>
+              <CheckCircle2 className="h-3.5 w-3.5" /> Save Bagging Info
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Manifest History Dialog ────────────────────────────────────────────────────
+function ManifestHistoryDialog({ open, onClose, manifestId }: {
+  open: boolean; onClose: () => void; manifestId: string;
+}) {
+  const [history, setHistory] = useState<ManifestHistoryEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || !manifestId) return;
+    setLoading(true);
+    loadManifestHistory(manifestId).then((h) => { setHistory(h); setLoading(false); });
+  }, [open, manifestId]);
+
+  const FIELD_LABELS: Record<string, string> = {
+    manifestStatus: "Status", isLocked: "Locked", flightNo: "Flight No",
+    originHub: "Origin Hub", destinationHub: "Destination Hub",
+    service: "Service", forwarder: "Forwarder", license: "License",
+    manifestDate: "Date", runNumber: "Run No", noOfBags: "Bags",
+    vendorWeight: "Vendor Wt", arrivalDate: "Arrival Date",
+    bookingFromDate: "Booking From", bookingTillDate: "Booking Till",
+    masterNo: "Master No", remark: "Remark", company: "Company",
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <History className="h-5 w-5 text-blue-600" />
+            Manifest History
+            <Badge className="bg-blue-100 text-blue-700 text-xs">{manifestId}</Badge>
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto space-y-3">
+          {loading ? (
+            <div className="py-16 text-center">
+              <RefreshCw className="h-6 w-6 animate-spin text-slate-300 mx-auto mb-2" />
+              <p className="text-sm text-slate-500">Loading history…</p>
+            </div>
+          ) : history.length === 0 ? (
+            <div className="py-16 text-center">
+              <History className="h-10 w-10 text-slate-200 mx-auto mb-3" />
+              <p className="font-semibold text-slate-500">No history yet</p>
+              <p className="text-xs text-slate-400 mt-1">History is recorded each time you save a manifest.</p>
+            </div>
+          ) : (
+            history.map((entry, idx) => {
+              const snap = entry.snapshot || {};
+              const changedFields = Object.keys(snap).filter((k) => k !== "parcels" && k !== "trackingIds" && k !== "trackingEvents");
+              return (
+                <div key={entry.id} className="bg-white border border-slate-100 rounded-xl overflow-hidden shadow-sm">
+                  <div className="bg-gradient-to-r from-slate-800 to-blue-900 px-4 py-2.5 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        #{history.length - idx}
+                      </div>
+                      <div>
+                        <p className="text-white text-xs font-semibold">
+                          {new Date(entry.changedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                          {" "}
+                          {new Date(entry.changedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                        <p className="text-blue-300 text-[10px]">by {entry.changedBy}</p>
+                      </div>
+                    </div>
+                    {entry.changeNote && (
+                      <span className="text-blue-200 text-[10px] italic">{entry.changeNote}</span>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    {changedFields.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">Parcels / tracking updated</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {changedFields.map((k) => (
+                          <div key={k} className="bg-slate-50 border border-slate-100 rounded px-2 py-1">
+                            <p className="text-[9px] text-slate-400 uppercase font-bold">{FIELD_LABELS[k] || k}</p>
+                            <p className="text-xs text-slate-700 font-medium">
+                              {k === "isLocked" ? (snap[k] ? "Locked" : "Unlocked") : String(snap[k] ?? "—")}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+        <div className="flex justify-end pt-1">
+          <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Main Component ─────────────────────────────────────────────────────────────
 export const ManifestStock = () => {
   const [entries, setEntries]         = useState<ManifestStockEntry[]>([]);
   const [search, setSearch]           = useState("");
@@ -387,10 +784,26 @@ export const ManifestStock = () => {
   const [saving, setSaving]           = useState(false);
   const [awbSearch, setAwbSearch]     = useState("");
   const [csvFile, setCsvFile]         = useState<File | null>(null);
+  const [importing, setImporting]     = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus]   = useState<string>("");
-  const [showBulkDialog, setShowBulkDialog] = useState(false);
+  const [showBulkDialog, setShowBulkDialog]   = useState(false);
+  const [showBagging, setShowBagging]         = useState(false);
+  const [showHistory, setShowHistory]         = useState(false);
+  const [currentUser, setCurrentUser]         = useState<{ email: string; name: string } | null>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  // ── Auth user ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      const u = data?.session?.user;
+      if (u) {
+        const name = u.user_metadata?.full_name || u.user_metadata?.name || u.email?.split("@")[0] || "Admin";
+        setCurrentUser({ email: u.email || "", name });
+      }
+    });
+  }, []);
 
   const reload = useCallback(async () => {
     const data = await loadManifestStockDB();
@@ -410,20 +823,29 @@ export const ManifestStock = () => {
 
   const openDetail = (entry: ManifestStockEntry) => {
     setSelected(entry);
-    setEditing({ ...entry });
+    setEditing({
+      ...entry,
+      // Auto-fill createdByUser if empty
+      createdByUser: entry.createdByUser || currentUser?.name || "",
+    });
   };
 
   const closeDetail = () => {
     setSelected(null);
     setEditing(null);
     setAwbSearch("");
+    setCsvFile(null);
   };
 
   const handleSave = async () => {
     if (!editing) return;
     setSaving(true);
     try {
+      const userLabel = currentUser?.email || currentUser?.name || "admin";
       await updateManifestInStockDB(editing.manifestId, editing);
+      // Save history snapshot (without parcels to keep it lightweight)
+      const { parcels: _, trackingIds: __, ...snap } = editing;
+      await saveManifestHistory(editing.manifestId, snap, userLabel);
       await reload();
       setSelected(editing);
       toast({ title: "Manifest updated ✓", description: `Manifest ${editing.manifestId} saved.` });
@@ -493,6 +915,39 @@ export const ManifestStock = () => {
   const setEditField = (key: keyof ManifestStockEntry, val: any) =>
     setEditing((e) => e ? { ...e, [key]: val } : e);
 
+  // ── CSV Import ──────────────────────────────────────────────────────────────
+  const handleCSVImport = async () => {
+    if (!csvFile || !editing) return;
+    setImporting(true);
+    try {
+      const text = await csvFile.text();
+      const lines = text.split("\n").filter((l) => l.trim().length > 0);
+      if (lines.length < 2) {
+        toast({ title: "CSV error", description: "File must have a header row + at least one data row.", variant: "destructive" });
+        return;
+      }
+      const headers = parseCSVLine(lines[0]);
+      const newParcels = lines.slice(1).map((line) => csvToParcel(parseCSVLine(line), headers));
+      const merged = [...editing.parcels, ...newParcels];
+      const updatedEntry = {
+        ...editing,
+        parcels: merged,
+        parcelCount: merged.length,
+        trackingIds: merged.map((p) => p.tracking_id),
+        totalWeight: Math.round(merged.reduce((s, p) => s + Number(p.weight || 0), 0) * 100) / 100,
+        totalValue: Math.round(merged.reduce((s, p) => s + Number(p.total_price || 0), 0) * 100) / 100,
+      };
+      setEditing(updatedEntry);
+      setCsvFile(null);
+      if (csvInputRef.current) csvInputRef.current.value = "";
+      toast({ title: `Imported ${newParcels.length} AWB${newParcels.length !== 1 ? "s" : ""} ✓`, description: "Click Update Manifest to save." });
+    } catch (e: any) {
+      toast({ title: "Import failed", description: e.message, variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   // ── Selection helpers ──────────────────────────────────────────────────────
   const toggleSelect = (id: string) =>
     setSelectedIds((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -504,10 +959,11 @@ export const ManifestStock = () => {
     if (!bulkStatus || selectedIds.size === 0) return;
     await Promise.all([...selectedIds].map((id) => updateManifestInStockDB(id, { manifestStatus: bulkStatus })));
     await reload();
+    const label = MANIFEST_STATUSES.find((s) => s.value === bulkStatus)?.label || bulkStatus;
+    const count = selectedIds.size;
     setSelectedIds(new Set());
     setShowBulkDialog(false);
-    const label = MANIFEST_STATUSES.find((s) => s.value === bulkStatus)?.label || bulkStatus;
-    toast({ title: `Status updated ✓`, description: `${selectedIds.size} manifest(s) → ${label}` });
+    toast({ title: `Status updated ✓`, description: `${count} manifest(s) → ${label}` });
     setBulkStatus("");
   };
 
@@ -528,7 +984,8 @@ export const ManifestStock = () => {
       (e.fromCountry || "").toLowerCase().includes(q) ||
       (e.toCountry || "").toLowerCase().includes(q) ||
       (e.flightNo || "").toLowerCase().includes(q) ||
-      (e.originHub || "").toLowerCase().includes(q)
+      (e.originHub || "").toLowerCase().includes(q) ||
+      (e.destinationHub || "").toLowerCase().includes(q)
     );
   });
 
@@ -539,15 +996,14 @@ export const ManifestStock = () => {
       })
     : [];
 
-  // ── Totals computed from parcels ──────────────────────────────────────────
-  const computedActual    = editing ? editing.parcels.reduce((s, p) => s + Number(p.weight ?? 0), 0).toFixed(2) : "0.00";
-  const computedPcs       = editing ? editing.parcels.reduce((s, p) => s + (p.pieces ?? 1), 0) : 0;
-  const computedAwb       = editing ? editing.parcels.length : 0;
+  const computedActual = editing ? editing.parcels.reduce((s, p) => s + Number(p.weight ?? 0), 0).toFixed(2) : "0.00";
+  const computedPcs    = editing ? editing.parcels.reduce((s, p) => s + (p.pieces ?? 1), 0) : 0;
+  const computedAwb    = editing ? editing.parcels.length : 0;
 
   return (
     <div className="space-y-5">
 
-      {/* ── Stats ──────────────────────────────────────────────────────────── */}
+      {/* ── Stats ────────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: "Total Manifests", value: entries.length, icon: ClipboardList, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
@@ -569,7 +1025,7 @@ export const ManifestStock = () => {
         ))}
       </div>
 
-      {/* ── List Card ──────────────────────────────────────────────────────── */}
+      {/* ── List Card ────────────────────────────────────────────────────────── */}
       <Card className="border-slate-200 shadow-sm">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between flex-wrap gap-3">
@@ -581,6 +1037,9 @@ export const ManifestStock = () => {
               )}
             </CardTitle>
             <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowSQL(true)} className="gap-1.5 border-slate-300 text-slate-600">
+                <Database className="h-3.5 w-3.5" /> SQL Setup
+              </Button>
               <Button variant="outline" size="sm" onClick={reload} className="gap-2 border-slate-300">
                 <RefreshCw className="h-3.5 w-3.5" /> Refresh
               </Button>
@@ -588,7 +1047,7 @@ export const ManifestStock = () => {
           </div>
           <div className="relative mt-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search manifest ID, tracking, flight, hub…"
+            <Input placeholder="Search manifest ID, tracking, flight, hub, destination…"
               value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10 bg-white" />
           </div>
         </CardHeader>
@@ -608,7 +1067,6 @@ export const ManifestStock = () => {
             </div>
           ) : (
             <>
-              {/* ── Bulk action toolbar ────────────────────────────── */}
               {selectedIds.size > 0 && (
                 <div className="mb-3 flex items-center gap-3 bg-gradient-to-r from-blue-700 to-blue-900 rounded-xl px-4 py-3 flex-wrap shadow-md">
                   <ListChecks className="h-4 w-4 text-blue-200" />
@@ -616,18 +1074,13 @@ export const ManifestStock = () => {
                   <div className="flex items-center gap-2 ml-auto flex-wrap">
                     <span className="text-blue-200 text-xs font-medium">Set status:</span>
                     {MANIFEST_STATUSES.map((s) => (
-                      <button
-                        key={s.value}
+                      <button key={s.value}
                         onClick={() => { setBulkStatus(s.value); setShowBulkDialog(true); }}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer transition-transform hover:scale-105 active:scale-95 ${s.tw}`}
-                      >
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer transition-transform hover:scale-105 active:scale-95 ${s.tw}`}>
                         <span>{s.icon}</span>{s.label}
                       </button>
                     ))}
-                    <button
-                      onClick={() => setSelectedIds(new Set())}
-                      className="text-blue-300 hover:text-white text-xs underline ml-1"
-                    >
+                    <button onClick={() => setSelectedIds(new Set())} className="text-blue-300 hover:text-white text-xs underline ml-1">
                       Deselect all
                     </button>
                   </div>
@@ -645,7 +1098,7 @@ export const ManifestStock = () => {
                           className="border-white/40 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
                         />
                       </TableHead>
-                      {["Manifest ID","Date","Parcels","Route","Weight","Value","Service","Flight","Ship Status","Lock","Actions"].map(h => (
+                      {["Manifest ID","Date","Parcels","Route","Destination Hub","Weight","Service","Flight","Status","Lock","Actions"].map(h => (
                         <TableHead key={h} className="text-white font-bold text-xs py-3">{h}</TableHead>
                       ))}
                     </TableRow>
@@ -694,12 +1147,13 @@ export const ManifestStock = () => {
                           <div className="text-xs text-muted-foreground">→ {entry.toCountry || "—"}</div>
                         </TableCell>
                         <TableCell>
-                          <span className="font-semibold text-slate-800">{entry.totalWeight.toFixed(2)}</span>
-                          <span className="text-xs text-muted-foreground ml-1">kg</span>
+                          <div className="text-xs text-slate-600 max-w-[120px] truncate" title={entry.destinationHub}>
+                            {entry.destinationHub || <span className="text-slate-300">—</span>}
+                          </div>
                         </TableCell>
                         <TableCell>
-                          <span className="text-xs text-muted-foreground">{entry.currency} </span>
-                          <span className="font-semibold text-slate-800">{entry.totalValue.toFixed(2)}</span>
+                          <span className="font-semibold text-slate-800">{entry.totalWeight.toFixed(2)}</span>
+                          <span className="text-xs text-muted-foreground ml-1">kg</span>
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="text-xs border-slate-200 text-slate-600">{entry.serviceType}</Badge>
@@ -711,12 +1165,10 @@ export const ManifestStock = () => {
                             </div>
                           ) : <span className="text-slate-300 text-xs">—</span>}
                         </TableCell>
-                        {/* Manifest status column */}
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <Select
                             value={entry.manifestStatus || ""}
-                            onValueChange={(v) => handleSingleStatus(entry.manifestId, v)}
-                          >
+                            onValueChange={(v) => handleSingleStatus(entry.manifestId, v)}>
                             <SelectTrigger className="h-7 w-[150px] text-[11px] border-slate-200 bg-white px-2 py-0">
                               <SelectValue placeholder="Set status…">
                                 {entry.manifestStatus
@@ -728,8 +1180,7 @@ export const ManifestStock = () => {
                               {MANIFEST_STATUSES.map((s) => (
                                 <SelectItem key={s.value} value={s.value}>
                                   <span className="flex items-center gap-2">
-                                    <span>{s.icon}</span>
-                                    <span>{s.label}</span>
+                                    <span>{s.icon}</span><span>{s.label}</span>
                                   </span>
                                 </SelectItem>
                               ))}
@@ -774,12 +1225,12 @@ export const ManifestStock = () => {
         </CardContent>
       </Card>
 
-      {/* ── MANIFEST DETAIL Sheet ─────────────────────────────────────────── */}
+      {/* ── MANIFEST DETAIL Sheet ─────────────────────────────────────────────── */}
       <Sheet open={!!selected} onOpenChange={(o) => { if (!o) closeDetail(); }}>
         <SheetContent side="right" className="w-full sm:max-w-5xl p-0 overflow-hidden flex flex-col">
           {editing && (
             <>
-              {/* ── Top header bar ─────────────────────────────────────── */}
+              {/* Top header */}
               <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 px-4 py-3 flex items-center justify-between flex-wrap gap-2 flex-shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2">
@@ -790,6 +1241,11 @@ export const ManifestStock = () => {
                     {editing.manifestId}
                   </span>
                   {editing.isLocked && <Badge className="bg-red-600 text-white text-[10px]"><Lock className="h-2.5 w-2.5 mr-1" />Locked</Badge>}
+                  {currentUser && (
+                    <span className="hidden sm:flex items-center gap-1 text-blue-300 text-[11px]">
+                      <User className="h-3 w-3" />{currentUser.email}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button size="sm" variant="outline"
@@ -802,16 +1258,13 @@ export const ManifestStock = () => {
                     onClick={handleLockToggle}>
                     {editing.isLocked ? <><Unlock className="h-3 w-3" /> Unlock</> : <><Lock className="h-3 w-3" /> Lock</>}
                   </Button>
-                  <Button size="sm"
-                    className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
-                    onClick={() => handleExcelDownload(editing)}
-                    disabled={downloading === editing.manifestId + "-xls"}>
+                  <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
+                    onClick={() => handleExcelDownload(editing)} disabled={downloading === editing.manifestId + "-xls"}>
                     <FileSpreadsheet className="h-3 w-3" /> Excel
                   </Button>
                   <Button size="sm"
                     className="h-7 text-xs bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white gap-1.5"
-                    onClick={() => handlePDFDownload(editing)}
-                    disabled={downloading === editing.manifestId + "-pdf"}>
+                    onClick={() => handlePDFDownload(editing)} disabled={downloading === editing.manifestId + "-pdf"}>
                     <FileDown className="h-3 w-3" /> PDF
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-white/60 hover:text-white hover:bg-white/10" onClick={closeDetail}>
@@ -820,15 +1273,15 @@ export const ManifestStock = () => {
                 </div>
               </div>
 
-              {/* ── Sub-header: tabs + action buttons ──────────────────── */}
+              {/* Sub-header: tabs + actions */}
               <div className="bg-slate-100 border-b border-slate-200 flex-shrink-0">
                 <Tabs defaultValue="entry" className="w-full">
                   <div className="flex items-center justify-between px-4 pt-0">
                     <TabsList className="h-9 bg-transparent gap-0 rounded-none border-0 p-0">
                       {[
-                        { value: "entry", label: "Entry", icon: ClipboardList },
-                        { value: "tracking", label: "Add Tracking Event to AWBs", icon: MapPin },
-                        { value: "billing", label: "Billing", icon: DollarSign },
+                        { value: "entry",    label: "Entry",    icon: ClipboardList },
+                        { value: "tracking", label: "Add Tracking Events", icon: MapPin },
+                        { value: "billing",  label: "Billing",  icon: DollarSign },
                       ].map(({ value, label, icon: Icon }) => (
                         <TabsTrigger key={value} value={value}
                           className="h-9 px-4 rounded-none text-xs font-semibold uppercase tracking-wide border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-blue-700 data-[state=active]:bg-white data-[state=active]:shadow-none text-slate-500 hover:text-slate-700 transition-none">
@@ -844,22 +1297,21 @@ export const ManifestStock = () => {
                         {saving ? "Saving…" : "Update Manifest"}
                       </Button>
                       <Button size="sm" variant="outline"
-                        className="h-7 text-[11px] border-slate-300 text-slate-600 gap-1">
-                        <History className="h-3 w-3" /> Manifest History
+                        className="h-7 text-[11px] border-slate-300 text-slate-600 gap-1"
+                        onClick={() => setShowHistory(true)}>
+                        <History className="h-3 w-3" /> History
                       </Button>
                     </div>
                   </div>
 
-                  {/* ── Scrollable content ─────────────────────────────── */}
+                  {/* Scrollable content */}
                   <div className="overflow-y-auto flex-1" style={{ maxHeight: "calc(100vh - 160px)" }}>
 
-                    {/* ══ ENTRY TAB ═══════════════════════════════════════ */}
+                    {/* ══ ENTRY TAB ══════════════════════════════════════════ */}
                     <TabsContent value="entry" className="m-0 p-4 space-y-4">
-
-                      {/* 3-column main form */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-                        {/* LEFT column */}
+                        {/* LEFT column — Manifest Info */}
                         <div className="space-y-3 bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
                           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1.5">Manifest Info</p>
                           <Field label="Booking From Date" type="date" value={editing.bookingFromDate}
@@ -892,10 +1344,21 @@ export const ManifestStock = () => {
                             <Textarea value={editing.remark ?? ""} onChange={(e) => setEditField("remark", e.target.value)}
                               placeholder="Any remarks…" rows={2} className="text-sm border-slate-200 resize-none" disabled={editing.isLocked} />
                           </div>
-                          <Field label="Created By User" value={editing.createdByUser}
-                            onChange={(v) => setEditField("createdByUser", v)} disabled={editing.isLocked} />
+                          {/* Created By — auto-filled from auth user */}
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1">
+                              <User className="h-3 w-3" /> Created By
+                            </Label>
+                            <div className="h-8 px-2 flex items-center gap-2 text-sm bg-blue-50 border border-blue-100 rounded text-blue-700 font-medium">
+                              <User className="h-3.5 w-3.5 text-blue-400 flex-shrink-0" />
+                              <span className="truncate">{currentUser?.email || editing.createdByUser || "—"}</span>
+                            </div>
+                            {currentUser?.name && currentUser.name !== currentUser?.email && (
+                              <p className="text-[10px] text-slate-400 mt-0.5">{currentUser.name}</p>
+                            )}
+                          </div>
 
-                          {/* ── Manifest Status picker ─────────────── */}
+                          {/* Manifest Status picker */}
                           <div className="space-y-1.5">
                             <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1">
                               <Tag className="h-3 w-3" /> Manifest Status
@@ -904,9 +1367,7 @@ export const ManifestStock = () => {
                               {MANIFEST_STATUSES.map((s) => {
                                 const active = (editing.manifestStatus || "") === s.value;
                                 return (
-                                  <button
-                                    key={s.value}
-                                    disabled={editing.isLocked}
+                                  <button key={s.value} disabled={editing.isLocked}
                                     onClick={() => {
                                       setEditField("manifestStatus", s.value);
                                       handleSingleStatus(editing.manifestId, s.value);
@@ -916,8 +1377,7 @@ export const ManifestStock = () => {
                                         ? `${s.tw} border-transparent shadow-md scale-[1.02]`
                                         : "bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50"
                                       }
-                                      ${editing.isLocked ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                                  >
+                                      ${editing.isLocked ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
                                     <span className="text-base leading-none">{s.icon}</span>
                                     <span>{s.label}</span>
                                     {active && <CheckCircle2 className="h-3.5 w-3.5 ml-auto opacity-80" />}
@@ -928,7 +1388,7 @@ export const ManifestStock = () => {
                           </div>
                         </div>
 
-                        {/* MIDDLE column */}
+                        {/* MIDDLE column — Flight & Shipment */}
                         <div className="space-y-3 bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
                           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1.5">Flight & Shipment</p>
                           <div className="grid grid-cols-2 gap-3">
@@ -938,9 +1398,7 @@ export const ManifestStock = () => {
                               onChange={(v) => setEditField("manifestTime", v)} disabled={editing.isLocked} />
                           </div>
                           <div className="space-y-1">
-                            <div className="flex items-center justify-between">
-                              <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Run Number</Label>
-                            </div>
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Run Number</Label>
                             <Input value={editing.runNumber ?? ""} onChange={(e) => setEditField("runNumber", e.target.value)}
                               placeholder="Run number" className="h-8 text-sm border-slate-200" disabled={editing.isLocked} />
                           </div>
@@ -956,17 +1414,21 @@ export const ManifestStock = () => {
                           </div>
                           <Field label="Company" value={editing.company}
                             onChange={(v) => setEditField("company", v)} disabled={editing.isLocked} />
+
+                          {/* License — editable combobox */}
                           <div className="space-y-1">
-                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">License</Label>
-                            <Select value={editing.license ?? ""} onValueChange={(v) => setEditField("license", v)} disabled={editing.isLocked}>
-                              <SelectTrigger className="h-8 text-sm border-slate-200">
-                                <SelectValue placeholder="Select License…" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {LICENSES.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1">
+                              <Edit2 className="h-3 w-3" /> License <span className="text-slate-400 font-normal normal-case">(type or select)</span>
+                            </Label>
+                            <EditableCombobox
+                              value={editing.license ?? ""}
+                              onChange={(v) => setEditField("license", v)}
+                              options={LICENSE_OPTIONS}
+                              placeholder="Type or select license…"
+                              disabled={editing.isLocked}
+                            />
                           </div>
+
                           <Separator className="my-1" />
                           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Weight Summary</p>
                           <Field label="Vendor Weight (kg)" type="number" value={editing.vendorWeight ?? ""}
@@ -976,8 +1438,7 @@ export const ManifestStock = () => {
                             onChange={(v) => setEditField("totalVolumetricWt", Number(v))} disabled={editing.isLocked} />
                           <Field label="Total Chargeable Wt (kg)" value={
                             editing.totalVolumetricWt && Number(editing.totalVolumetricWt) > Number(computedActual)
-                              ? editing.totalVolumetricWt
-                              : computedActual
+                              ? editing.totalVolumetricWt : computedActual
                           } readOnly />
                           <div className="grid grid-cols-2 gap-3">
                             <Field label="No. of AWB" value={computedAwb} readOnly />
@@ -985,60 +1446,66 @@ export const ManifestStock = () => {
                           </div>
                         </div>
 
-                        {/* RIGHT column */}
+                        {/* RIGHT column — Hubs & Files */}
                         <div className="space-y-3 bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
                           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1.5">Hubs & Files</p>
+
+                          {/* Origin Hub — searchable */}
                           <div className="space-y-1">
-                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Origin Hub <span className="text-red-500">*</span></Label>
-                            <Select value={editing.originHub ?? ""} onValueChange={(v) => setEditField("originHub", v)} disabled={editing.isLocked}>
-                              <SelectTrigger className="h-8 text-sm border-slate-200">
-                                <SelectValue placeholder="Select origin hub…" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {ORIGIN_HUBS.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
+                              Origin Hub <span className="text-red-500">*</span>
+                            </Label>
+                            <SearchableSelect
+                              value={editing.originHub ?? ""}
+                              onChange={(v) => setEditField("originHub", v)}
+                              options={ORIGIN_HUBS}
+                              placeholder="Search origin hub…"
+                              disabled={editing.isLocked}
+                            />
                           </div>
+
+                          {/* Destination Hub — searchable, worldwide */}
                           <div className="space-y-1">
-                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Destination Hub</Label>
-                            <Select value={editing.destinationHub ?? ""} onValueChange={(v) => setEditField("destinationHub", v)} disabled={editing.isLocked}>
-                              <SelectTrigger className="h-8 text-sm border-slate-200">
-                                <SelectValue placeholder="Select destination hub…" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {DEST_HUBS.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
+                              Destination Hub <span className="text-slate-400 font-normal normal-case">(worldwide)</span>
+                            </Label>
+                            <SearchableSelect
+                              value={editing.destinationHub ?? ""}
+                              onChange={(v) => setEditField("destinationHub", v)}
+                              options={DEST_HUBS}
+                              placeholder="Search destination worldwide…"
+                              disabled={editing.isLocked}
+                            />
                           </div>
+
+                          {/* EDI Excel File upload */}
                           <div className="space-y-1">
                             <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">EDI Excel File</Label>
                             <p className="text-[10px] text-orange-600 font-semibold">(UPLOAD EXCEL FILE ONLY)</p>
-                            <div className="flex items-center gap-2">
-                              <label className="flex-1">
-                                <div className="h-8 px-3 flex items-center justify-between border border-slate-200 rounded text-sm cursor-pointer hover:border-blue-400 bg-white text-slate-500">
-                                  <span className="truncate">{csvFile?.name || "Choose file…"}</span>
-                                  <Download className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
-                                </div>
-                                <input type="file" accept=".xlsx,.xls" className="hidden"
-                                  onChange={(e) => setCsvFile(e.target.files?.[0] || null)} />
-                              </label>
-                            </div>
+                            <label className="block">
+                              <div className="h-8 px-3 flex items-center justify-between border border-slate-200 rounded text-sm cursor-pointer hover:border-blue-400 bg-white text-slate-500">
+                                <span className="truncate text-xs">{csvFile?.name || "Choose Excel file…"}</span>
+                                <UploadCloud className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                              </div>
+                              <input type="file" accept=".xlsx,.xls" className="hidden"
+                                onChange={(e) => setCsvFile(e.target.files?.[0] || null)} />
+                            </label>
                           </div>
 
                           <Separator />
 
-                          {/* Route summary card */}
+                          {/* Route summary */}
                           <div className="bg-gradient-to-br from-blue-50 to-slate-50 rounded-xl border border-blue-100 p-3 space-y-2">
                             <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Route Summary</p>
                             <div className="flex items-center gap-2">
                               <div className="flex-1 min-w-0">
                                 <p className="text-[10px] text-slate-500">FROM</p>
-                                <p className="text-sm font-bold text-slate-800 truncate">{editing.fromCountry || "—"}</p>
+                                <p className="text-sm font-bold text-slate-800 truncate">{editing.originHub || editing.fromCountry || "—"}</p>
                               </div>
                               <Plane className="h-4 w-4 text-orange-500 flex-shrink-0" />
                               <div className="flex-1 min-w-0 text-right">
                                 <p className="text-[10px] text-slate-500">TO</p>
-                                <p className="text-sm font-bold text-slate-800 truncate">{editing.toCountry || "—"}</p>
+                                <p className="text-sm font-bold text-slate-800 truncate">{editing.destinationHub || editing.toCountry || "—"}</p>
                               </div>
                             </div>
                             <div className="grid grid-cols-3 gap-1.5 pt-1">
@@ -1071,7 +1538,7 @@ export const ManifestStock = () => {
                           </div>
                         </div>
                         <div className="overflow-x-auto max-h-56">
-                          <table className="w-full text-xs min-w-[600px]">
+                          <table className="w-full text-xs min-w-[640px]">
                             <thead className="sticky top-0 z-10">
                               <tr className="bg-slate-50 border-b border-slate-100">
                                 {["#","Tracking ID","Shipper","Receiver","Route","Pkgs","Weight","Status"].map(h => (
@@ -1098,6 +1565,13 @@ export const ManifestStock = () => {
                                   </td>
                                 </tr>
                               ))}
+                              {filteredAwbs.length === 0 && (
+                                <tr>
+                                  <td colSpan={8} className="px-3 py-8 text-center text-slate-400 text-xs">
+                                    {awbSearch ? "No AWBs match search" : "No AWBs in this manifest"}
+                                  </td>
+                                </tr>
+                              )}
                             </tbody>
                           </table>
                         </div>
@@ -1110,29 +1584,56 @@ export const ManifestStock = () => {
                           <input placeholder="Search AWB…" value={awbSearch} onChange={(e) => setAwbSearch(e.target.value)}
                             className="pl-8 h-8 text-xs bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 w-36" />
                         </div>
-                        <Button size="sm" className="h-8 text-xs bg-blue-700 hover:bg-blue-800 text-white gap-1.5" onClick={handleSave} disabled={saving || editing.isLocked}>
+
+                        <Button size="sm" className="h-8 text-xs bg-blue-700 hover:bg-blue-800 text-white gap-1.5"
+                          onClick={handleSave} disabled={saving || editing.isLocked}>
                           <CheckCircle2 className="h-3.5 w-3.5" /> Update Manifest
                         </Button>
-                        <Button size="sm" variant="outline" className="h-8 text-xs border-slate-600 text-slate-300 hover:text-white hover:bg-slate-700 gap-1.5">
-                          <Package className="h-3.5 w-3.5" /> Bagging
+
+                        {/* Bagging button */}
+                        <Button size="sm" variant="outline"
+                          className="h-8 text-xs border-orange-500 text-orange-400 hover:text-orange-200 hover:bg-orange-500/20 gap-1.5"
+                          onClick={() => setShowBagging(true)}>
+                          <Box className="h-3.5 w-3.5" /> Bagging
+                          {editing.baggingInfo?.bags?.length > 0 && (
+                            <span className="bg-orange-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                              {editing.baggingInfo.bags.length}
+                            </span>
+                          )}
                         </Button>
-                        <div className="flex items-center gap-2 ml-auto">
-                          <span className="text-slate-400 text-xs font-medium">CSV File <span className="text-red-400">*</span></span>
-                          <label>
-                            <div className="h-8 px-3 flex items-center gap-2 bg-slate-800 border border-slate-600 rounded text-slate-300 text-xs cursor-pointer hover:border-slate-400">
-                              <span>{csvFile?.name || "No file chosen"}</span>
+
+                        {/* CSV Import section */}
+                        <div className="flex items-center gap-2 ml-auto flex-wrap">
+                          <span className="text-slate-400 text-xs font-medium">CSV Import <span className="text-red-400">*</span></span>
+                          <label className="cursor-pointer">
+                            <div className="h-8 px-3 flex items-center gap-2 bg-slate-800 border border-slate-600 rounded text-slate-300 text-xs hover:border-slate-400 transition-colors max-w-[150px]">
+                              <span className="truncate">{csvFile?.name || "No file chosen"}</span>
                             </div>
-                            <input type="file" accept=".csv" className="hidden" onChange={(e) => setCsvFile(e.target.files?.[0] || null)} />
+                            <input
+                              ref={csvInputRef}
+                              type="file"
+                              accept=".csv"
+                              className="hidden"
+                              onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                            />
                           </label>
-                          <Button size="sm" className="h-8 text-xs bg-slate-700 hover:bg-slate-600 text-white">Import</Button>
-                          <Button size="sm" variant="outline" className="h-8 text-xs border-slate-600 text-slate-300 hover:text-white hover:bg-slate-700 gap-1">
+                          <Button size="sm"
+                            className={`h-8 text-xs gap-1.5 ${csvFile ? "bg-blue-600 hover:bg-blue-500" : "bg-slate-700 hover:bg-slate-600"} text-white`}
+                            disabled={!csvFile || importing || editing.isLocked}
+                            onClick={handleCSVImport}>
+                            {importing ? <RefreshCw className="h-3 w-3 animate-spin" /> : <UploadCloud className="h-3 w-3" />}
+                            {importing ? "Importing…" : "Import"}
+                          </Button>
+                          <Button size="sm" variant="outline"
+                            className="h-8 text-xs border-slate-600 text-slate-300 hover:text-white hover:bg-slate-700 gap-1"
+                            onClick={downloadSampleCSV}>
                             <Download className="h-3.5 w-3.5" /> Sample
                           </Button>
                         </div>
                       </div>
                     </TabsContent>
 
-                    {/* ══ TRACKING EVENTS TAB ═════════════════════════════ */}
+                    {/* ══ TRACKING EVENTS TAB ═══════════════════════════════ */}
                     <TabsContent value="tracking" className="m-0 p-4 space-y-4">
                       <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
                         <div className="bg-slate-800 px-4 py-2.5 flex items-center justify-between">
@@ -1204,7 +1705,7 @@ export const ManifestStock = () => {
                       </div>
                     </TabsContent>
 
-                    {/* ══ BILLING TAB ═════════════════════════════════════ */}
+                    {/* ══ BILLING TAB ════════════════════════════════════════ */}
                     <TabsContent value="billing" className="m-0 p-4 space-y-4">
                       <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-4">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1.5 flex items-center gap-2">
@@ -1212,12 +1713,12 @@ export const ManifestStock = () => {
                         </p>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                           {[
-                            { label: "Total AWBs",        value: String(computedAwb) },
-                            { label: "Total Pieces",       value: String(computedPcs) },
-                            { label: "Total Actual Wt",   value: `${computedActual} kg` },
-                            { label: "Total Volumetric",  value: `${editing.totalVolumetricWt ?? 0} kg` },
-                            { label: "Total Chargeable",  value: `${editing.totalVolumetricWt && Number(editing.totalVolumetricWt) > Number(computedActual) ? editing.totalVolumetricWt : computedActual} kg` },
-                            { label: "Total Value",       value: `${editing.currency} ${editing.totalValue.toFixed(2)}` },
+                            { label: "Total AWBs",       value: String(computedAwb) },
+                            { label: "Total Pieces",      value: String(computedPcs) },
+                            { label: "Total Actual Wt",  value: `${computedActual} kg` },
+                            { label: "Total Volumetric", value: `${editing.totalVolumetricWt ?? 0} kg` },
+                            { label: "Total Chargeable", value: `${editing.totalVolumetricWt && Number(editing.totalVolumetricWt) > Number(computedActual) ? editing.totalVolumetricWt : computedActual} kg` },
+                            { label: "Total Value",      value: `${editing.currency} ${editing.totalValue.toFixed(2)}` },
                           ].map(({ label, value }) => (
                             <div key={label} className="bg-slate-50 rounded-xl border border-slate-100 p-3">
                               <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">{label}</p>
@@ -1270,7 +1771,30 @@ export const ManifestStock = () => {
         </SheetContent>
       </Sheet>
 
-      {/* ── Bulk Status Confirm Dialog ───────────────────────────────────── */}
+      {/* ── Bagging Dialog ────────────────────────────────────────────────────── */}
+      {editing && (
+        <BaggingDialog
+          open={showBagging}
+          onClose={() => setShowBagging(false)}
+          initialData={editing.baggingInfo}
+          disabled={editing.isLocked}
+          onSave={(data) => {
+            setEditField("baggingInfo", data);
+            toast({ title: "Bagging info saved ✓", description: `${data.bags.length} bag type(s) recorded. Click Update Manifest.` });
+          }}
+        />
+      )}
+
+      {/* ── Manifest History Dialog ───────────────────────────────────────────── */}
+      {editing && (
+        <ManifestHistoryDialog
+          open={showHistory}
+          onClose={() => setShowHistory(false)}
+          manifestId={editing.manifestId}
+        />
+      )}
+
+      {/* ── Bulk Status Confirm Dialog ────────────────────────────────────────── */}
       <Dialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -1299,22 +1823,22 @@ export const ManifestStock = () => {
         </DialogContent>
       </Dialog>
 
-      {/* ── SQL Setup Dialog ─────────────────────────────────────────────── */}
+      {/* ── SQL Setup Dialog ──────────────────────────────────────────────────── */}
       <Dialog open={showSQL} onOpenChange={setShowSQL}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2.5">
               <Database className="h-5 w-5 text-blue-600" />
-              SQL Database Setup
+              SQL Database Setup — Updated Schema
               <Badge className="bg-blue-100 text-blue-700 text-xs ml-1">Supabase SQL Editor</Badge>
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-slate-600 -mt-1">
-            Run this SQL in your <strong>Supabase → SQL Editor</strong> to enable manifest saving, history, and sequence IDs.
+            Run this SQL in your <strong>Supabase → SQL Editor</strong>. Includes <code className="text-xs bg-slate-100 px-1 rounded">manifest_history</code>, <code className="text-xs bg-slate-100 px-1 rounded">created_by_email</code>, and <code className="text-xs bg-slate-100 px-1 rounded">bagging_info</code> columns.
           </p>
           <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-900">
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-700">
-              <span className="text-xs text-slate-400 font-mono">manifest_setup.sql</span>
+              <span className="text-xs text-slate-400 font-mono">manifest_setup_v2.sql</span>
               <Button size="sm" variant="outline"
                 className={`h-7 text-xs gap-1.5 border-slate-600 ${sqlCopied ? "text-green-400 border-green-600" : "text-slate-300 hover:text-white"}`}
                 onClick={handleCopySQL}>
