@@ -37,161 +37,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   loadManifestStockDB, saveManifestToStockDB, updateManifestInStockDB,
   deleteManifestFromStockDB, saveManifestHistory, loadManifestHistory,
+  fetchLicenses, createLicense,
   type ManifestStockEntry, type ManifestHistoryEntry,
 } from "@/utils/manifestStorage";
 import { exportManifestToExcel } from "@/utils/manifestExport";
 import { generateBulkManifestPDF } from "@/utils/bulkManifestPDF";
 import { supabase } from "@/integrations/supabase/client";
-
-// ── Updated SQL Schema ─────────────────────────────────────────────────────────
-const SQL_SCHEMA = `-- ============================================================
--- SkyXpress Manifest Tables — run in Supabase SQL Editor
--- ============================================================
-
--- 1. Manifest sequence counter
-CREATE TABLE IF NOT EXISTS manifest_sequence (
-  id         integer PRIMARY KEY DEFAULT 1,
-  last_number integer NOT NULL DEFAULT 191099
-);
-INSERT INTO manifest_sequence (id, last_number)
-VALUES (1, 191099)
-ON CONFLICT (id) DO NOTHING;
-
--- 2. Auto-increment RPC
-CREATE OR REPLACE FUNCTION increment_manifest_sequence()
-RETURNS integer LANGUAGE plpgsql SECURITY DEFINER AS $$
-DECLARE next_val integer;
-BEGIN
-  UPDATE manifest_sequence
-  SET last_number = last_number + 1
-  WHERE id = 1
-  RETURNING last_number INTO next_val;
-  RETURN next_val;
-END; $$;
-
--- 3. Individual parcel manifests (AWB)
-CREATE TABLE IF NOT EXISTS manifests (
-  id                  uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  parcel_id           uuid REFERENCES parcels(id) ON DELETE CASCADE,
-  manifest_date       date,
-  reference_no        text,
-  tracking_no         text,
-  shipper_name        text,
-  shipper_cnic        text,
-  shipper_address     text,
-  shipper_phone       text,
-  shipper_email       text,
-  shipper_country     text,
-  consignee_name      text,
-  consignee_address   text,
-  consignee_phone     text,
-  consignee_country   text,
-  service_type        text,
-  declared_value      numeric,
-  currency            text DEFAULT 'USD',
-  special_instructions text,
-  items               jsonb DEFAULT '[]',
-  created_by          uuid,
-  created_at          timestamptz DEFAULT now(),
-  updated_at          timestamptz DEFAULT now(),
-  UNIQUE(parcel_id)
-);
-
--- 4. Bulk manifest stock (flight/shipment batches)
-CREATE TABLE IF NOT EXISTS manifests_detail (
-  id                  uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  manifest_id         text NOT NULL UNIQUE,
-  booking_from_date   date,
-  booking_till_date   date,
-  manifest_date       date DEFAULT CURRENT_DATE,
-  manifest_time       time,
-  run_number          text,
-  flight_no           text,
-  no_of_bags          integer DEFAULT 0,
-  arrival_date        date,
-  arrival_time        time,
-  forwarder           text,
-  service             text,
-  master_no           text,
-  master_edi_bag_no   text,
-  remark              text,
-  created_by_user     text,
-  created_by_email    text,
-  company             text,
-  license             text,
-  vendor_weight       numeric DEFAULT 0,
-  total_actual_wt     numeric DEFAULT 0,
-  total_volumetric_wt numeric DEFAULT 0,
-  total_chargeable_wt numeric DEFAULT 0,
-  no_of_awb           integer DEFAULT 0,
-  no_of_pcs           integer DEFAULT 0,
-  origin_hub          text,
-  destination_hub     text,
-  is_locked           boolean DEFAULT false,
-  manifest_status     text DEFAULT 'pending',
-  parcel_count        integer DEFAULT 0,
-  total_weight        numeric DEFAULT 0,
-  total_value         numeric DEFAULT 0,
-  currency            text DEFAULT 'USD',
-  service_type        text,
-  from_country        text,
-  to_country          text,
-  tracking_ids        text[],
-  parcels             jsonb,
-  tracking_events     jsonb DEFAULT '[]',
-  bagging_info        jsonb DEFAULT '{}',
-  created_at          timestamptz DEFAULT now(),
-  updated_at          timestamptz DEFAULT now()
-);
-
--- Add new columns if table already existed
-ALTER TABLE manifests_detail ADD COLUMN IF NOT EXISTS manifest_status   text DEFAULT 'pending';
-ALTER TABLE manifests_detail ADD COLUMN IF NOT EXISTS created_by_email  text;
-ALTER TABLE manifests_detail ADD COLUMN IF NOT EXISTS bagging_info      jsonb DEFAULT '{}';
-
--- 5. Manifest history — audit trail of every save
-CREATE TABLE IF NOT EXISTS manifest_history (
-  id           uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  manifest_id  text NOT NULL,
-  changed_at   timestamptz DEFAULT now(),
-  changed_by   text,
-  snapshot     jsonb DEFAULT '{}',
-  change_note  text
-);
-
-CREATE INDEX IF NOT EXISTS manifest_history_manifest_id_idx ON manifest_history (manifest_id);
-
--- 6. Enable Row Level Security
-ALTER TABLE manifests         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE manifests_detail  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE manifest_sequence ENABLE ROW LEVEL SECURITY;
-ALTER TABLE manifest_history  ENABLE ROW LEVEL SECURITY;
-
--- Policies
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'manifests' AND policyname = 'Allow all for authenticated') THEN
-    CREATE POLICY "Allow all for authenticated" ON manifests FOR ALL USING (auth.role() = 'authenticated');
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'manifests_detail' AND policyname = 'Allow all for authenticated') THEN
-    CREATE POLICY "Allow all for authenticated" ON manifests_detail FOR ALL USING (auth.role() = 'authenticated');
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'manifest_sequence' AND policyname = 'Allow all') THEN
-    CREATE POLICY "Allow all" ON manifest_sequence FOR ALL USING (true);
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'manifest_history' AND policyname = 'Allow all for authenticated') THEN
-    CREATE POLICY "Allow all for authenticated" ON manifest_history FOR ALL USING (auth.role() = 'authenticated');
-  END IF;
-END $$;
-`;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ORIGIN_HUBS = [
@@ -282,10 +133,6 @@ const SERVICES = [
   "Express", "Standard", "Economy", "Same Day", "Next Day", "Overnight", "Priority",
   "Freight", "Cargo", "DHL PK", "UPS PK", "SKYNET", "DPD UK",
   "DHL via UK", "UPS via Belfast", "UPS Saver",
-];
-const LICENSE_OPTIONS = [
-  "EXP-001", "EXP-002", "IMP-001", "CARGO-001", "FREIGHT-001",
-  "IATA-2024", "CACL-PKR", "AFCA-0012", "MCS-LHE-01", "MCS-KHI-02",
 ];
 const BAG_TYPES  = ["Standard Bag", "Heavy Duty Bag", "Cardboard Box", "Wooden Crate", "Pallet", "Sack", "Drum", "Tube/Roll"];
 const BAG_SIZES  = ["Extra Small (XS)", "Small (S)", "Medium (M)", "Large (L)", "Extra Large (XL)", "XXL", "Custom"];
@@ -789,6 +636,10 @@ export const ManifestStock = () => {
   const [showBagging, setShowBagging]         = useState(false);
   const [showHistory, setShowHistory]         = useState(false);
   const [currentUser, setCurrentUser]         = useState<{ email: string; name: string } | null>(null);
+  const [licenses, setLicenses]               = useState<string[]>([]);
+  const [addingLicense, setAddingLicense]     = useState(false);
+  const [newLicenseCode, setNewLicenseCode]   = useState("");
+  const [savingLicense, setSavingLicense]     = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -810,6 +661,7 @@ export const ManifestStock = () => {
 
   useEffect(() => {
     reload();
+    fetchLicenses().then(setLicenses);
     supabase.from("countries").select("code, name").then(({ data }) => {
       if (data) {
         const map: Record<string, string> = {};
@@ -1404,20 +1256,90 @@ export const ManifestStock = () => {
                           <Field label="Company" value={editing.company}
                             onChange={(v) => setEditField("company", v)} disabled={editing.isLocked} />
 
-                          {/* License — simple select */}
+                          {/* License — select from DB + inline create */}
                           <div className="space-y-1">
                             <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">License</Label>
-                            <select
-                              value={editing.license ?? ""}
-                              disabled={editing.isLocked}
-                              onChange={(e) => setEditField("license", e.target.value)}
-                              className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              <option value="">— Select license —</option>
-                              {LICENSE_OPTIONS.map((opt) => (
-                                <option key={opt} value={opt}>{opt}</option>
-                              ))}
-                            </select>
+                            {!addingLicense ? (
+                              <div className="flex gap-1.5">
+                                <select
+                                  value={editing.license ?? ""}
+                                  disabled={editing.isLocked}
+                                  onChange={(e) => setEditField("license", e.target.value)}
+                                  className="h-8 flex-1 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <option value="">— Select license —</option>
+                                  {licenses.map((opt) => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                  ))}
+                                </select>
+                                {!editing.isLocked && (
+                                  <Button
+                                    type="button" size="sm" variant="outline"
+                                    className="h-8 px-2 border-blue-200 text-blue-600 hover:bg-blue-50"
+                                    onClick={() => { setAddingLicense(true); setNewLicenseCode(""); }}
+                                    title="Add new license"
+                                  >
+                                    <Plus className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex gap-1.5">
+                                <Input
+                                  autoFocus
+                                  value={newLicenseCode}
+                                  onChange={(e) => setNewLicenseCode(e.target.value.toUpperCase())}
+                                  placeholder="e.g. MCS-ISB-03"
+                                  className="h-8 flex-1 text-sm border-blue-300 focus-visible:ring-blue-500"
+                                  onKeyDown={async (e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      if (!newLicenseCode.trim()) return;
+                                      setSavingLicense(true);
+                                      try {
+                                        const saved = await createLicense(newLicenseCode);
+                                        const updated = await fetchLicenses();
+                                        setLicenses(updated);
+                                        setEditField("license", saved);
+                                        setAddingLicense(false);
+                                        toast({ title: "License saved", description: saved });
+                                      } catch (err: any) {
+                                        toast({ title: "Error", description: err.message, variant: "destructive" });
+                                      } finally { setSavingLicense(false); }
+                                    }
+                                    if (e.key === "Escape") { setAddingLicense(false); setNewLicenseCode(""); }
+                                  }}
+                                />
+                                <Button
+                                  type="button" size="sm"
+                                  disabled={savingLicense || !newLicenseCode.trim()}
+                                  className="h-8 px-2 bg-blue-600 hover:bg-blue-700 text-white"
+                                  onClick={async () => {
+                                    if (!newLicenseCode.trim()) return;
+                                    setSavingLicense(true);
+                                    try {
+                                      const saved = await createLicense(newLicenseCode);
+                                      const updated = await fetchLicenses();
+                                      setLicenses(updated);
+                                      setEditField("license", saved);
+                                      setAddingLicense(false);
+                                      toast({ title: "License saved", description: saved });
+                                    } catch (err: any) {
+                                      toast({ title: "Error", description: err.message, variant: "destructive" });
+                                    } finally { setSavingLicense(false); }
+                                  }}
+                                >
+                                  {savingLicense ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                                </Button>
+                                <Button
+                                  type="button" size="sm" variant="outline"
+                                  className="h-8 px-2 border-slate-200 text-slate-500"
+                                  onClick={() => { setAddingLicense(false); setNewLicenseCode(""); }}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            )}
                           </div>
 
                           <Separator className="my-1" />

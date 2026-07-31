@@ -429,6 +429,42 @@ export function deleteManifestFromStock(manifestId: string): void {
   saveLocalCache(loadManifestStock().filter((e) => e.manifestId !== manifestId));
 }
 
+// ── License Options ───────────────────────────────────────────────────────────
+
+const DEFAULT_LICENSES = [
+  "EXP-001", "EXP-002", "IMP-001", "CARGO-001", "FREIGHT-001",
+  "IATA-2024", "CACL-PKR", "AFCA-0012", "MCS-LHE-01", "MCS-KHI-02",
+];
+
+/**
+ * Fetch all license codes from Supabase, fallback to defaults if table missing.
+ */
+export async function fetchLicenses(): Promise<string[]> {
+  try {
+    const { data, error } = await supabase
+      .from("licenses")
+      .select("code")
+      .order("code", { ascending: true });
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data.map((r: any) => r.code);
+    }
+  } catch (_) {}
+  return DEFAULT_LICENSES;
+}
+
+/**
+ * Create a new license entry in Supabase. Returns the saved code, or throws.
+ */
+export async function createLicense(code: string, label?: string): Promise<string> {
+  const trimmed = code.trim().toUpperCase();
+  if (!trimmed) throw new Error("License code cannot be empty");
+  const { error } = await supabase
+    .from("licenses")
+    .insert({ code: trimmed, label: label?.trim() || trimmed });
+  if (error) throw new Error(error.message);
+  return trimmed;
+}
+
 // ── Build a new ManifestStockEntry from parcels ──────────────────────────────
 export function buildManifestEntry(
   parcels: ManifestStockParcel[],
