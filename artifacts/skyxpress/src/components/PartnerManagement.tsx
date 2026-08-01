@@ -314,11 +314,13 @@ export const PartnerManagement = () => {
           <span className="font-bold text-amber-300 not-italic">Run these once in Supabase → SQL Editor:</span>
           <br />
           <span className="block mt-1">
-            {"-- 1. Nullify any rows with an unrecognised role (keeps data safe)"}
+            {"-- 1. Normalise unrecognised roles (skips the protected owner row)"}
             <br />
             {"UPDATE profiles SET role = 'user'"}
             <br />
-            {"  WHERE role NOT IN ('user','staff','admin','developer','partner');"}
+            {"  WHERE role NOT IN ('user','staff','admin','developer','partner')"}
+            <br />
+            {"  AND (is_owner IS NOT TRUE);"}
             <br /><br />
             {"-- 2. Replace the role check constraint"}
             <br />
