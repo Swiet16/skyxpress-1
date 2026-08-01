@@ -310,10 +310,22 @@ export const PartnerManagement = () => {
       {/* SQL note */}
       <div className="rounded-lg border border-amber-500/25 bg-amber-500/8 px-4 py-3 flex gap-3">
         <Info className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-        <div className="text-xs text-amber-300/80 leading-relaxed font-mono">
-          <span className="font-bold text-amber-300">One-time Supabase SQL setup required:</span>
+        <div className="text-xs text-amber-300/80 leading-relaxed font-mono space-y-1">
+          <span className="font-bold text-amber-300 not-italic">Run these once in Supabase → SQL Editor:</span>
           <br />
-          ALTER TABLE profiles ADD COLUMN IF NOT EXISTS can_manage_users boolean DEFAULT false;
+          <span className="block mt-1">
+            {"-- 1. Allow 'partner' as a valid role"}
+            <br />
+            {"ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_role_check;"}
+            <br />
+            {"ALTER TABLE profiles ADD CONSTRAINT profiles_role_check"}
+            <br />
+            {"  CHECK (role IN ('user','staff','admin','developer','partner'));"}
+            <br /><br />
+            {"-- 2. Add can_manage_users column"}
+            <br />
+            {"ALTER TABLE profiles ADD COLUMN IF NOT EXISTS can_manage_users boolean DEFAULT false;"}
+          </span>
         </div>
       </div>
 
