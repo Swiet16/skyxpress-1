@@ -314,7 +314,13 @@ export const PartnerManagement = () => {
           <span className="font-bold text-amber-300 not-italic">Run these once in Supabase → SQL Editor:</span>
           <br />
           <span className="block mt-1">
-            {"-- 1. Allow 'partner' as a valid role"}
+            {"-- 1. Nullify any rows with an unrecognised role (keeps data safe)"}
+            <br />
+            {"UPDATE profiles SET role = 'user'"}
+            <br />
+            {"  WHERE role NOT IN ('user','staff','admin','developer','partner');"}
+            <br /><br />
+            {"-- 2. Replace the role check constraint"}
             <br />
             {"ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_role_check;"}
             <br />
@@ -322,7 +328,7 @@ export const PartnerManagement = () => {
             <br />
             {"  CHECK (role IN ('user','staff','admin','developer','partner'));"}
             <br /><br />
-            {"-- 2. Add can_manage_users column"}
+            {"-- 3. Add can_manage_users column"}
             <br />
             {"ALTER TABLE profiles ADD COLUMN IF NOT EXISTS can_manage_users boolean DEFAULT false;"}
           </span>
