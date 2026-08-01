@@ -109,7 +109,7 @@ const statusColors: Record<string, string> = {
   cancelled: "bg-red-100 text-red-800",
 };
 
-export const ParcelManagement = () => {
+export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {}) => {
   const PAGE_SIZE = 10;
   const [parcels, setParcels] = useState<Parcel[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -152,14 +152,16 @@ export const ParcelManagement = () => {
   useEffect(() => {
     fetchParcels();
     fetchCountries();
-  }, []);
+  }, [filterUserId]);
 
   const fetchParcels = async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("parcels")
         .select("*")
         .order("created_at", { ascending: false });
+      if (filterUserId) query = query.eq("created_by", filterUserId);
+      const { data, error } = await query;
       if (error) throw error;
       setParcels(data || []);
     } catch (error: any) {

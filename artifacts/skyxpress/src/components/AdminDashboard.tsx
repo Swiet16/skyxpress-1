@@ -15,6 +15,7 @@ import {
   ClipboardCheck,
   Terminal,
   ClipboardList,
+  Building2,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { UserManagement } from "./UserManagement";
@@ -23,6 +24,7 @@ import { PricingManager } from "./PricingManager";
 import { AdminRequestsSection } from "./AdminRequestsSection";
 import { ApprovedParcelsSection } from "./ApprovedParcelsSection";
 import { ManifestStock } from "./ManifestStock";
+import { PartnerManagement } from "./PartnerManagement";
 import { useLiveData } from "@/hooks/useLiveData";
 import {
   FlightPathChart,
@@ -53,7 +55,7 @@ const ROLE_THEME: Record<
 > = {
   admin: {
     label: "Admin",
-    tagline: "Full manifest access — rates, users & finance",
+    tagline: "Full manifest access — rates, users, partners & finance",
     accent: "#C98A2B",
     badgeClass: "bg-amber-500/15 text-amber-300 border-amber-500/30",
   },
@@ -204,6 +206,12 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
           <TabsTrigger value="requests">Requests</TabsTrigger>
           <TabsTrigger value="approved">Status / Approved</TabsTrigger>
           {isAdmin && <TabsTrigger value="users">Users</TabsTrigger>}
+          {isAdmin && (
+            <TabsTrigger value="partners" className="gap-1.5">
+              <Building2 className="h-3.5 w-3.5" />
+              Partners
+            </TabsTrigger>
+          )}
           <TabsTrigger value="parcels">All Parcels</TabsTrigger>
           <TabsTrigger value="manifests" className="gap-1.5">
             <ClipboardList className="h-3.5 w-3.5" />
@@ -397,6 +405,12 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
         {isAdmin && (
           <TabsContent value="users">
             <UserManagement />
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="partners">
+            <PartnerManagement />
           </TabsContent>
         )}
 

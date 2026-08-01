@@ -619,7 +619,7 @@ function ManifestHistoryDialog({ open, onClose, manifestId }: {
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
-export const ManifestStock = () => {
+export const ManifestStock = ({ filterEmail }: { filterEmail?: string } = {}) => {
   const [entries, setEntries]         = useState<ManifestStockEntry[]>([]);
   const [search, setSearch]           = useState("");
   const [selected, setSelected]       = useState<ManifestStockEntry | null>(null);
@@ -820,8 +820,13 @@ export const ManifestStock = () => {
   };
 
   const filtered = entries.filter((e) => {
+    // Partner scope: only show manifests created by this user's email
+    if (filterEmail && (e.createdByUser || "").toLowerCase() !== filterEmail.toLowerCase()) {
+      return false;
+    }
     const q = search.toLowerCase();
     return (
+      !q ||
       e.manifestId.toLowerCase().includes(q) ||
       e.trackingIds.some((id) => id.toLowerCase().includes(q)) ||
       (e.serviceType || "").toLowerCase().includes(q) ||

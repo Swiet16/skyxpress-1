@@ -67,6 +67,14 @@ const ROLE_CFG = {
     avatar: "from-sky-500 to-blue-600",
     glow: "shadow-[0_0_18px_rgba(56,189,248,0.3)]",
   },
+  partner: {
+    label: "Partner",
+    icon: Building2,
+    ring: "from-emerald-400 via-teal-500 to-emerald-500",
+    badge: "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30",
+    avatar: "from-emerald-500 to-teal-600",
+    glow: "shadow-[0_0_18px_rgba(52,211,153,0.3)]",
+  },
   user: {
     label: "User",
     icon: User,
@@ -315,6 +323,7 @@ const UserCard = ({
                 </SelectTrigger>
                 <SelectContent className="border-white/10 bg-[#141922] text-white">
                   <SelectItem value="user" className="text-xs focus:bg-white/10">User</SelectItem>
+                  <SelectItem value="partner" className="text-xs focus:bg-white/10">Partner</SelectItem>
                   <SelectItem value="staff" className="text-xs focus:bg-white/10">Staff</SelectItem>
                   <SelectItem value="admin" className="text-xs focus:bg-white/10">Admin</SelectItem>
                 </SelectContent>

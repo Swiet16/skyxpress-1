@@ -3,11 +3,12 @@ import { supabase } from "@/integrations/supabase/client";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { AdminDashboard } from "@/components/AdminDashboard";
+import { PartnerDashboard } from "@/components/PartnerDashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { LogOut, Package, FileText, Shield, User, Send, ArrowRight, Inbox } from "lucide-react";
+import { LogOut, Package, FileText, Shield, User, Send, ArrowRight, Inbox, Building2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { UserRequestForm } from "@/components/UserRequestForm";
@@ -83,6 +84,7 @@ const Dashboard = () => {
   }
 
   const isAdminOrStaff = profile?.role === 'admin' || profile?.role === 'staff';
+  const isPartner = profile?.role === 'partner';
 
   const statusStyles: Record<string, string> = {
     approved: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20",
@@ -161,6 +163,68 @@ const Dashboard = () => {
             <section className="bg-muted/20 py-10 sm:py-12 md:py-16">
               <div className="container mx-auto px-4">
                 <AdminDashboard user={user} profile={profile} />
+              </div>
+            </section>
+          </>
+        ) : isPartner ? (
+          <>
+            {/* Partner — Command Center Hero */}
+            <section className="relative overflow-hidden border-b border-white/10 bg-[#0a0e17]">
+              <div className="pointer-events-none absolute -top-24 -left-24 h-72 w-72 rounded-full bg-emerald-500/20 blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-teal-500/15 blur-3xl" />
+              <div
+                className="pointer-events-none absolute inset-0 opacity-[0.05]"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(to right, white 1px, transparent 1px), linear-gradient(to bottom, white 1px, transparent 1px)",
+                  backgroundSize: "40px 40px",
+                }}
+              />
+              <div className="container relative mx-auto px-4 py-8 sm:py-12 md:py-14">
+                <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="relative shrink-0">
+                      <div className="absolute inset-0 animate-pulse rounded-2xl bg-emerald-500/30 blur-md" />
+                      <div className="relative rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-600 to-teal-700 p-3.5 shadow-lg sm:p-4">
+                        <Building2 className="h-7 w-7 text-white sm:h-8 sm:w-8" />
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                        <span className="text-xs font-medium uppercase tracking-widest text-emerald-400">
+                          Partner Portal
+                        </span>
+                      </div>
+                      <h1 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl md:text-4xl">
+                        {profile?.company ? `${profile.company}` : 'Partner Dashboard'}
+                      </h1>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm text-white/60 sm:text-base">
+                          Welcome back, <span className="text-white/90">{user?.email}</span>
+                        </p>
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/20 px-2.5 py-0.5 text-[11px] font-bold tracking-wider text-emerald-300">
+                          <Building2 className="h-3 w-3" />
+                          PARTNER
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={handleLogout}
+                    variant="outline"
+                    className="w-full gap-2 self-start border-white/15 bg-white/5 text-white backdrop-blur hover:bg-white/10 hover:text-white sm:w-auto sm:self-auto"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Logout
+                  </Button>
+                </div>
+              </div>
+            </section>
+
+            <section className="bg-muted/20 py-10 sm:py-12 md:py-16">
+              <div className="container mx-auto px-4">
+                <PartnerDashboard user={user} profile={profile} />
               </div>
             </section>
           </>
