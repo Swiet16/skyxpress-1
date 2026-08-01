@@ -81,12 +81,12 @@ const PartnerCard = ({
                 </Badge>
               )}
             </div>
-            {user.email && user.email !== "N/A" && (
-              <div className="flex items-center gap-1.5 text-xs text-white/45">
-                <Mail className="h-3 w-3 shrink-0 text-white/25" />
-                <span className="truncate">{user.email}</span>
-              </div>
-            )}
+            <div className="flex items-center gap-1.5 text-xs text-white/45">
+              <Mail className="h-3 w-3 shrink-0 text-white/25" />
+              <span className="truncate">
+                {user.email && user.email !== "N/A" ? user.email : "—"}
+              </span>
+            </div>
             {user.phone && (
               <div className="flex items-center gap-1.5 text-xs text-white/45">
                 <Phone className="h-3 w-3 shrink-0 text-white/25" />
