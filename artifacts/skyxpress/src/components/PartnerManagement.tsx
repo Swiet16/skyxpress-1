@@ -282,6 +282,7 @@ export const PartnerManagement = () => {
   );
 
   return (
+    <div className="min-h-screen rounded-2xl bg-[#0d1117] p-6">
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -399,6 +400,7 @@ export const PartnerManagement = () => {
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 };
