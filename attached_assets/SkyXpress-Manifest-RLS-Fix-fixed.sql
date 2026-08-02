@@ -73,7 +73,8 @@ CREATE POLICY "partners_own_manifests_delete"
     AND partner_user_id = auth.uid()
   );
 
--- partner_user_id is UUID — auth.uid() is compared directly (no ::text cast needed).
+-- NOTE: if partner_user_id is stored as UUID (not TEXT) in your DB,
+-- replace   auth.uid()   with just   auth.uid()   in all policies above.
 
 
 -- ----------------------------------------------------------------

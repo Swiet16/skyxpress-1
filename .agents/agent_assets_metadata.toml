@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "N1LOnNCBxhwpkQl-0Bbr2"
+uri = "file://attached_assets/SkyXpress-Manifest-RLS-Fix-fixed.sql"
+type = "unspecified"
+title = "SkyXpress Manifest RLS Fix (fixed)"
+description = "All auth.uid()::text casts removed — partner_user_id is UUID so auth.uid() is now compared directly as UUID. Paste the full contents into the Supabase SQL Editor and run."
+
+[[outputs]]
+id = "jGOWNYeH1OovSotBPkR4R"
+uri = "file://supabase-rls-manifests.sql"
+type = "unspecified"
+title = "supabase-rls-manifests.sql (fixed)"
+description = "All auth.uid()::text casts replaced with auth.uid() — partner_user_id is UUID so the comparison now works correctly. Paste the full contents into the Supabase SQL Editor and run."
