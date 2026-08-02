@@ -619,7 +619,7 @@ function ManifestHistoryDialog({ open, onClose, manifestId }: {
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
-export const ManifestStock = ({ filterEmail }: { filterEmail?: string } = {}) => {
+export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: string; filterEmail?: string } = {}) => {
   const [entries, setEntries]         = useState<ManifestStockEntry[]>([]);
   const [search, setSearch]           = useState("");
   const [selected, setSelected]       = useState<ManifestStockEntry | null>(null);
@@ -820,8 +820,14 @@ export const ManifestStock = ({ filterEmail }: { filterEmail?: string } = {}) =>
   };
 
   const filtered = entries.filter((e) => {
-    // Partner scope: only show manifests created by this user's email
-    if (filterEmail && (e.createdByUser || "").toLowerCase() !== filterEmail.toLowerCase()) {
+    // Partner scope: match by UUID (partner_user_id) or fall back to email
+    if (filterUserId) {
+      const matchesId    = e.partnerUserId === filterUserId;
+      const matchesEmail = filterEmail
+        ? (e.createdByUser || "").toLowerCase() === filterEmail.toLowerCase()
+        : false;
+      if (!matchesId && !matchesEmail) return false;
+    } else if (filterEmail && (e.createdByUser || "").toLowerCase() !== filterEmail.toLowerCase()) {
       return false;
     }
     const q = search.toLowerCase();
@@ -1006,16 +1012,14 @@ export const ManifestStock = ({ filterEmail }: { filterEmail?: string } = {}) =>
                         </TableCell>
                         {/* Branch / Made By */}
                         <TableCell>
-                          {entry.branch || entry.made_by_name ? (
+                          {entry.createdByUser ? (
                             <div className="space-y-0.5">
-                              {entry.branch && (
-                                <div className="text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5 inline-block max-w-[110px] truncate" title={entry.branch}>
-                                  {entry.branch}
-                                </div>
-                              )}
-                              {entry.made_by_name && (
-                                <div className="text-[10px] text-muted-foreground">{entry.made_by_name}</div>
-                              )}
+                              <div
+                                className="text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5 inline-block max-w-[120px] truncate"
+                                title={entry.createdByUser}
+                              >
+                                {entry.createdByUser}
+                              </div>
                             </div>
                           ) : (
                             <span className="text-slate-300 text-xs">—</span>

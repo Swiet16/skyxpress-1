@@ -73,6 +73,7 @@ export interface ManifestStockEntry {
   destinationHub?: string;
   isLocked?: boolean;
   manifestStatus?: string; // pending | picked_up | in_transit | out_for_delivery | delivered | returned
+  partnerUserId?: string;  // UUID of the partner who owns this manifest
   baggingInfo?: {
     bags: Array<{
       bagType: string;
@@ -165,6 +166,7 @@ function toPartialDbRow(updates: Partial<ManifestStockEntry>): Record<string, an
   if ("totalChargeableWt" in updates) set("total_chargeable_wt", updates.totalChargeableWt ?? 0);
   if ("originHub"         in updates) set("origin_hub",          updates.originHub         ?? null);
   if ("destinationHub"    in updates) set("destination_hub",     updates.destinationHub    ?? null);
+  if ("partnerUserId"     in updates) set("partner_user_id",     updates.partnerUserId     ?? null);
   if ("parcelCount"       in updates) set("parcel_count",        updates.parcelCount       ?? 0);
   if ("totalWeight"       in updates) set("total_weight",        updates.totalWeight       ?? 0);
   if ("totalValue"        in updates) set("total_value",         updates.totalValue        ?? 0);
@@ -219,6 +221,7 @@ function toDbRow(entry: ManifestStockEntry): Record<string, any> {
     tracking_events:     entry.trackingEvents    ?? [],
     bagging_info:        entry.baggingInfo       ?? {},
     manifest_status:     entry.manifestStatus    || null,
+    partner_user_id:     entry.partnerUserId     || null,
     created_at:          entry.createdAt,
   };
 }
@@ -264,6 +267,7 @@ function fromDbRow(row: Record<string, any>): ManifestStockEntry {
     manifestStatus:    row.manifest_status    || undefined,
     trackingEvents:    row.tracking_events    || [],
     baggingInfo:       row.bagging_info       || undefined,
+    partnerUserId:     row.partner_user_id    || undefined,
   };
 }
 

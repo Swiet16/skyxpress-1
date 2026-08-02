@@ -126,6 +126,16 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
   const [invoiceParcel, setInvoiceParcel] = useState<Parcel | null>(null);
   const [loadingInvoice, setLoadingInvoice] = useState(false);
 
+  // ── Current auth user (for stamping manifests) ─────────────────────────
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      const u = data?.session?.user;
+      if (u) { setCurrentUserId(u.id); setCurrentUserEmail(u.email ?? null); }
+    });
+  }, []);
+
   // ── Manifest selection ──────────────────────────────────────────────────
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [exportingManifest, setExportingManifest] = useState(false);
@@ -278,6 +288,9 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
     if (trimmed.length < 4) { setIdError("ID must be at least 4 characters."); return; }
     setIdError("");
     const entry = buildManifestEntry(pendingParcels, countryMap, trimmed);
+    // Stamp the current user so partners can always see their own manifests
+    if (currentUserId) entry.partnerUserId = currentUserId;
+    if (currentUserEmail && !entry.createdByUser) entry.createdByUser = currentUserEmail;
     await saveManifestToStockDB(entry);
     setShowConfirmDialog(false);
     setGeneratedEntry(entry);

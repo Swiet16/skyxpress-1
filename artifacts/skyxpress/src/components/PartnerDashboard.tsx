@@ -131,7 +131,7 @@ export const PartnerDashboard = ({ user, profile }: PartnerDashboardProps) => {
 
         {/* My Manifests — filtered to this partner's email */}
         <TabsContent value="manifests">
-          <ManifestStock filterEmail={user?.email} />
+          <ManifestStock filterUserId={user?.id} filterEmail={user?.email} />
         </TabsContent>
 
         {/* My Invoices */}
