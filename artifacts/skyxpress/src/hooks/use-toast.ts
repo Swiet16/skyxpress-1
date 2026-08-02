@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
+import { airToast } from "@/components/ui/air-toast";
 
 const TOAST_LIMIT = 1;
 const TOAST_REMOVE_DELAY = 1000000;
@@ -143,6 +144,15 @@ function toast({ ...props }: Toast) {
       toast: { ...props, id },
     });
   const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id });
+
+  // Fire the animated air toast — detect type from variant
+  const toastType =
+    props.variant === "destructive" ? "error" : "success";
+  airToast(
+    typeof props.title === "string" ? props.title : String(props.title ?? ""),
+    typeof props.description === "string" ? props.description : undefined,
+    toastType,
+  );
 
   dispatch({
     type: "ADD_TOAST",

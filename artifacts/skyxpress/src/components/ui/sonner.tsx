@@ -1,27 +1,27 @@
-import { useTheme } from "next-themes";
-import { Toaster as Sonner, toast } from "sonner";
+import { Toaster as Sonner } from "sonner";
+import { airToast } from "@/components/ui/air-toast";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme();
-
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
-      className="toaster group"
-      toastOptions={{
-        classNames: {
-          toast:
-            "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg",
-          description: "group-[.toast]:text-muted-foreground",
-          actionButton: "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
-          cancelButton: "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
-        },
-      }}
+      position="bottom-right"
+      gap={8}
+      toastOptions={{ unstyled: true, style: { background: "transparent", boxShadow: "none", padding: 0 } }}
       {...props}
     />
   );
 };
 
-export { Toaster, toast };
+// Re-export airToast as `toast` so existing `import { toast } from "@/components/ui/sonner"` calls
+// automatically get the animated version.
+const toast = (title: string, opts?: { description?: string; type?: "success" | "error" | "info" | "warning" }) => {
+  airToast(title, opts?.description, opts?.type ?? "success");
+};
+toast.success = (title: string, opts?: { description?: string }) => airToast(title, opts?.description, "success");
+toast.error   = (title: string, opts?: { description?: string }) => airToast(title, opts?.description, "error");
+toast.info    = (title: string, opts?: { description?: string }) => airToast(title, opts?.description, "info");
+toast.warning = (title: string, opts?: { description?: string }) => airToast(title, opts?.description, "warning");
+
+export { Toaster, toast, airToast };

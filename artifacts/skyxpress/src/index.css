@@ -2,6 +2,46 @@
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
 
+/* ═══════════════════════════════════════════════
+   AIR TOAST — keyframe animations
+═══════════════════════════════════════════════ */
+@keyframes airPlaneFly {
+  0%   { transform: translateX(-90px); }
+  100% { transform: translateX(390px); }
+}
+
+@keyframes airContrailGrow {
+  0%   { width: 0;     opacity: 0; }
+  10%  { opacity: 0.9; }
+  80%  { opacity: 0.6; }
+  100% { width: 340px; opacity: 0; }
+}
+
+@keyframes airParcelSwing {
+  0%,100% { transform: rotate(-7deg); }
+  50%     { transform: rotate(7deg);  }
+}
+
+@keyframes airStarTwinkle {
+  0%,100% { opacity: 0.15; transform: scale(0.7); }
+  50%     { opacity: 1;    transform: scale(1.3); }
+}
+
+@keyframes airGlowPulse {
+  0%,100% { opacity: 0.4; }
+  50%     { opacity: 1;   }
+}
+
+@keyframes airDotBlink {
+  0%,100% { opacity: 0.2; transform: scale(0.8); }
+  50%     { opacity: 1;   transform: scale(1.2); }
+}
+
+@keyframes airProgressBar {
+  0%   { transform: scaleX(1); }
+  100% { transform: scaleX(0); }
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
