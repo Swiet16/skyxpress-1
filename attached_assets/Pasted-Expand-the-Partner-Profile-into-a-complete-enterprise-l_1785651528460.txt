@@ -1,0 +1,148 @@
+Expand the Partner Profile into a complete enterprise-level profile. Keep all existing fields and add the following sections.
+
+========================
+PARTNER INFORMATION
+========================
+
+- Partner ID (Auto Generated)
+- Username (Unique)
+- Full Name
+- Profile Picture
+- Organization Name
+- Business Type
+- Partner Category
+- Branch
+- Status (Active, Suspended, Pending)
+- Joining Date
+- Last Updated
+- Created By
+- Bio / Notes
+
+========================
+CONTACT INFORMATION
+========================
+
+- Mobile Number
+- WhatsApp Number
+- Alternate Phone
+- Email Address
+- Website
+- Facebook
+- LinkedIn
+- Instagram
+
+========================
+ADDRESS
+========================
+
+- Country
+- Province / State
+- City
+- Area
+- Street Address
+- Postal Code
+- Google Maps Location
+
+========================
+IDENTITY
+========================
+
+- CNIC Number
+- CNIC Front
+- CNIC Back
+- Selfie Verification
+- Passport Number (Optional)
+- Tax Number (Optional)
+
+========================
+BUSINESS DETAILS
+========================
+
+- Company Registration Number
+- Business License Number
+- Tax Registration Number
+- Organization Size
+- Years in Business
+- Main Services
+- Service Regions
+- Operating Hours
+
+========================
+BANK INFORMATION
+========================
+
+- Bank Name
+- Account Title
+- Account Number
+- IBAN
+- Branch Name
+- Branch Code
+- EasyPaisa Number
+- JazzCash Number
+- Preferred Payment Method
+
+========================
+ACCOUNT SETTINGS
+========================
+
+- Can Manage Users
+- Can Create Agents
+- Can Assign Tasks
+- Can Manage Attendance
+- Can View Salary
+- Can Export Reports
+- Can Invite Users
+- Email Verified
+- Phone Verified
+- Two Factor Authentication
+- Login Enabled
+
+========================
+DOCUMENTS
+========================
+
+- Profile Photo
+- Company Logo
+- CNIC Front
+- CNIC Back
+- Business Registration Certificate
+- Tax Certificate
+- Agreement / Contract
+- Other Documents
+
+========================
+STATISTICS
+========================
+
+- Total Agents
+- Active Agents
+- Total Users
+- Completed Tasks
+- Pending Tasks
+- Attendance Percentage
+- Monthly Revenue
+- Overall Performance Score
+
+========================
+ACTIVITY
+========================
+
+- Last Login
+- Last Active
+- Last IP Address
+- Device Information
+- Recent Activity Timeline
+- Login History
+
+========================
+SYSTEM
+========================
+
+- Created At
+- Updated At
+- Created By
+- Updated By
+- Soft Delete
+- Audit Logs
+
+Build the UI as a premium SaaS profile page with collapsible sections, modern cards, editable forms, file uploads, validation, responsive layout, and secure Supabase storage. Use React + Vite + TypeScript + Tailwind CSS + Supabase with proper database relationships and Row Level Security (RLS).
