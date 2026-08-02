@@ -265,13 +265,6 @@ const Index = () => {
         {/* ── HERO ── */}
         <HeroSection />
 
-        {/* ── IMAGE SLIDER ── */}
-        <section className="py-4 px-4" style={{ background: "#050d1a" }}>
-          <div className="container mx-auto">
-            <ImageSlider />
-          </div>
-        </section>
-
         {/* ── LIVE WORLD STATS ── */}
         <section className="py-12 px-4" style={{ background: "#050d1a" }}>
           <div className="container mx-auto">
@@ -282,6 +275,13 @@ const Index = () => {
 
         {/* ── TRACKING ── */}
         <TrackingSection />
+
+        {/* ── IMAGE SLIDER ── */}
+        <section className="py-4 px-4" style={{ background: "#050d1a" }}>
+          <div className="container mx-auto">
+            <ImageSlider />
+          </div>
+        </section>
 
         {/* ── FEATURES + PARTNER + HOW IT WORKS ── */}
         <FeatureCards />
