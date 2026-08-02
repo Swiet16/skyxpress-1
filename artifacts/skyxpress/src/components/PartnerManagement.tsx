@@ -887,17 +887,6 @@ export const PartnerManagement = () => {
           ))}
         </div>
 
-        {/* ── SQL note ── */}
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/6 px-4 py-3 flex gap-3">
-          <Info className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-          <div className="text-[11px] text-amber-300/75 leading-relaxed">
-            <span className="font-bold text-amber-300">Run in Supabase → SQL Editor (see SQL panel for full script).</span>
-            {" "}Adds <code className="font-mono bg-amber-500/10 px-1 rounded">partner_profiles</code> table,
-            {" "}<code className="font-mono bg-amber-500/10 px-1 rounded">show_partner_page</code> column,
-            {" "}branch columns on parcels/manifests, and a CNIC storage bucket.
-          </div>
-        </div>
-
         {/* ── Search ── */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
@@ -977,70 +966,6 @@ export const PartnerManagement = () => {
           )}
         </section>
 
-        {/* ── SQL Reference ── */}
-        <section className="rounded-2xl border border-white/8 bg-white/3 overflow-hidden">
-          <div className="px-4 py-3 border-b border-white/8 flex items-center gap-2">
-            <FileText className="h-4 w-4 text-white/40" />
-            <span className="text-xs font-bold text-white/50 uppercase tracking-wider">SQL — Run Once in Supabase</span>
-          </div>
-          <pre className="px-4 py-4 text-[11px] text-emerald-300/70 font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">
-{`-- ① New partner_profiles table
-CREATE TABLE IF NOT EXISTS partner_profiles (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id uuid NOT NULL UNIQUE,
-  username text UNIQUE,
-  cnic text UNIQUE,
-  bio text,
-  branch text,
-  cnic_image_url text,
-  status text NOT NULL DEFAULT 'active'
-    CHECK (status IN ('active','suspended')),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-ALTER TABLE partner_profiles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Admin full access" ON partner_profiles
-  FOR ALL USING (
-    EXISTS (SELECT 1 FROM profiles
-            WHERE user_id = auth.uid()
-            AND role IN ('admin','developer'))
-  );
-CREATE POLICY "Partner view own" ON partner_profiles
-  FOR SELECT USING (user_id = auth.uid());
-
--- ② show_partner_page column on profiles
-ALTER TABLE profiles
-  ADD COLUMN IF NOT EXISTS show_partner_page boolean DEFAULT false;
-
--- ③ can_manage_users (if not added yet)
-ALTER TABLE profiles
-  ADD COLUMN IF NOT EXISTS can_manage_users boolean DEFAULT false;
-
--- ④ Branch + made_by on parcels
-ALTER TABLE parcels ADD COLUMN IF NOT EXISTS branch text;
-ALTER TABLE parcels ADD COLUMN IF NOT EXISTS made_by_name text;
-
--- ⑤ Branch + made_by on manifests_detail
-ALTER TABLE manifests_detail ADD COLUMN IF NOT EXISTS branch text;
-ALTER TABLE manifests_detail ADD COLUMN IF NOT EXISTS made_by_name text;
-
--- ⑥ Storage bucket for CNIC images
--- Run via Supabase Storage UI: create bucket "partner-cnic"
--- Or via SQL:
-INSERT INTO storage.buckets (id, name, public)
-  VALUES ('partner-cnic', 'partner-cnic', true)
-  ON CONFLICT (id) DO NOTHING;
-CREATE POLICY "Admin upload CNIC" ON storage.objects
-  FOR INSERT WITH CHECK (
-    bucket_id = 'partner-cnic' AND
-    EXISTS (SELECT 1 FROM profiles
-            WHERE user_id = auth.uid()
-            AND role IN ('admin','developer'))
-  );
-CREATE POLICY "Public read CNIC" ON storage.objects
-  FOR SELECT USING (bucket_id = 'partner-cnic');`}
-          </pre>
-        </section>
       </div>
 
       {/* ── Partner Edit Modal ── */}
