@@ -481,186 +481,147 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
           </div>
         </CardHeader>
 
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
+        <CardContent className="p-0">
+          <div className="w-full">
+            <Table className="text-xs w-full table-fixed">
               <TableHeader>
-                <TableRow>
-                  {/* Checkbox column */}
-                  <TableHead className="w-10 pr-0">
+                <TableRow className="bg-gradient-to-r from-slate-800 to-blue-900 hover:from-slate-800 hover:to-blue-900">
+                  <TableHead className="w-9 pl-3 pr-0">
                     <Checkbox
                       checked={allFilteredSelected}
-                      // indeterminate state via data-state
                       data-state={someFilteredSelected ? "indeterminate" : allFilteredSelected ? "checked" : "unchecked"}
                       onCheckedChange={toggleSelectAll}
                       aria-label="Select all"
-                      className="border-primary"
+                      className="border-white/40 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
                     />
                   </TableHead>
-                  <TableHead>Reference ID</TableHead>
-                  <TableHead>Tracking ID</TableHead>
-                  <TableHead>Sender</TableHead>
-                  <TableHead>Receiver</TableHead>
-                  <TableHead>Route</TableHead>
-                  <TableHead>Details</TableHead>
-                  <TableHead>Price</TableHead>
-                  <TableHead>Branch / Made By</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="w-[13%] text-white font-bold py-3 text-[11px]">Ref / Tracking</TableHead>
+                  <TableHead className="w-[16%] text-white font-bold py-3 text-[11px]">Sender</TableHead>
+                  <TableHead className="w-[16%] text-white font-bold py-3 text-[11px]">Receiver</TableHead>
+                  <TableHead className="w-[13%] text-white font-bold py-3 text-[11px]">Route</TableHead>
+                  <TableHead className="w-[16%] text-white font-bold py-3 text-[11px]">Details / Price</TableHead>
+                  <TableHead className="w-[13%] text-white font-bold py-3 text-[11px]">Status / Date</TableHead>
+                  <TableHead className="w-[13%] text-white font-bold py-3 text-[11px] text-right pr-3">Actions</TableHead>
                 </TableRow>
               </TableHeader>
 
               <TableBody>
-                {paginatedParcels.map((parcel) => {
+                {paginatedParcels.map((parcel, i) => {
                   const isSelected = selectedIds.has(parcel.id);
                   return (
                     <TableRow
                       key={parcel.id}
-                      className={isSelected ? "bg-blue-50 hover:bg-blue-100" : undefined}
+                      className={`align-top ${isSelected ? "bg-blue-50 hover:bg-blue-100" : i % 2 === 0 ? "bg-white hover:bg-slate-50" : "bg-slate-50/60 hover:bg-slate-100/70"}`}
                     >
                       {/* Checkbox */}
-                      <TableCell className="pr-0">
+                      <TableCell className="pl-3 pr-0 pt-3">
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={() => toggleSelect(parcel.id)}
                           aria-label={`Select parcel ${parcel.tracking_id}`}
-                          className="border-primary"
+                          className="border-primary data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                         />
                       </TableCell>
 
-                      {/* Reference ID — inline editable */}
-                      <TableCell>
+                      {/* Ref + Tracking stacked */}
+                      <TableCell className="py-2.5 pr-2">
                         {editingCell?.id === parcel.id && editingCell.field === "reference_id" ? (
-                          <Input
-                            autoFocus
-                            value={editValue}
-                            disabled={savingCell}
+                          <Input autoFocus value={editValue} disabled={savingCell}
                             onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={saveEditingCell}
-                            onKeyDown={handleEditKeyDown}
-                            className="h-8 font-mono w-32"
-                          />
+                            onBlur={saveEditingCell} onKeyDown={handleEditKeyDown}
+                            className="h-6 font-mono text-xs w-full mb-1" />
                         ) : (
                           <div
-                            className="font-mono font-semibold text-blue-600 cursor-pointer hover:underline decoration-dashed underline-offset-4"
+                            className="font-mono font-bold text-blue-600 cursor-pointer hover:underline decoration-dashed underline-offset-2 truncate"
                             onClick={() => startEditingCell(parcel, "reference_id")}
-                            title="Click to edit"
+                            title={`Ref: ${parcel.reference_id || "N/A"} — click to edit`}
                           >
-                            {parcel.reference_id || "N/A"}
+                            {parcel.reference_id || <span className="text-slate-400 font-normal">No Ref</span>}
                           </div>
                         )}
-                      </TableCell>
-
-                      {/* Tracking ID — inline editable */}
-                      <TableCell>
                         {editingCell?.id === parcel.id && editingCell.field === "tracking_id" ? (
-                          <Input
-                            autoFocus
-                            value={editValue}
-                            disabled={savingCell}
+                          <Input autoFocus value={editValue} disabled={savingCell}
                             onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={saveEditingCell}
-                            onKeyDown={handleEditKeyDown}
-                            className="h-8 font-mono w-32"
-                          />
+                            onBlur={saveEditingCell} onKeyDown={handleEditKeyDown}
+                            className="h-6 font-mono text-xs w-full mt-1" />
                         ) : (
                           <div
-                            className="font-mono font-semibold text-primary cursor-pointer hover:underline decoration-dashed underline-offset-4"
+                            className="font-mono text-[10px] text-slate-500 cursor-pointer hover:underline decoration-dashed underline-offset-2 truncate mt-0.5"
                             onClick={() => startEditingCell(parcel, "tracking_id")}
-                            title="Click to edit"
+                            title={`Tracking: ${parcel.tracking_id} — click to edit`}
                           >
                             {parcel.tracking_id}
                           </div>
                         )}
                       </TableCell>
 
-                      <TableCell>
-                        <div className="font-medium">{parcel.sender_name}</div>
-                        <div className="text-sm text-muted-foreground">{parcel.sender_phone}</div>
+                      {/* Sender */}
+                      <TableCell className="py-2.5 pr-2">
+                        <div className="font-semibold text-slate-800 truncate">{parcel.sender_name}</div>
+                        <div className="text-[10px] text-slate-500 truncate">{parcel.sender_phone}</div>
+                        {parcel.sender_city && <div className="text-[10px] text-slate-400 truncate">{parcel.sender_city}</div>}
                       </TableCell>
 
-                      <TableCell>
-                        <div className="font-medium">{parcel.receiver_name}</div>
-                        <div className="text-sm text-muted-foreground">{parcel.receiver_phone}</div>
+                      {/* Receiver */}
+                      <TableCell className="py-2.5 pr-2">
+                        <div className="font-semibold text-slate-800 truncate">{parcel.receiver_name}</div>
+                        <div className="text-[10px] text-slate-500 truncate">{parcel.receiver_phone}</div>
+                        {parcel.receiver_city && <div className="text-[10px] text-slate-400 truncate">{parcel.receiver_city}</div>}
                       </TableCell>
 
-                      <TableCell>
-                        <div className="text-sm">
-                          {getCountryName(parcel.from_country)} → {getCountryName(parcel.to_country)}
+                      {/* Route */}
+                      <TableCell className="py-2.5 pr-2">
+                        <div className="font-medium text-slate-700 truncate">{getCountryName(parcel.from_country)}</div>
+                        <div className="text-[10px] text-blue-400 font-bold my-0.5">↓</div>
+                        <div className="font-medium text-slate-700 truncate">{getCountryName(parcel.to_country)}</div>
+                      </TableCell>
+
+                      {/* Details + Price */}
+                      <TableCell className="py-2.5 pr-2">
+                        <div className="font-bold text-slate-800">{parcel.currency} {parcel.total_price?.toFixed(2)}</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">{parcel.parcel_type}</div>
+                        <div className="text-[10px] text-slate-400">
+                          {parcel.weight}kg{parcel.length ? ` · ${parcel.length}×${parcel.width}×${parcel.height}cm` : ""}
                         </div>
-                      </TableCell>
-
-                      <TableCell>
-                        <div className="text-sm">
-                          <div>{parcel.parcel_type}</div>
-                          <div className="text-muted-foreground">
-                            {parcel.weight}kg • {parcel.length}×{parcel.width}×{parcel.height}cm
+                        {(parcel.branch || parcel.made_by_name) && (
+                          <div className="text-[10px] font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1 py-0.5 inline-block mt-1 max-w-full truncate">
+                            {parcel.branch || parcel.made_by_name}
                           </div>
-                        </div>
-                      </TableCell>
-
-                      <TableCell>
-                        <div className="font-semibold">
-                          {parcel.currency} {parcel.total_price?.toFixed(2)}
-                        </div>
-                      </TableCell>
-
-                      {/* Branch / Made By */}
-                      <TableCell>
-                        {parcel.branch || parcel.made_by_name ? (
-                          <div className="space-y-0.5">
-                            {parcel.branch && (
-                              <div className="text-xs font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5 inline-block">
-                                {parcel.branch}
-                              </div>
-                            )}
-                            {parcel.made_by_name && (
-                              <div className="text-xs text-muted-foreground">{parcel.made_by_name}</div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground text-xs">—</span>
                         )}
                       </TableCell>
 
-                      <TableCell>
-                        <Badge className={statusColors[parcel.current_status] || "bg-gray-100 text-gray-800"}>
-                          {parcel.current_status.replace(/_/g, " ").toUpperCase()}
+                      {/* Status + Date */}
+                      <TableCell className="py-2.5 pr-2">
+                        <Badge className={`text-[10px] px-1.5 py-0.5 whitespace-nowrap ${statusColors[parcel.current_status] || "bg-gray-100 text-gray-800"}`}>
+                          {parcel.current_status.replace(/_/g, " ")}
                         </Badge>
+                        <div className="text-[10px] text-slate-400 mt-1.5">
+                          {new Date(parcel.created_at).toLocaleDateString()}
+                        </div>
                       </TableCell>
 
-                      <TableCell>{new Date(parcel.created_at).toLocaleDateString()}</TableCell>
-
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost" size="sm"
-                            onClick={() => { setSelectedParcel(parcel); setShowDetailsModal(true); }}
-                            title="View details"
-                          >
-                            <Eye className="h-4 w-4" />
+                      {/* Actions */}
+                      <TableCell className="py-2 pr-2">
+                        <div className="flex items-center justify-end gap-0.5 flex-wrap">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
+                            onClick={() => { setSelectedParcel(parcel); setShowDetailsModal(true); }} title="View details">
+                            <Eye className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleEditClick(parcel)} title="Edit">
-                            <Edit className="h-4 w-4" />
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-amber-600 hover:bg-amber-50"
+                            onClick={() => handleEditClick(parcel)} title="Edit">
+                            <Edit className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleAttachmentsClick(parcel)} title="Attachments">
-                            <Paperclip className="h-4 w-4" />
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-violet-600 hover:bg-violet-50"
+                            onClick={() => handleAttachmentsClick(parcel)} title="Attachments">
+                            <Paperclip className="h-3.5 w-3.5" />
                           </Button>
-                          <Button
-                            variant="ghost" size="sm"
-                            onClick={() => handleInvoiceClick(parcel)}
-                            disabled={loadingInvoice}
-                            title="Generate AWB / Invoice"
-                          >
-                            <FileText className="h-4 w-4" />
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
+                            onClick={() => handleInvoiceClick(parcel)} disabled={loadingInvoice} title="Generate AWB / Invoice">
+                            <FileText className="h-3.5 w-3.5" />
                           </Button>
-                          <Button
-                            variant="ghost" size="sm"
-                            onClick={() => handleDeleteParcel(parcel.id, parcel.tracking_id)}
-                            title="Delete"
-                          >
-                            <Trash2 className="h-4 w-4 text-red-600" />
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50"
+                            onClick={() => handleDeleteParcel(parcel.id, parcel.tracking_id)} title="Delete">
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </TableCell>
@@ -671,7 +632,7 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
             </Table>
 
             {filteredParcels.length === 0 && (
-              <div className="text-center py-8">
+              <div className="text-center py-12">
                 <Package className="h-12 w-12 mx-auto text-muted-foreground opacity-40 mb-3" />
                 <p className="text-muted-foreground">No parcels found</p>
               </div>
