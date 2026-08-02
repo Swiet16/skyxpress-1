@@ -1118,14 +1118,25 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                         </TableCell>
                         {/* Branch / Made By */}
                         <TableCell>
-                          {entry.createdByUser ? (
+                          {entry.company || entry.createdByUser ? (
                             <div className="space-y-0.5">
-                              <div
-                                className="text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5 inline-block max-w-[120px] truncate"
-                                title={entry.createdByUser}
-                              >
-                                {entry.createdByUser}
-                              </div>
+                              {entry.company && (
+                                <div
+                                  className="flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5 max-w-[130px] truncate"
+                                  title={entry.company}
+                                >
+                                  <Building2 className="h-2.5 w-2.5 flex-shrink-0" />
+                                  {entry.company}
+                                </div>
+                              )}
+                              {entry.createdByUser && (
+                                <div
+                                  className="text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5 inline-block max-w-[130px] truncate"
+                                  title={entry.createdByUser}
+                                >
+                                  {entry.createdByUser}
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <span className="text-slate-300 text-xs">—</span>
