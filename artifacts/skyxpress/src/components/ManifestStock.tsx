@@ -150,12 +150,20 @@ const statusColors: Record<string, string> = {
 };
 
 export const MANIFEST_STATUSES = [
-  { value: "pending",          label: "Pending",          icon: "⏳", tw: "bg-amber-400 text-white border-amber-500",     dot: "bg-amber-300"   },
-  { value: "picked_up",        label: "Picked Up",        icon: "📦", tw: "bg-violet-500 text-white border-violet-600",   dot: "bg-violet-400"  },
-  { value: "in_transit",       label: "In Transit",       icon: "✈️",  tw: "bg-blue-600 text-white border-blue-700",       dot: "bg-blue-400"    },
-  { value: "out_for_delivery", label: "Out for Delivery", icon: "🚚", tw: "bg-orange-500 text-white border-orange-600",   dot: "bg-orange-400"  },
-  { value: "delivered",        label: "Delivered",        icon: "✅", tw: "bg-green-600 text-white border-green-700",     dot: "bg-green-400"   },
-  { value: "returned",         label: "Returned",         icon: "↩️",  tw: "bg-red-500 text-white border-red-600",         dot: "bg-red-400"     },
+  { value: "created",             label: "Created",              icon: "🆕", tw: "bg-amber-400 text-white border-amber-500",       dot: "bg-amber-300"   },
+  { value: "picked_up",           label: "Picked Up",            icon: "📦", tw: "bg-violet-500 text-white border-violet-600",     dot: "bg-violet-400"  },
+  { value: "in_transit",          label: "In Transit",           icon: "✈️",  tw: "bg-blue-600 text-white border-blue-700",         dot: "bg-blue-400"    },
+  { value: "flight_departure",    label: "Flight Departure",     icon: "🛫", tw: "bg-indigo-600 text-white border-indigo-700",     dot: "bg-indigo-400"  },
+  { value: "flight_arrived",      label: "Flight Arrived",       icon: "🛬", tw: "bg-teal-600 text-white border-teal-700",         dot: "bg-teal-400"    },
+  { value: "flight_offload",      label: "Flight Offload",       icon: "📤", tw: "bg-cyan-600 text-white border-cyan-700",         dot: "bg-cyan-400"    },
+  { value: "arrived_hub",         label: "Arrived Hub",          icon: "🏢", tw: "bg-sky-600 text-white border-sky-700",           dot: "bg-sky-400"     },
+  { value: "customs",             label: "In Customs",           icon: "🛃", tw: "bg-orange-600 text-white border-orange-700",     dot: "bg-orange-400"  },
+  { value: "in_custom_clearance", label: "In Custom Clearance",  icon: "🧾", tw: "bg-yellow-500 text-white border-yellow-600",     dot: "bg-yellow-400"  },
+  { value: "custom_hold",         label: "Custom Hold",          icon: "🛑", tw: "bg-rose-600 text-white border-rose-700",         dot: "bg-rose-400"    },
+  { value: "out_for_delivery",    label: "Out for Delivery",     icon: "🚚", tw: "bg-pink-600 text-white border-pink-700",         dot: "bg-pink-400"    },
+  { value: "delivered",           label: "Delivered",            icon: "✅", tw: "bg-green-600 text-white border-green-700",       dot: "bg-green-400"   },
+  { value: "returned",            label: "Returned",             icon: "↩️",  tw: "bg-red-500 text-white border-red-600",           dot: "bg-red-400"     },
+  { value: "cancelled",           label: "Cancelled",            icon: "❌", tw: "bg-slate-600 text-white border-slate-700",       dot: "bg-slate-400"   },
 ] as const;
 
 // ── Sample CSV template columns ───────────────────────────────────────────────
@@ -1329,7 +1337,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                             <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1">
                               <Tag className="h-3 w-3" /> Manifest Status
                             </Label>
-                            <div className="grid grid-cols-1 gap-1.5">
+                            <div className="grid grid-cols-1 gap-1.5 max-h-64 overflow-y-auto pr-1">
                               {MANIFEST_STATUSES.map((s) => {
                                 const active = (editing.manifestStatus || "") === s.value;
                                 return (
