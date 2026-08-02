@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Globe, Zap, Shield, TrendingUp } from "lucide-react";
-import skyxpressLogo from "@/assets/skyxpress_logo.png";
 
 /* ── animated counter hook ── */
 function useCounter(target: number, duration = 1800, start = false) {
@@ -131,43 +130,6 @@ const HeroSection = () => {
 
       {/* ── CONTENT ── */}
       <div className="relative z-10 container mx-auto px-4 py-20 flex flex-col items-center text-center gap-10">
-
-        {/* logo + badge */}
-        <div
-          className="flex flex-col items-center gap-4"
-          style={{ animation: visible ? "slideUp 0.7s ease both" : "none" }}
-        >
-          <div className="relative">
-            <div
-              className="absolute inset-0 rounded-full"
-              style={{ background: "radial-gradient(circle,rgba(46,134,255,0.5),transparent 70%)", animation: "pulseRing 3s ease-out infinite" }}
-            />
-            <img src={skyxpressLogo} alt="SkyXpress" className="h-20 w-auto relative z-10 drop-shadow-2xl" />
-          </div>
-          <div
-            className="flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold tracking-widest uppercase"
-            style={{ background: "rgba(46,134,255,0.15)", border: "1px solid rgba(46,134,255,0.4)", color: "#60a5fa" }}
-          >
-            <Zap className="h-3 w-3" style={{ animation: "glowPulse 1.5s ease infinite" }} />
-            Global Air Cargo & Express Courier
-          </div>
-        </div>
-
-        {/* headline */}
-        <div style={{ animation: visible ? "slideUp 0.7s 0.15s ease both" : "none", opacity: 0 }}>
-          <h1 className="text-5xl md:text-7xl lg:text-8xl font-black leading-[0.9] tracking-tight">
-            <span style={{ background: "linear-gradient(90deg,#ffffff,#93c5fd)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-              Sky
-            </span>
-            <span style={{ background: "linear-gradient(90deg,#ff6a1a,#ffb020)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-              Xpress
-            </span>
-          </h1>
-          <p className="mt-5 text-lg md:text-xl text-white/55 max-w-2xl mx-auto font-light leading-relaxed">
-            The world's most trusted express delivery network — connecting businesses across{" "}
-            <span className="text-white/80 font-semibold">195+ countries</span> with speed you can feel.
-          </p>
-        </div>
 
         {/* CTAs */}
         <div

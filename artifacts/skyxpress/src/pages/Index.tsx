@@ -10,6 +10,7 @@ import { TrackingSection } from "@/components/TrackingSection";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Globe, Package, Shield, Zap, Users, Star } from "lucide-react";
+import skyxpressLogo from "@/assets/skyxpress_logo.png";
 
 /* ── animated entrance ── */
 function useInView(threshold = 0.1) {
@@ -280,6 +281,34 @@ const Index = () => {
         <section className="py-4 px-4" style={{ background: "#050d1a" }}>
           <div className="container mx-auto">
             <ImageSlider />
+          </div>
+        </section>
+
+        {/* ── BRAND STATEMENT ── */}
+        <section className="py-16 px-4" style={{ background: "#050d1a" }}>
+          <div className="container mx-auto flex flex-col items-center text-center gap-6">
+            <div className="relative">
+              <div
+                className="absolute inset-0 rounded-full pointer-events-none"
+                style={{ background: "radial-gradient(circle,rgba(46,134,255,0.35),transparent 70%)", animation: "pulseRing 3s ease-out infinite" }}
+              />
+              <img src={skyxpressLogo} alt="SkyXpress" className="h-24 w-auto relative z-10 drop-shadow-2xl" />
+            </div>
+            <h2 className="text-4xl md:text-6xl font-black leading-[0.95] tracking-tight">
+              <span style={{ background: "linear-gradient(90deg,#ffffff,#93c5fd)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Sky</span>
+              <span style={{ background: "linear-gradient(90deg,#ff6a1a,#ffb020)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Xpress</span>
+            </h2>
+            <p className="text-lg md:text-xl max-w-2xl font-light leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
+              The world's most trusted express delivery network — connecting businesses across{" "}
+              <span style={{ color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>195+ countries</span> with speed you can feel.
+            </p>
+            <div
+              className="flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold tracking-widest uppercase"
+              style={{ background: "rgba(46,134,255,0.15)", border: "1px solid rgba(46,134,255,0.4)", color: "#60a5fa" }}
+            >
+              <Zap className="h-3 w-3" />
+              Global Air Cargo &amp; Express Courier
+            </div>
           </div>
         </section>
 
