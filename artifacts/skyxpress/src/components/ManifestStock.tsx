@@ -620,6 +620,9 @@ function ManifestHistoryDialog({ open, onClose, manifestId }: {
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: string; filterEmail?: string } = {}) => {
+  // isAdminView = no partner scope applied → admin is viewing all manifests
+  const isAdminView = !filterUserId && !filterEmail;
+
   const [entries, setEntries]         = useState<ManifestStockEntry[]>([]);
   const [search, setSearch]           = useState("");
   const [selected, setSelected]       = useState<ManifestStockEntry | null>(null);
@@ -640,6 +643,9 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
   const [addingLicense, setAddingLicense]     = useState(false);
   const [newLicenseCode, setNewLicenseCode]   = useState("");
   const [savingLicense, setSavingLicense]     = useState(false);
+  // Admin-only: filter manifests by a specific partner
+  const [partnerFilter, setPartnerFilter]     = useState<string>("all");
+  const [partners, setPartners]               = useState<Array<{ id: string; email: string; name: string }>>([]);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -670,6 +676,50 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
       }
     });
   }, [reload]);
+
+  // Fetch partner list for admin partner-filter dropdown
+  useEffect(() => {
+    if (!isAdminView) return;
+
+    (async () => {
+      try {
+        // profiles has: user_id, full_name, company — no email column
+        const { data: profilesData, error } = await supabase
+          .from("profiles")
+          .select("user_id, full_name, company")
+          .eq("role", "partner");
+
+        if (error) {
+          console.warn("[ManifestStock] failed to fetch partner profiles:", error.message);
+          return;
+        }
+        if (!profilesData || profilesData.length === 0) return;
+
+        // Attempt to enrich with auth emails (requires admin role; gracefully skips if unavailable)
+        let emailMap: Record<string, string> = {};
+        try {
+          const { data: { users: authUsers }, error: authErr } = await supabase.auth.admin.listUsers();
+          if (!authErr && authUsers) {
+            authUsers.forEach((u: any) => { emailMap[u.id] = u.email || ""; });
+          }
+        } catch (_) {}
+
+        setPartners(
+          profilesData.map((p: any) => ({
+            id:    p.user_id,
+            email: emailMap[p.user_id] || "",
+            // Display priority: full_name → email → company → shortened UID
+            name:  p.full_name
+                || emailMap[p.user_id]
+                || p.company
+                || `Partner …${(p.user_id as string).slice(-6)}`,
+          }))
+        );
+      } catch (err) {
+        console.warn("[ManifestStock] partner fetch error:", err);
+      }
+    })();
+  }, [isAdminView]);
 
   const openDetail = (entry: ManifestStockEntry) => {
     setSelected(entry);
@@ -820,7 +870,12 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
   };
 
   const filtered = entries.filter((e) => {
-    // Partner scope: match by UUID (partner_user_id) or fall back to email
+    // ── Admin partner filter (dropdown) ────────────────────────────────────
+    if (isAdminView && partnerFilter !== "all") {
+      if (e.partnerUserId !== partnerFilter) return false;
+    }
+
+    // ── Partner scope: match by UUID or email (when rendered inside partner dashboard) ──
     if (filterUserId) {
       const matchesId    = e.partnerUserId === filterUserId;
       const matchesEmail = filterEmail
@@ -830,6 +885,8 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     } else if (filterEmail && (e.createdByUser || "").toLowerCase() !== filterEmail.toLowerCase()) {
       return false;
     }
+
+    // ── Text search ────────────────────────────────────────────────────────
     const q = search.toLowerCase();
     return (
       !q ||
@@ -843,6 +900,9 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
       (e.destinationHub || "").toLowerCase().includes(q)
     );
   });
+
+  // Stats for the currently-selected partner filter (admin view)
+  const partnerFilteredParcels = filtered.reduce((s, e) => s + e.parcelCount, 0);
 
   const filteredAwbs = editing
     ? editing.parcels.filter((p) => {
@@ -897,6 +957,44 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
               </Button>
             </div>
           </div>
+          {/* ── Admin partner filter ────────────────────────────────────── */}
+          {isAdminView && partners.length > 0 && (
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <User className="h-4 w-4 text-muted-foreground shrink-0" />
+              <Select value={partnerFilter} onValueChange={(v) => { setPartnerFilter(v); setSelectedIds(new Set()); }}>
+                <SelectTrigger className="w-56 h-8 text-sm bg-white border-slate-300">
+                  <SelectValue placeholder="All Partners" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    <span className="font-medium">All Partners</span>
+                  </SelectItem>
+                  {partners.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {partnerFilter !== "all" && (
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-blue-100 text-blue-700 border-blue-200 text-xs">
+                    {filtered.length} manifest{filtered.length !== 1 ? "s" : ""}
+                  </Badge>
+                  <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-xs">
+                    {partnerFilteredParcels} parcel{partnerFilteredParcels !== 1 ? "s" : ""}
+                  </Badge>
+                  <button
+                    onClick={() => setPartnerFilter("all")}
+                    className="text-xs text-muted-foreground hover:text-slate-700 underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="relative mt-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Search manifest ID, tracking, flight, hub, destination…"
