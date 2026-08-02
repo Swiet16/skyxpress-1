@@ -263,6 +263,13 @@ const Index = () => {
       <Header user={user} />
 
       <main>
+        {/* ── IMAGE SLIDER — first thing after nav ── */}
+        <section className="py-4 px-4" style={{ background: "#050d1a" }}>
+          <div className="container mx-auto">
+            <ImageSlider />
+          </div>
+        </section>
+
         {/* ── HERO ── */}
         <HeroSection />
 
@@ -276,13 +283,6 @@ const Index = () => {
 
         {/* ── TRACKING ── */}
         <TrackingSection />
-
-        {/* ── IMAGE SLIDER ── */}
-        <section className="py-4 px-4" style={{ background: "#050d1a" }}>
-          <div className="container mx-auto">
-            <ImageSlider />
-          </div>
-        </section>
 
         {/* ── BRAND STATEMENT ── */}
         <section className="py-16 px-4" style={{ background: "#050d1a" }}>
