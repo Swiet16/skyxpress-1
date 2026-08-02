@@ -924,46 +924,72 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     </SectionCard>
   );
 
-  const stepRenderers = [renderStep0, renderStep1, renderStep2, renderStep3, renderStep4];
-  const isLastStep = step === STEPS.length - 1;
-
   return (
-    <div className="space-y-6 bg-[#0f1020] text-white rounded-2xl p-5">
-      {/* Step bar */}
-      <div className="px-1">
-        <StepBar step={step} total={STEPS.length} steps={STEPS} />
+    <div className="bg-[#0b0d1a] text-white" style={{ fontFamily: "system-ui, sans-serif" }}>
+
+      {/* ── Sticky section nav ── */}
+      <div className="sticky top-0 z-20 bg-[#0b0d1a]/96 backdrop-blur-md border-b border-white/8 px-5 py-2.5">
+        <div className="flex items-center gap-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          {STEPS.map((s) => {
+            const Icon = s.icon;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() =>
+                  document
+                    .getElementById(`parcel-section-${s.id}`)
+                    ?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+                }
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all hover:bg-white/8 flex-shrink-0"
+                style={{ color: s.color }}
+              >
+                <Icon className="h-3 w-3" />
+                {s.label}
+              </button>
+            );
+          })}
+          <div className="ml-auto flex-shrink-0">
+            <span className="text-[10px] text-white/25 font-medium uppercase tracking-wider">
+              {isEdit ? "Edit Parcel" : "New Parcel"}
+            </span>
+          </div>
+        </div>
       </div>
 
-      {/* Step content */}
-      <AnimatePresence mode="wait">
-        <motion.div key={step}>
-          {stepRenderers[step]()}
-        </motion.div>
-      </AnimatePresence>
+      {/* ── All sections ── */}
+      <div className="p-5 space-y-5">
 
-      {/* Navigation */}
-      <div className="flex items-center justify-between pt-2">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setStep((s) => Math.max(0, s - 1))}
-          disabled={step === 0}
-          className="gap-2 border-white/10 bg-white/5 text-white hover:bg-white/10 disabled:opacity-30"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back
-        </Button>
-
-        <div className="flex items-center gap-1.5">
-          {STEPS.map((_, i) => (
-            <div key={i} className={`h-1.5 rounded-full transition-all ${i === step ? "w-5 bg-[#C98A2B]" : i < step ? "w-1.5 bg-emerald-500/60" : "w-1.5 bg-white/15"}`} />
-          ))}
+        {/* Shipment Details */}
+        <div id="parcel-section-0">
+          {renderStep0()}
         </div>
 
-        {isLastStep ? (
+        {/* Sender + Receiver side by side */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <div id="parcel-section-1">{renderStep1()}</div>
+          <div id="parcel-section-2">{renderStep2()}</div>
+        </div>
+
+        {/* Package Details */}
+        <div id="parcel-section-3">
+          {renderStep3()}
+        </div>
+
+        {/* Contents Declaration */}
+        <div id="parcel-section-4">
+          {renderStep4()}
+        </div>
+
+        {/* ── Submit row ── */}
+        <div className="flex items-center justify-between pt-3 border-t border-white/8">
+          <p className="text-xs text-white/25">
+            All fields marked <span className="text-[#C98A2B]">*</span> are required
+          </p>
           <Button
             onClick={handleSubmit}
             disabled={isLoading}
-            className="gap-2 bg-[#C98A2B] hover:bg-[#B8791A] text-white border-none min-w-32"
+            className="gap-2 bg-[#C98A2B] hover:bg-[#B8791A] text-white border-none min-w-40 h-10"
           >
             {isLoading ? (
               <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>
@@ -971,15 +997,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
               <><Sparkles className="h-4 w-4" /> {isEdit ? "Update Parcel" : "Create Parcel"}</>
             )}
           </Button>
-        ) : (
-          <Button
-            type="button"
-            onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
-            className="gap-2 bg-white/10 hover:bg-white/15 text-white border-none"
-          >
-            Next <ArrowRight className="h-4 w-4" />
-          </Button>
-        )}
+        </div>
       </div>
     </div>
   );
