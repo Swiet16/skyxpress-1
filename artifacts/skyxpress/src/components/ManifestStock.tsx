@@ -654,6 +654,8 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
   // Admin-only: filter manifests by a specific partner
   const [partnerFilter, setPartnerFilter]     = useState<string>("all");
   const [partners, setPartners]               = useState<Array<{ id: string; email: string; name: string }>>([]);
+  // Lookup map: user_id → { username, branch } from public.partner_profiles
+  const [partnerProfileMap, setPartnerProfileMap] = useState<Record<string, { username: string; branch: string }>>({});
   const csvInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -685,46 +687,40 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     });
   }, [reload]);
 
-  // Fetch partner list for admin partner-filter dropdown
+  // Fetch partner_profiles (username, branch) — builds the lookup map used by the
+  // "Branch / Made By" column, and (for admins) the partner-filter dropdown list.
   useEffect(() => {
-    if (!isAdminView) return;
-
     (async () => {
       try {
-        // profiles has: user_id, full_name, company — no email column
-        const { data: profilesData, error } = await supabase
-          .from("profiles")
-          .select("user_id, full_name, company")
-          .eq("role", "partner");
+        const { data: partnerData, error } = await supabase
+          .from("partner_profiles")
+          .select("user_id, username, branch")
+          .eq("status", "active");
 
         if (error) {
-          console.warn("[ManifestStock] failed to fetch partner profiles:", error.message);
+          console.warn("[ManifestStock] failed to fetch partner_profiles:", error.message);
           return;
         }
-        if (!profilesData || profilesData.length === 0) return;
+        if (!partnerData || partnerData.length === 0) return;
 
-        // Attempt to enrich with auth emails (requires admin role; gracefully skips if unavailable)
-        let emailMap: Record<string, string> = {};
-        try {
-          const { data: { users: authUsers }, error: authErr } = await supabase.auth.admin.listUsers();
-          if (!authErr && authUsers) {
-            authUsers.forEach((u: any) => { emailMap[u.id] = u.email || ""; });
-          }
-        } catch (_) {}
+        const map: Record<string, { username: string; branch: string }> = {};
+        partnerData.forEach((p: any) => {
+          map[p.user_id] = { username: p.username || "", branch: p.branch || "" };
+        });
+        setPartnerProfileMap(map);
 
-        setPartners(
-          profilesData.map((p: any) => ({
-            id:    p.user_id,
-            email: emailMap[p.user_id] || "",
-            // Display priority: full_name → email → company → shortened UID
-            name:  p.full_name
-                || emailMap[p.user_id]
-                || p.company
-                || `Partner …${(p.user_id as string).slice(-6)}`,
-          }))
-        );
+        if (isAdminView) {
+          setPartners(
+            partnerData.map((p: any) => ({
+              id:    p.user_id,
+              email: "",
+              // Display priority: username → branch → shortened UID
+              name:  p.username || p.branch || `Partner …${(p.user_id as string).slice(-6)}`,
+            }))
+          );
+        }
       } catch (err) {
-        console.warn("[ManifestStock] partner fetch error:", err);
+        console.warn("[ManifestStock] partner_profiles fetch error:", err);
       }
     })();
   }, [isAdminView]);
@@ -1118,29 +1114,43 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                         </TableCell>
                         {/* Branch / Made By */}
                         <TableCell>
-                          {entry.company || entry.createdByUser ? (
-                            <div className="space-y-0.5">
-                              {entry.company && (
-                                <div
-                                  className="flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5 max-w-[130px] truncate"
-                                  title={entry.company}
-                                >
-                                  <Building2 className="h-2.5 w-2.5 flex-shrink-0" />
-                                  {entry.company}
-                                </div>
-                              )}
-                              {entry.createdByUser && (
-                                <div
-                                  className="text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5 inline-block max-w-[130px] truncate"
-                                  title={entry.createdByUser}
-                                >
-                                  {entry.createdByUser}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-slate-300 text-xs">—</span>
-                          )}
+                          {(() => {
+                            const pInfo   = partnerProfileMap[entry.partnerUserId || ""];
+                            const branch  = pInfo?.branch || entry.company;
+                            const username = pInfo?.username;
+                            return branch || entry.createdByUser || username ? (
+                              <div className="space-y-0.5">
+                                {branch && (
+                                  <div
+                                    className="flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5 max-w-[130px] truncate"
+                                    title={branch}
+                                  >
+                                    <Building2 className="h-2.5 w-2.5 flex-shrink-0" />
+                                    {branch}
+                                  </div>
+                                )}
+                                {entry.createdByUser && (
+                                  <div
+                                    className="text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5 inline-block max-w-[130px] truncate"
+                                    title={entry.createdByUser}
+                                  >
+                                    {entry.createdByUser}
+                                  </div>
+                                )}
+                                {username && (
+                                  <div
+                                    className="flex items-center gap-1 text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-100 rounded px-1.5 py-0.5 max-w-[130px] truncate"
+                                    title={username}
+                                  >
+                                    <User className="h-2.5 w-2.5 flex-shrink-0" />
+                                    {username}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-300 text-xs">—</span>
+                            );
+                          })()}
                         </TableCell>
 
                         <TableCell>
