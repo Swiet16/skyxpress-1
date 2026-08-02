@@ -491,6 +491,7 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
                   <TableHead>Route</TableHead>
                   <TableHead>Details</TableHead>
                   <TableHead>Price</TableHead>
+                  <TableHead>Branch / Made By</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead>Actions</TableHead>
@@ -590,6 +591,24 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
                         <div className="font-semibold">
                           {parcel.currency} {parcel.total_price?.toFixed(2)}
                         </div>
+                      </TableCell>
+
+                      {/* Branch / Made By */}
+                      <TableCell>
+                        {parcel.branch || parcel.made_by_name ? (
+                          <div className="space-y-0.5">
+                            {parcel.branch && (
+                              <div className="text-xs font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5 inline-block">
+                                {parcel.branch}
+                              </div>
+                            )}
+                            {parcel.made_by_name && (
+                              <div className="text-xs text-muted-foreground">{parcel.made_by_name}</div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
                       </TableCell>
 
                       <TableCell>

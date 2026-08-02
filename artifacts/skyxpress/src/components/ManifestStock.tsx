@@ -944,7 +944,7 @@ export const ManifestStock = ({ filterEmail }: { filterEmail?: string } = {}) =>
                           className="border-white/40 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
                         />
                       </TableHead>
-                      {["Manifest ID","Date","Parcels","Route","Destination Hub","Weight","Service","Flight","Status","Lock","Actions"].map(h => (
+                      {["Manifest ID","Date","Parcels","Route","Destination Hub","Weight","Service","Branch / Made By","Flight","Status","Lock","Actions"].map(h => (
                         <TableHead key={h} className="text-white font-bold text-xs py-3">{h}</TableHead>
                       ))}
                     </TableRow>
@@ -1004,6 +1004,24 @@ export const ManifestStock = ({ filterEmail }: { filterEmail?: string } = {}) =>
                         <TableCell>
                           <Badge variant="outline" className="text-xs border-slate-200 text-slate-600">{entry.serviceType}</Badge>
                         </TableCell>
+                        {/* Branch / Made By */}
+                        <TableCell>
+                          {entry.branch || entry.made_by_name ? (
+                            <div className="space-y-0.5">
+                              {entry.branch && (
+                                <div className="text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5 inline-block max-w-[110px] truncate" title={entry.branch}>
+                                  {entry.branch}
+                                </div>
+                              )}
+                              {entry.made_by_name && (
+                                <div className="text-[10px] text-muted-foreground">{entry.made_by_name}</div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-300 text-xs">—</span>
+                          )}
+                        </TableCell>
+
                         <TableCell>
                           {entry.flightNo ? (
                             <div className="flex items-center gap-1 text-xs text-slate-700">

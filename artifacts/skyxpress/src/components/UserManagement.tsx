@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import {
   Select,
@@ -40,6 +41,7 @@ interface UserProfile {
   role: string;
   is_blocked: boolean;
   is_owner?: boolean;
+  show_partner_page?: boolean;
   created_at: string;
   email?: string;
 }
@@ -178,11 +180,13 @@ const UserCard = ({
   isSelf,
   onRoleChange,
   onToggleBlock,
+  onTogglePartnerPage,
 }: {
   user: UserProfile;
   isSelf: boolean;
   onRoleChange: (user: UserProfile, role: string) => void;
   onToggleBlock: (user: UserProfile) => void;
+  onTogglePartnerPage: (user: UserProfile) => void;
 }) => {
   const isDev = isProtectedProfile(user);
   const cfg = getRoleCfg(user.role, isDev);
@@ -285,6 +289,23 @@ const UserCard = ({
             <span>Joined {joined}</span>
           </div>
         </div>
+
+        {/* Partner Page Toggle */}
+        {!isDev && (
+          <div className="flex items-center justify-between rounded-lg bg-emerald-500/5 border border-emerald-500/12 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-3.5 w-3.5 text-emerald-400/70" />
+              <span className="text-[11px] text-white/45 font-medium">Show Partner Page</span>
+            </div>
+            <Switch
+              id={`spp-${user.user_id}`}
+              checked={!!user.show_partner_page}
+              onCheckedChange={() => onTogglePartnerPage(user)}
+              disabled={isSelf}
+              className="scale-75 data-[state=checked]:bg-emerald-500"
+            />
+          </div>
+        )}
 
         {/* Divider */}
         <div className="h-px w-full bg-white/6" />
@@ -439,6 +460,18 @@ export const UserManagement = () => {
     toast({ title: user.is_blocked ? "User unblocked" : "User blocked", description: user.full_name });
   };
 
+  const togglePartnerPage = async (user: UserProfile) => {
+    if (isProtectedProfile(user)) return toastProtected();
+    const newVal = !user.show_partner_page;
+    const { error } = await supabase.from("profiles").update({ show_partner_page: newVal }).eq("user_id", user.user_id);
+    if (error) return toast({ title: "Error", description: error.message, variant: "destructive" });
+    setUsers((prev) => prev.map((u) => (u.user_id === user.user_id ? { ...u, show_partner_page: newVal } : u)));
+    toast({
+      title: newVal ? "Partner page enabled" : "Partner page disabled",
+      description: `${user.full_name} ${newVal ? "can now see the partner page" : "can no longer see the partner page"}`,
+    });
+  };
+
   const toastProtected = () =>
     toast({ title: "Protected account", description: "This account is locked and can't be modified.", variant: "destructive" });
 
@@ -556,6 +589,7 @@ export const UserManagement = () => {
                 isSelf={currentUser?.id === user.user_id}
                 onRoleChange={updateUserRole}
                 onToggleBlock={toggleUserBlock}
+                onTogglePartnerPage={togglePartnerPage}
               />
             ))}
           </div>
