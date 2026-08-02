@@ -446,8 +446,8 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
                     Create Parcel
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                  <DialogHeader>
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-[#0b0d1a] border border-white/10 text-white p-0 [&>button]:text-white/50 [&>button]:hover:text-white [&>button]:top-3 [&>button]:right-3">
+                  <DialogHeader className="sr-only">
                     <DialogTitle>Create New Parcel</DialogTitle>
                   </DialogHeader>
                   <ParcelForm onSuccess={handleParcelCreated} />
@@ -714,8 +714,8 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
 
       {/* Edit Parcel Modal */}
       <Dialog open={showEditForm} onOpenChange={(open) => { setShowEditForm(open); if (!open) setEditingParcel(null); }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Edit Parcel — {editingParcel?.tracking_id}</DialogTitle></DialogHeader>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-[#0b0d1a] border border-white/10 text-white p-0 [&>button]:text-white/50 [&>button]:hover:text-white [&>button]:top-3 [&>button]:right-3">
+          <DialogHeader className="sr-only"><DialogTitle>Edit Parcel — {editingParcel?.tracking_id}</DialogTitle></DialogHeader>
           {editingParcel && <ParcelForm parcel={editingParcel} onSuccess={handleParcelUpdated} />}
         </DialogContent>
       </Dialog>

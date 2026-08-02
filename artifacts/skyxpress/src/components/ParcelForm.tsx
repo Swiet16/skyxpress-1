@@ -158,22 +158,35 @@ const SectionCard = ({
   title, icon: Icon, color, children,
 }: { title: string; icon: any; color: string; children: React.ReactNode }) => (
   <motion.div
-    initial={{ opacity: 0, y: 16 }}
+    initial={{ opacity: 0, y: 12 }}
     animate={{ opacity: 1, y: 0 }}
-    exit={{ opacity: 0, y: -12 }}
-    transition={{ duration: 0.3 }}
-    className="rounded-2xl border border-white/8 overflow-hidden"
+    exit={{ opacity: 0, y: -8 }}
+    transition={{ duration: 0.25 }}
+    className="rounded-2xl overflow-hidden"
+    style={{
+      border: `1px solid ${color}20`,
+      background: `linear-gradient(135deg, ${color}08 0%, rgba(255,255,255,0.02) 60%)`,
+      boxShadow: `0 0 40px ${color}08`,
+    }}
   >
+    {/* Header */}
     <div
-      className="flex items-center gap-2.5 px-5 py-3 border-b border-white/6"
-      style={{ background: `linear-gradient(135deg, ${color}12, transparent)` }}
+      className="flex items-center gap-3 px-5 py-3.5 border-b"
+      style={{
+        borderColor: `${color}15`,
+        background: `linear-gradient(90deg, ${color}12, transparent)`,
+      }}
     >
-      <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: `${color}20` }}>
-        <Icon className="h-3.5 w-3.5" style={{ color }} />
+      <div
+        className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0"
+        style={{ background: `${color}20`, boxShadow: `0 0 12px ${color}20` }}
+      >
+        <Icon className="h-4 w-4" style={{ color }} />
       </div>
-      <span className="text-sm font-semibold text-white/80">{title}</span>
+      <span className="text-sm font-bold text-white tracking-wide">{title}</span>
+      <div className="ml-auto h-px flex-1 max-w-16" style={{ background: `linear-gradient(to right, ${color}30, transparent)` }} />
     </div>
-    <div className="p-5 bg-white/2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
       {children}
     </div>
   </motion.div>
@@ -290,20 +303,8 @@ const DocTypePicker = ({
   value, onChange,
 }: { value: string; onChange: (v: string) => void }) => {
   const opts = [
-    {
-      value: "document",
-      label: "Document",
-      emoji: "📄",
-      desc: "Letters, certificates, papers",
-      color: "#3B82F6",
-    },
-    {
-      value: "non-document",
-      label: "Non-Document",
-      emoji: "📦",
-      desc: "Goods, merchandise, gifts",
-      color: "#F97316",
-    },
+    { value: "document",     label: "Document",     emoji: "📄", desc: "Letters, certificates, papers", color: "#3B82F6" },
+    { value: "non-document", label: "Non-Document", emoji: "📦", desc: "Goods, merchandise, gifts",      color: "#F97316" },
   ];
   return (
     <div className="col-span-2 grid grid-cols-2 gap-3">
@@ -314,40 +315,40 @@ const DocTypePicker = ({
             key={o.value}
             type="button"
             onClick={() => onChange(o.value)}
-            whileHover={{ scale: 1.02, y: -1 }}
             whileTap={{ scale: 0.97 }}
-            transition={{ type: "spring", stiffness: 380, damping: 22 }}
-            className="relative rounded-2xl border p-4 text-center overflow-hidden transition-all duration-200"
+            className="relative rounded-xl border p-3.5 text-left overflow-hidden transition-all duration-200 flex items-center gap-3"
             style={{
-              borderColor: active ? `${o.color}55` : "rgba(255,255,255,0.08)",
-              background: active
-                ? `radial-gradient(ellipse at 50% 0%, ${o.color}20, ${o.color}08 70%)`
-                : "rgba(255,255,255,0.03)",
-              boxShadow: active ? `0 0 24px 0 ${o.color}18` : "none",
+              borderColor: active ? `${o.color}50` : "rgba(255,255,255,0.07)",
+              background: active ? `${o.color}12` : "rgba(255,255,255,0.03)",
+              boxShadow: active ? `0 0 20px 0 ${o.color}14, inset 0 0 0 1px ${o.color}25` : "none",
             }}
           >
-            {/* Top glow band */}
-            {active && (
-              <motion.div
-                layoutId="doc-type-glow"
-                className="absolute top-0 left-1/2 -translate-x-1/2 h-px w-2/3 rounded-full"
-                style={{ background: `linear-gradient(90deg, transparent, ${o.color}, transparent)` }}
-              />
-            )}
-            <motion.div
-              animate={{ scale: active ? 1.15 : 1 }}
-              transition={{ type: "spring", stiffness: 300, damping: 18 }}
-              className="text-3xl mb-2 leading-none"
+            {/* Left accent bar */}
+            <div className="absolute left-0 top-0 bottom-0 w-0.5 rounded-l-xl transition-opacity"
+              style={{ background: o.color, opacity: active ? 1 : 0 }} />
+            <motion.span
+              animate={{ scale: active ? 1.1 : 1 }}
+              transition={{ type: "spring", stiffness: 300, damping: 20 }}
+              className="text-2xl leading-none shrink-0 pl-1"
             >
               {o.emoji}
-            </motion.div>
-            <p
-              className="text-sm font-bold transition-colors"
-              style={{ color: active ? o.color : "rgba(255,255,255,0.7)" }}
-            >
-              {o.label}
-            </p>
-            <p className="text-[10px] text-white/35 mt-1 leading-snug">{o.desc}</p>
+            </motion.span>
+            <div>
+              <p className="text-sm font-bold transition-colors leading-tight"
+                style={{ color: active ? o.color : "rgba(255,255,255,0.8)" }}>
+                {o.label}
+              </p>
+              <p className="text-[11px] text-white/35 mt-0.5">{o.desc}</p>
+            </div>
+            {active && (
+              <motion.div layoutId="doc-check"
+                className="ml-auto h-4 w-4 rounded-full flex items-center justify-center shrink-0"
+                style={{ background: o.color }}>
+                <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </motion.div>
+            )}
           </motion.button>
         );
       })}
