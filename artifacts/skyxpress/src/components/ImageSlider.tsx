@@ -87,7 +87,7 @@ const ImageSlider = () => {
   const slide = slides[current];
 
   return (
-    <div className="relative w-full h-80 md:h-[480px] overflow-hidden rounded-2xl shadow-2xl group">
+    <div className="relative w-full h-80 md:h-[480px] overflow-hidden group">
 
       {/* ── Slides (crossfade) ── */}
       {slides.map((s, i) => (

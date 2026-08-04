@@ -264,10 +264,8 @@ const Index = () => {
 
       <main>
         {/* ── IMAGE SLIDER — first thing after nav ── */}
-        <section className="py-4 px-4" style={{ background: "#050d1a" }}>
-          <div className="container mx-auto">
-            <ImageSlider />
-          </div>
+        <section style={{ background: "#050d1a" }}>
+          <ImageSlider />
         </section>
 
         {/* ── HERO ── */}
