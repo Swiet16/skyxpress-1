@@ -385,8 +385,11 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
                     <p style="margin:0 0 16px;font-size:11px;color:#93C5FD;letter-spacing:1px;text-transform:uppercase;">Courier &amp; Cargo Services</p>
                     <table cellpadding="0" cellspacing="0">
                       <tr>
-                        <td style="padding-right:20px;">
-                          <p style="margin:0;font-size:12px;color:#CBD5E1;">📧 noreplay.skyxpress@gmail.com</p>
+                        <td style="padding-right:24px;">
+                          <p style="margin:0;font-size:12px;color:#CBD5E1;">📧 SKYXPRESS786@GMAIL.COM</p>
+                        </td>
+                        <td>
+                          <p style="margin:0;font-size:12px;color:#CBD5E1;">🌐 skyxpress.site</p>
                         </td>
                       </tr>
                     </table>
