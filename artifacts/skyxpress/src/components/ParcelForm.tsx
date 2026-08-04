@@ -243,45 +243,44 @@ const QuickFill = ({
 
 // ─── Service type card selector ──────────────────────────────────────────────
 
-// Brand logo URLs (Clearbit) for courier companies; null = use lucide icon
-const SERVICE_LOGO_URL: Record<string, string | null> = {
-  standard:         null,
-  express:          null,
-  overnight:        null,
-  economic:         null,
-  priority:         null,
-  dhl_pk:           "https://logo.clearbit.com/dhl.com",
-  ups_pk:           "https://logo.clearbit.com/ups.com",
-  skynet:           "https://logo.clearbit.com/skynetworldwide.net",
-  dpd_uk:           "https://logo.clearbit.com/dpd.co.uk",
-  dhl_via_uk:       "https://logo.clearbit.com/dhl.com",
-  ups_via_belfast:  "https://logo.clearbit.com/ups.com",
-  ups_saver:        "https://logo.clearbit.com/ups.com",
-};
-
-// Lucide icons + colours for generic (non-branded) service types
+// Lucide icons for generic service types
 const SERVICE_LUCIDE: Record<string, { icon: React.ElementType; bg: string }> = {
-  standard:  { icon: Truck,       bg: "#3B82F6" },
-  express:   { icon: Zap,         bg: "#8B5CF6" },
-  overnight: { icon: Moon,        bg: "#F97316" },
-  economic:  { icon: Leaf,        bg: "#22C55E" },
-  priority:  { icon: Star,        bg: "#EAB308" },
+  standard:  { icon: Truck,  bg: "#3B82F6" },
+  express:   { icon: Zap,    bg: "#8B5CF6" },
+  overnight: { icon: Moon,   bg: "#F97316" },
+  economic:  { icon: Leaf,   bg: "#22C55E" },
+  priority:  { icon: Star,   bg: "#EAB308" },
 };
 
-const ServiceIcon = ({ serviceValue, color }: { serviceValue: string; color: string }) => {
-  const logoUrl = SERVICE_LOGO_URL[serviceValue];
-  if (logoUrl) {
+// Inline brand badges for courier carriers — no network required
+const SERVICE_BADGE: Record<string, { text: string; bg: string; fg: string; accent?: string }> = {
+  dhl_pk:          { text: "DHL",  bg: "#D40511", fg: "#FFCC00" },
+  dhl_via_uk:      { text: "DHL",  bg: "#D40511", fg: "#FFCC00" },
+  ups_pk:          { text: "UPS",  bg: "#301506", fg: "#FFB500" },
+  ups_via_belfast: { text: "UPS",  bg: "#301506", fg: "#FFB500" },
+  ups_saver:       { text: "UPS",  bg: "#301506", fg: "#FFB500" },
+  skynet:          { text: "SKY",  bg: "#0052CC", fg: "#FFFFFF" },
+  dpd_uk:          { text: "DPD",  bg: "#DC0032", fg: "#FFFFFF" },
+};
+
+const ServiceIcon = ({ serviceValue }: { serviceValue: string }) => {
+  const badge = SERVICE_BADGE[serviceValue];
+  if (badge) {
     return (
       <div
-        className="h-7 w-7 rounded-lg flex items-center justify-center overflow-hidden shrink-0"
-        style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)" }}
+        className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0 overflow-hidden"
+        style={{ background: badge.bg }}
       >
-        <img
-          src={logoUrl}
-          alt={serviceValue}
-          className="h-5 w-5 object-contain"
-          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-        />
+        <span style={{
+          color: badge.fg,
+          fontSize: 8,
+          fontWeight: 900,
+          letterSpacing: 0.3,
+          lineHeight: 1,
+          fontFamily: "Arial, sans-serif",
+        }}>
+          {badge.text}
+        </span>
       </div>
     );
   }
@@ -326,7 +325,7 @@ const ServicePicker = ({
           />
           <div className="pl-3 pr-3 py-2.5">
             <div className="flex items-center gap-2 mb-0.5">
-              <ServiceIcon serviceValue={s.value} color={s.color} />
+              <ServiceIcon serviceValue={s.value} />
               <p
                 className="text-xs font-bold leading-none transition-colors"
                 style={{ color: active ? s.color : "rgba(255,255,255,0.75)" }}
