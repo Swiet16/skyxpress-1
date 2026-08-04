@@ -327,12 +327,12 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps)
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">{parcel.tracking_id}</h2>
-          <p className="text-muted-foreground">{parcel.from_country} → {parcel.to_country}</p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-xl font-bold break-all leading-tight">{parcel.tracking_id}</h2>
+          <p className="text-muted-foreground text-sm">{parcel.from_country} → {parcel.to_country}</p>
         </div>
-        <Badge className={statusColors[parcel.current_status as keyof typeof statusColors] || "bg-gray-100 text-gray-800"}>
+        <Badge className={`self-start sm:self-auto shrink-0 ${statusColors[parcel.current_status as keyof typeof statusColors] || "bg-gray-100 text-gray-800"}`}>
           <StatusIcon className="w-4 h-4 mr-2" />
           {parcel.current_status.replace('_', ' ').toUpperCase()}
         </Badge>

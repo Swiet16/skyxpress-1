@@ -916,7 +916,7 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
 
       {/* Parcel Details Modal */}
       <Dialog open={showDetailsModal} onOpenChange={setShowDetailsModal}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-full max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 sm:p-6">
           <DialogHeader><DialogTitle>Parcel Details</DialogTitle></DialogHeader>
           {selectedParcel && (
             <ParcelDetails parcel={selectedParcel} onUpdate={fetchParcels} onClose={() => setShowDetailsModal(false)} />
