@@ -1,6 +1,6 @@
 // @ts-nocheck
 import jsPDF from 'jspdf';
-import bwipjs from 'bwip-js';
+import JsBarcode from 'jsbarcode';
 import { supabase } from '@/integrations/supabase/client';
 
 interface ParcelData {
@@ -256,7 +256,7 @@ const addLogo = async (pdf: jsPDF, x: number, y: number, width: number, height: 
   }
 };
 
-// Generate barcode using bwip-js (Code128) — no external API needed
+// Generate barcode using JsBarcode (Code128)
 const addBarcode = async (
   pdf: jsPDF,
   text: string,
@@ -267,19 +267,21 @@ const addBarcode = async (
 ): Promise<void> => {
   try {
     const canvas = document.createElement('canvas');
-    bwipjs.toCanvas(canvas, {
-      bcid: 'code128',
-      text: text,
-      scale: 5,
-      height: 22,
-      includetext: false,
+    JsBarcode(canvas, text, {
+      format: 'CODE128',
+      displayValue: false,
+      margin: 4,
+      width: 2,
+      height: 80,
+      background: '#ffffff',
+      lineColor: '#000000',
     });
     const dataUrl = canvas.toDataURL('image/png');
     pdf.addImage(dataUrl, 'PNG', x, y, width, height);
     console.log('✓ Barcode generated successfully');
   } catch (err) {
     console.error('Barcode generation failed:', err);
-    // Draw a placeholder rectangle if barcode fails
+    // Fallback: plain rect with number
     pdf.setDrawColor(0, 0, 0);
     pdf.setLineWidth(0.3);
     pdf.rect(x, y, width, height);
@@ -625,8 +627,6 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   ly = renderSumRow('Currency Code:', currency, sumLeftX, ly);
   if (netWeight > 0) ly = renderSumRow('Total Net Weight:', `${netWeight.toFixed(3)}kg`, sumLeftX, ly);
   if (grossWeight > 0) ly = renderSumRow('Total Gross Weight:', `${grossWeight.toFixed(3)}kg`, sumLeftX, ly);
-  ly = renderSumRow('Reason for Export:', 'Gift', sumLeftX, ly);
-  ly = renderSumRow('Type of Export:', 'Gift', sumLeftX, ly);
   if (pieces > 1) ly = renderSumRow('Total Pieces:', String(pieces), sumLeftX, ly);
 
   // Right column — only non-empty logistics fields
