@@ -39,6 +39,8 @@ import {
   ClipboardList,
   Sparkles,
   Printer,
+  Mail,
+  CheckCircle,
 } from "lucide-react";
 import { ParcelForm } from "./ParcelForm";
 import { ParcelDetails } from "./ParcelDetails";
@@ -129,6 +131,33 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
   const [loadingInvoice, setLoadingInvoice] = useState(false);
   const [showLabel, setShowLabel] = useState(false);
   const [labelParcel, setLabelParcel] = useState<Parcel | null>(null);
+  const [emailingId, setEmailingId] = useState<string | null>(null);
+  const [emailedIds, setEmailedIds] = useState<Set<string>>(new Set());
+
+  const handleSendXrayEmail = async (parcel: Parcel) => {
+    if (!parcel.sender_email) {
+      toast({ title: "No sender email", description: "This parcel has no sender email on record.", variant: "destructive" });
+      return;
+    }
+    setEmailingId(parcel.id);
+    try {
+      const response = await fetch("/api/send-parcel-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parcel }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Failed to send email");
+      setEmailedIds((prev) => new Set(prev).add(parcel.id));
+      // Best-effort Supabase record
+      await supabase.from("parcels").update({ xray_email_sent_at: new Date().toISOString() }).eq("id", parcel.id);
+      toast({ title: "✉ Email sent!", description: `X-ray notification sent to ${parcel.sender_email}` });
+    } catch (err: any) {
+      toast({ title: "Email failed", description: err.message, variant: "destructive" });
+    } finally {
+      setEmailingId(null);
+    }
+  };
 
   // ── Current auth user (for stamping manifests) ─────────────────────────
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -630,6 +659,20 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50"
                             onClick={() => handleDeleteParcel(parcel.id, parcel.tracking_id)} title="Delete">
                             <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost" size="icon"
+                            className={`h-7 w-7 ${emailedIds.has(parcel.id) ? "text-emerald-500 hover:bg-emerald-50" : "text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"}`}
+                            onClick={() => handleSendXrayEmail(parcel)}
+                            disabled={emailingId === parcel.id || !parcel.sender_email}
+                            title={emailedIds.has(parcel.id) ? "Resend X-Ray Email" : "Send X-Ray Email"}
+                          >
+                            {emailingId === parcel.id
+                              ? <span className="animate-spin h-3.5 w-3.5 border-2 border-emerald-300 border-t-emerald-600 rounded-full inline-block" />
+                              : emailedIds.has(parcel.id)
+                                ? <CheckCircle className="h-3.5 w-3.5" />
+                                : <Mail className="h-3.5 w-3.5" />
+                            }
                           </Button>
                         </div>
                       </TableCell>
