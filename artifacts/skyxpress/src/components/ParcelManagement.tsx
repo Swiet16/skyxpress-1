@@ -38,11 +38,13 @@ import {
   FileDown,
   ClipboardList,
   Sparkles,
+  Printer,
 } from "lucide-react";
 import { ParcelForm } from "./ParcelForm";
 import { ParcelDetails } from "./ParcelDetails";
 import { ParcelAttachmentsDialog } from "./ParcelAttachments";
 import { SkyXpressAWBInvoice } from "./SkyXpressAWBInvoice";
+import { ShippingLabel } from "./ShippingLabel";
 import { exportManifestToExcel } from "@/utils/manifestExport";
 import { buildManifestEntry, saveManifestToStockDB, getNextManifestId, type ManifestStockEntry } from "@/utils/manifestStorage";
 import { generateBulkManifestPDF } from "@/utils/bulkManifestPDF";
@@ -125,6 +127,8 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
   const [showInvoice, setShowInvoice] = useState(false);
   const [invoiceParcel, setInvoiceParcel] = useState<Parcel | null>(null);
   const [loadingInvoice, setLoadingInvoice] = useState(false);
+  const [showLabel, setShowLabel] = useState(false);
+  const [labelParcel, setLabelParcel] = useState<Parcel | null>(null);
 
   // ── Current auth user (for stamping manifests) ─────────────────────────
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -619,6 +623,10 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
                             onClick={() => handleInvoiceClick(parcel)} disabled={loadingInvoice} title="Generate AWB / Invoice">
                             <FileText className="h-3.5 w-3.5" />
                           </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-sky-600 hover:bg-sky-50"
+                            onClick={() => { setLabelParcel(parcel); setShowLabel(true); }} title="Print Shipping Label">
+                            <Printer className="h-3.5 w-3.5" />
+                          </Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50"
                             onClick={() => handleDeleteParcel(parcel.id, parcel.tracking_id)} title="Delete">
                             <Trash2 className="h-3.5 w-3.5" />
@@ -735,6 +743,14 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
           parcel={invoiceParcel}
         />
       )}
+
+      {/* Shipping Label Modal */}
+      <ShippingLabel
+        parcel={labelParcel}
+        open={showLabel}
+        onClose={() => { setShowLabel(false); setLabelParcel(null); }}
+        countryMap={countryMap}
+      />
 
       {/* ── Step 1: Confirm / Edit Manifest ID ───────────────────────────── */}
       <ManifestDialog open={showConfirmDialog} onOpenChange={(o) => { if (!o) { setShowConfirmDialog(false); setPendingParcels([]); } }}>
