@@ -224,7 +224,9 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
     fetchParcels(1, searchQuery);
   }, [searchQuery]);
 
-  const fetchParcels = async (pageNum: number, search: string) => {
+  const fetchParcels = async (pageNum?: number, search?: string) => {
+    pageNum = pageNum ?? page;
+    search  = search  ?? searchQuery;
     setLoading(true);
     try {
       const from = (pageNum - 1) * PAGE_SIZE;
