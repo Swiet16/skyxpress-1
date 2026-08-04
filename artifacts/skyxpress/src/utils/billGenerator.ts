@@ -302,33 +302,86 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.setLineWidth(0.8);
   pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
 
-  // Logo and top contact info intentionally removed per client request.
-
-  // Right side: Header box — extended to 32mm to fit barcode
-  const rightBoxX = pageWidth - margin - 75;
-  pdf.setFillColor(30, 144, 255);
-  pdf.rect(rightBoxX, yPos, 65, 32, 'F');
-  
-  pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('INVOICE', rightBoxX + 2, yPos + 6);
-  
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('INVOICE #:', rightBoxX + 2, yPos + 11);
-
   // USE REFERENCE_ID instead of tracking_id
   const refNumber = safeText(parcel.reference_id || parcel.tracking_id, '000000000');
-  pdf.setFontSize(9);
+
+  // ── Header section ──────────────────────────────────────────────────────────
+  // Left blue band: logo + title
+  const headerH = 36;
+  pdf.setFillColor(30, 144, 255);
+  pdf.rect(margin, yPos, pageWidth - margin * 2 - 68, headerH, 'F');
+
+  // Logo on top-left inside the blue band
+  await addLogo(pdf, margin + 2, yPos + 2, 34, 20);
+
+  // "Proforma Invoice" title in the blue band
+  pdf.setFontSize(15);
   pdf.setFont('helvetica', 'bold');
-  pdf.text(refNumber, rightBoxX + 2, yPos + 16);
+  pdf.setTextColor(255, 255, 255);
+  pdf.text('Proforma Invoice', margin + 40, yPos + 13);
 
-  // Wide barcode spanning most of the header box width (bottom section)
-  await addBarcode(pdf, refNumber, rightBoxX + 2, yPos + 20, 61, 10);
+  // Company tagline below title
+  pdf.setFontSize(7);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(220, 235, 255);
+  pdf.text('SKY XPRESS WORLDWIDE EXPRESS', margin + 40, yPos + 19);
+  pdf.text('skyxpresss786@gmail.com  |  +92 326 9422411', margin + 40, yPos + 24);
+  pdf.text('Tel: (042) 37255473  |  Mobile: 0321 4710522', margin + 40, yPos + 29);
 
-  yPos += 40; // 32mm box + 8mm gap
+  // ── Top-right: Barcode box ────────────────────────────────────────────────
+  const bcBoxX = pageWidth - margin - 66;
+  const bcBoxW = 66;
+  const bcBoxH = headerH;
+
+  // White background with blue border
+  pdf.setFillColor(255, 255, 255);
+  pdf.setDrawColor(30, 144, 255);
+  pdf.setLineWidth(0.6);
+  pdf.rect(bcBoxX, yPos, bcBoxW, bcBoxH, 'FD');
+
+  // "REFERENCE / AWB" label
+  pdf.setFontSize(6.5);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(30, 144, 255);
+  pdf.text('REFERENCE / AWB NO', bcBoxX + bcBoxW / 2, yPos + 5, { align: 'center' });
+
+  // Reference number text
+  pdf.setFontSize(8.5);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(20, 20, 20);
+  pdf.text(refNumber, bcBoxX + bcBoxW / 2, yPos + 11, { align: 'center' });
+
+  // Barcode spanning full box width
+  await addBarcode(pdf, refNumber, bcBoxX + 2, yPos + 13, bcBoxW - 4, 16);
+
+  // Ref number repeated below barcode in small text
+  pdf.setFontSize(5.5);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(60, 60, 60);
+  pdf.text(refNumber, bcBoxX + bcBoxW / 2, yPos + 33, { align: 'center' });
+
+  yPos += headerH + 2;
+
+  // ── Info strip: AWB No | Invoice Date | Invoice No ──────────────────────
+  const infoStripH = 8;
+  pdf.setFillColor(235, 243, 255);
+  pdf.setDrawColor(30, 144, 255);
+  pdf.setLineWidth(0.3);
+  pdf.rect(margin, yPos, pageWidth - 2 * margin, infoStripH, 'FD');
+
+  const invoiceDate = parcel.created_at
+    ? new Date(parcel.created_at).toISOString().split('T')[0]
+    : new Date().toISOString().split('T')[0];
+
+  pdf.setFontSize(7.5);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(30, 80, 160);
+  const stripY = yPos + 5.5;
+  pdf.text(`AWB No: ${refNumber}`, margin + 4, stripY);
+  pdf.text(`Invoice Date: ${invoiceDate}`, pageWidth / 2, stripY, { align: 'center' });
+  pdf.text(`Invoice No: ${refNumber}`, pageWidth - margin - 4, stripY, { align: 'right' });
+
+  yPos += infoStripH + 4;
 
   // Shipper & Receiver sections
   const boxWidth = (pageWidth - 2 * margin - 3) / 2;
