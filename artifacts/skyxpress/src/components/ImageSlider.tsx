@@ -16,7 +16,7 @@ const slides = [
     accent: "#60a5fa",
   },
   {
-    image: "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/pic3.png",
+    image: "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/image.jpg",
     title: "Secure Package Handling",
     subtitle: "Your packages are safe with our expert team",
     accent: "#f59e0b",
