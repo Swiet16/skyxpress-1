@@ -544,171 +544,304 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
 
         <CardContent className="p-0">
           <div className="w-full">
-            <Table className="text-xs w-full table-fixed">
-              <TableHeader>
-                <TableRow className="bg-gradient-to-r from-slate-800 to-blue-900 hover:from-slate-800 hover:to-blue-900">
-                  <TableHead className="w-9 pl-3 pr-0">
-                    <Checkbox
-                      checked={allFilteredSelected}
-                      data-state={someFilteredSelected ? "indeterminate" : allFilteredSelected ? "checked" : "unchecked"}
-                      onCheckedChange={toggleSelectAll}
-                      aria-label="Select all"
-                      className="border-white/40 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
-                    />
-                  </TableHead>
-                  <TableHead className="w-[13%] text-white font-bold py-3 text-[11px]">Ref / Tracking</TableHead>
-                  <TableHead className="w-[16%] text-white font-bold py-3 text-[11px]">Sender</TableHead>
-                  <TableHead className="w-[16%] text-white font-bold py-3 text-[11px]">Receiver</TableHead>
-                  <TableHead className="w-[13%] text-white font-bold py-3 text-[11px]">Route</TableHead>
-                  <TableHead className="w-[16%] text-white font-bold py-3 text-[11px]">Details / Price</TableHead>
-                  <TableHead className="w-[13%] text-white font-bold py-3 text-[11px]">Status / Date</TableHead>
-                  <TableHead className="w-[13%] text-white font-bold py-3 text-[11px] text-right pr-3">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
+            {/* ── Desktop table (md+) ──────────────────────────────────────── */}
+            <div className="hidden md:block overflow-x-auto">
+              <Table className="text-xs w-full table-fixed">
+                <TableHeader>
+                  <TableRow className="bg-gradient-to-r from-slate-800 to-blue-900 hover:from-slate-800 hover:to-blue-900">
+                    <TableHead className="w-9 pl-3 pr-0">
+                      <Checkbox
+                        checked={allFilteredSelected}
+                        data-state={someFilteredSelected ? "indeterminate" : allFilteredSelected ? "checked" : "unchecked"}
+                        onCheckedChange={toggleSelectAll}
+                        aria-label="Select all"
+                        className="border-white/40 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
+                      />
+                    </TableHead>
+                    <TableHead className="w-[13%] text-white font-bold py-3 text-[11px]">Ref / Tracking</TableHead>
+                    <TableHead className="w-[16%] text-white font-bold py-3 text-[11px]">Sender</TableHead>
+                    <TableHead className="w-[16%] text-white font-bold py-3 text-[11px]">Receiver</TableHead>
+                    <TableHead className="w-[13%] text-white font-bold py-3 text-[11px]">Route</TableHead>
+                    <TableHead className="w-[16%] text-white font-bold py-3 text-[11px]">Details / Price</TableHead>
+                    <TableHead className="w-[13%] text-white font-bold py-3 text-[11px]">Status / Date</TableHead>
+                    <TableHead className="w-[13%] text-white font-bold py-3 text-[11px] text-right pr-3">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
 
-              <TableBody>
-                {paginatedParcels.map((parcel, i) => {
-                  const isSelected = selectedIds.has(parcel.id);
-                  return (
-                    <TableRow
-                      key={parcel.id}
-                      className={`align-top ${isSelected ? "bg-blue-50 hover:bg-blue-100" : i % 2 === 0 ? "bg-white hover:bg-slate-50" : "bg-slate-50/60 hover:bg-slate-100/70"}`}
-                    >
-                      {/* Checkbox */}
-                      <TableCell className="pl-3 pr-0 pt-3">
-                        <Checkbox
-                          checked={isSelected}
-                          onCheckedChange={() => toggleSelect(parcel.id)}
-                          aria-label={`Select parcel ${parcel.tracking_id}`}
-                          className="border-primary data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
-                        />
-                      </TableCell>
-
-                      {/* Ref + Tracking stacked */}
-                      <TableCell className="py-2.5 pr-2">
-                        {editingCell?.id === parcel.id && editingCell.field === "reference_id" ? (
-                          <Input autoFocus value={editValue} disabled={savingCell}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={saveEditingCell} onKeyDown={handleEditKeyDown}
-                            className="h-6 font-mono text-xs w-full mb-1" />
-                        ) : (
-                          <div
-                            className="font-mono font-bold text-blue-600 cursor-pointer hover:underline decoration-dashed underline-offset-2 truncate"
-                            onClick={() => startEditingCell(parcel, "reference_id")}
-                            title={`Ref: ${parcel.reference_id || "N/A"} — click to edit`}
-                          >
-                            {parcel.reference_id || <span className="text-slate-400 font-normal">No Ref</span>}
+                <TableBody>
+                  {paginatedParcels.map((parcel, i) => {
+                    const isSelected = selectedIds.has(parcel.id);
+                    return (
+                      <TableRow
+                        key={parcel.id}
+                        className={`align-top ${isSelected ? "bg-blue-50 hover:bg-blue-100" : i % 2 === 0 ? "bg-white hover:bg-slate-50" : "bg-slate-50/60 hover:bg-slate-100/70"}`}
+                      >
+                        <TableCell className="pl-3 pr-0 pt-3">
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleSelect(parcel.id)}
+                            aria-label={`Select parcel ${parcel.tracking_id}`}
+                            className="border-primary data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                          />
+                        </TableCell>
+                        <TableCell className="py-2.5 pr-2">
+                          {editingCell?.id === parcel.id && editingCell.field === "reference_id" ? (
+                            <Input autoFocus value={editValue} disabled={savingCell}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onBlur={saveEditingCell} onKeyDown={handleEditKeyDown}
+                              className="h-6 font-mono text-xs w-full mb-1" />
+                          ) : (
+                            <div
+                              className="font-mono font-bold text-blue-600 cursor-pointer hover:underline decoration-dashed underline-offset-2 truncate"
+                              onClick={() => startEditingCell(parcel, "reference_id")}
+                              title={`Ref: ${parcel.reference_id || "N/A"} — click to edit`}
+                            >
+                              {parcel.reference_id || <span className="text-slate-400 font-normal">No Ref</span>}
+                            </div>
+                          )}
+                          {editingCell?.id === parcel.id && editingCell.field === "tracking_id" ? (
+                            <Input autoFocus value={editValue} disabled={savingCell}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onBlur={saveEditingCell} onKeyDown={handleEditKeyDown}
+                              className="h-6 font-mono text-xs w-full mt-1" />
+                          ) : (
+                            <div
+                              className="font-mono text-[10px] text-slate-500 cursor-pointer hover:underline decoration-dashed underline-offset-2 truncate mt-0.5"
+                              onClick={() => startEditingCell(parcel, "tracking_id")}
+                              title={`Tracking: ${parcel.tracking_id} — click to edit`}
+                            >
+                              {parcel.tracking_id}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-2.5 pr-2">
+                          <div className="font-semibold text-slate-800 truncate">{parcel.sender_name}</div>
+                          <div className="text-[10px] text-slate-500 truncate">{parcel.sender_phone}</div>
+                          {parcel.sender_city && <div className="text-[10px] text-slate-400 truncate">{parcel.sender_city}</div>}
+                        </TableCell>
+                        <TableCell className="py-2.5 pr-2">
+                          <div className="font-semibold text-slate-800 truncate">{parcel.receiver_name}</div>
+                          <div className="text-[10px] text-slate-500 truncate">{parcel.receiver_phone}</div>
+                          {parcel.receiver_city && <div className="text-[10px] text-slate-400 truncate">{parcel.receiver_city}</div>}
+                        </TableCell>
+                        <TableCell className="py-2.5 pr-2">
+                          <div className="font-medium text-slate-700 truncate">{getCountryName(parcel.from_country)}</div>
+                          <div className="text-[10px] text-blue-400 font-bold my-0.5">↓</div>
+                          <div className="font-medium text-slate-700 truncate">{getCountryName(parcel.to_country)}</div>
+                        </TableCell>
+                        <TableCell className="py-2.5 pr-2">
+                          <div className="font-bold text-slate-800">{parcel.currency} {parcel.total_price?.toFixed(2)}</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">{parcel.parcel_type}</div>
+                          <div className="text-[10px] text-slate-400">
+                            {parcel.weight}kg{parcel.length ? ` · ${parcel.length}×${parcel.width}×${parcel.height}cm` : ""}
                           </div>
-                        )}
+                          {(parcel.branch || parcel.made_by_name) && (
+                            <div className="text-[10px] font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1 py-0.5 inline-block mt-1 max-w-full truncate">
+                              {parcel.branch || parcel.made_by_name}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-2.5 pr-2">
+                          <Badge className={`text-[10px] px-1.5 py-0.5 whitespace-nowrap ${statusColors[parcel.current_status] || "bg-gray-100 text-gray-800"}`}>
+                            {parcel.current_status.replace(/_/g, " ")}
+                          </Badge>
+                          <div className="text-[10px] text-slate-400 mt-1.5">
+                            {new Date(parcel.created_at).toLocaleDateString()}
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-2 pr-2">
+                          <div className="flex items-center justify-end gap-0.5 flex-wrap">
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
+                              onClick={() => { setSelectedParcel(parcel); setShowDetailsModal(true); }} title="View details">
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-amber-600 hover:bg-amber-50"
+                              onClick={() => handleEditClick(parcel)} title="Edit">
+                              <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-violet-600 hover:bg-violet-50"
+                              onClick={() => handleAttachmentsClick(parcel)} title="Attachments">
+                              <Paperclip className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
+                              onClick={() => handleInvoiceClick(parcel)} disabled={loadingInvoice} title="Generate AWB / Invoice">
+                              <FileText className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-sky-600 hover:bg-sky-50"
+                              onClick={() => { setLabelParcel(parcel); setShowLabel(true); }} title="Print Shipping Label">
+                              <Printer className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50"
+                              onClick={() => handleDeleteParcel(parcel.id, parcel.tracking_id)} title="Delete">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost" size="icon"
+                              className={`h-7 w-7 ${emailedIds.has(parcel.id) ? "text-emerald-500 hover:bg-emerald-50" : "text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"}`}
+                              onClick={() => handleSendXrayEmail(parcel)}
+                              disabled={emailingId === parcel.id || !parcel.sender_email}
+                              title={emailedIds.has(parcel.id) ? "Resend X-Ray Email" : "Send X-Ray Email"}
+                            >
+                              {emailingId === parcel.id
+                                ? <span className="animate-spin h-3.5 w-3.5 border-2 border-emerald-300 border-t-emerald-600 rounded-full inline-block" />
+                                : emailedIds.has(parcel.id)
+                                  ? <CheckCircle className="h-3.5 w-3.5" />
+                                  : <Mail className="h-3.5 w-3.5" />
+                              }
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* ── Mobile cards (< md) ──────────────────────────────────────── */}
+            <div className="md:hidden divide-y divide-slate-100">
+              {/* Select-all row */}
+              {paginatedParcels.length > 0 && (
+                <div className="flex items-center gap-3 px-4 py-2.5 bg-gradient-to-r from-slate-800 to-blue-900">
+                  <Checkbox
+                    checked={allFilteredSelected}
+                    data-state={someFilteredSelected ? "indeterminate" : allFilteredSelected ? "checked" : "unchecked"}
+                    onCheckedChange={toggleSelectAll}
+                    aria-label="Select all"
+                    className="border-white/40 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
+                  />
+                  <span className="text-white text-xs font-semibold">Select all on this page</span>
+                </div>
+              )}
+
+              {paginatedParcels.map((parcel, i) => {
+                const isSelected = selectedIds.has(parcel.id);
+                return (
+                  <div
+                    key={parcel.id}
+                    className={`px-4 py-3 ${isSelected ? "bg-blue-50" : i % 2 === 0 ? "bg-white" : "bg-slate-50/60"}`}
+                  >
+                    {/* Top row: checkbox + IDs + status badge */}
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleSelect(parcel.id)}
+                        aria-label={`Select parcel ${parcel.tracking_id}`}
+                        className="mt-0.5 border-primary data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600 shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          {/* Ref ID */}
+                          {editingCell?.id === parcel.id && editingCell.field === "reference_id" ? (
+                            <Input autoFocus value={editValue} disabled={savingCell}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onBlur={saveEditingCell} onKeyDown={handleEditKeyDown}
+                              className="h-7 font-mono text-xs w-36" />
+                          ) : (
+                            <span
+                              className="font-mono font-bold text-blue-600 text-sm cursor-pointer"
+                              onClick={() => startEditingCell(parcel, "reference_id")}
+                              title="Tap to edit reference ID"
+                            >
+                              {parcel.reference_id || <span className="text-slate-400 font-normal text-xs">No Ref</span>}
+                            </span>
+                          )}
+                          <Badge className={`text-[10px] px-1.5 py-0.5 whitespace-nowrap shrink-0 ${statusColors[parcel.current_status] || "bg-gray-100 text-gray-800"}`}>
+                            {parcel.current_status.replace(/_/g, " ")}
+                          </Badge>
+                        </div>
+
+                        {/* Tracking ID */}
                         {editingCell?.id === parcel.id && editingCell.field === "tracking_id" ? (
                           <Input autoFocus value={editValue} disabled={savingCell}
                             onChange={(e) => setEditValue(e.target.value)}
                             onBlur={saveEditingCell} onKeyDown={handleEditKeyDown}
-                            className="h-6 font-mono text-xs w-full mt-1" />
+                            className="h-7 font-mono text-xs w-full mt-1" />
                         ) : (
                           <div
-                            className="font-mono text-[10px] text-slate-500 cursor-pointer hover:underline decoration-dashed underline-offset-2 truncate mt-0.5"
+                            className="font-mono text-xs text-slate-500 mt-0.5 cursor-pointer"
                             onClick={() => startEditingCell(parcel, "tracking_id")}
-                            title={`Tracking: ${parcel.tracking_id} — click to edit`}
+                            title="Tap to edit tracking ID"
                           >
                             {parcel.tracking_id}
                           </div>
                         )}
-                      </TableCell>
+                      </div>
+                    </div>
 
-                      {/* Sender */}
-                      <TableCell className="py-2.5 pr-2">
-                        <div className="font-semibold text-slate-800 truncate">{parcel.sender_name}</div>
-                        <div className="text-[10px] text-slate-500 truncate">{parcel.sender_phone}</div>
-                        {parcel.sender_city && <div className="text-[10px] text-slate-400 truncate">{parcel.sender_city}</div>}
-                      </TableCell>
-
-                      {/* Receiver */}
-                      <TableCell className="py-2.5 pr-2">
-                        <div className="font-semibold text-slate-800 truncate">{parcel.receiver_name}</div>
-                        <div className="text-[10px] text-slate-500 truncate">{parcel.receiver_phone}</div>
-                        {parcel.receiver_city && <div className="text-[10px] text-slate-400 truncate">{parcel.receiver_city}</div>}
-                      </TableCell>
-
-                      {/* Route */}
-                      <TableCell className="py-2.5 pr-2">
-                        <div className="font-medium text-slate-700 truncate">{getCountryName(parcel.from_country)}</div>
-                        <div className="text-[10px] text-blue-400 font-bold my-0.5">↓</div>
-                        <div className="font-medium text-slate-700 truncate">{getCountryName(parcel.to_country)}</div>
-                      </TableCell>
-
-                      {/* Details + Price */}
-                      <TableCell className="py-2.5 pr-2">
-                        <div className="font-bold text-slate-800">{parcel.currency} {parcel.total_price?.toFixed(2)}</div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">{parcel.parcel_type}</div>
-                        <div className="text-[10px] text-slate-400">
-                          {parcel.weight}kg{parcel.length ? ` · ${parcel.length}×${parcel.width}×${parcel.height}cm` : ""}
-                        </div>
+                    {/* Middle: sender → receiver + price */}
+                    <div className="mt-2.5 ml-7 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                      <div>
+                        <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">From</p>
+                        <p className="text-xs font-semibold text-slate-800 truncate">{parcel.sender_name}</p>
+                        <p className="text-[10px] text-slate-500 truncate">{parcel.sender_phone}</p>
+                        <p className="text-[10px] text-slate-400 truncate">{getCountryName(parcel.from_country)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">To</p>
+                        <p className="text-xs font-semibold text-slate-800 truncate">{parcel.receiver_name}</p>
+                        <p className="text-[10px] text-slate-500 truncate">{parcel.receiver_phone}</p>
+                        <p className="text-[10px] text-slate-400 truncate">{getCountryName(parcel.to_country)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">Price</p>
+                        <p className="text-xs font-bold text-slate-800">{parcel.currency} {parcel.total_price?.toFixed(2)}</p>
+                        <p className="text-[10px] text-slate-500">{parcel.parcel_type} · {parcel.weight}kg</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">Date</p>
+                        <p className="text-[10px] text-slate-600">{new Date(parcel.created_at).toLocaleDateString()}</p>
                         {(parcel.branch || parcel.made_by_name) && (
-                          <div className="text-[10px] font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1 py-0.5 inline-block mt-1 max-w-full truncate">
-                            {parcel.branch || parcel.made_by_name}
-                          </div>
+                          <p className="text-[10px] font-semibold text-sky-700 truncate">{parcel.branch || parcel.made_by_name}</p>
                         )}
-                      </TableCell>
+                      </div>
+                    </div>
 
-                      {/* Status + Date */}
-                      <TableCell className="py-2.5 pr-2">
-                        <Badge className={`text-[10px] px-1.5 py-0.5 whitespace-nowrap ${statusColors[parcel.current_status] || "bg-gray-100 text-gray-800"}`}>
-                          {parcel.current_status.replace(/_/g, " ")}
-                        </Badge>
-                        <div className="text-[10px] text-slate-400 mt-1.5">
-                          {new Date(parcel.created_at).toLocaleDateString()}
-                        </div>
-                      </TableCell>
-
-                      {/* Actions */}
-                      <TableCell className="py-2 pr-2">
-                        <div className="flex items-center justify-end gap-0.5 flex-wrap">
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
-                            onClick={() => { setSelectedParcel(parcel); setShowDetailsModal(true); }} title="View details">
-                            <Eye className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-amber-600 hover:bg-amber-50"
-                            onClick={() => handleEditClick(parcel)} title="Edit">
-                            <Edit className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-violet-600 hover:bg-violet-50"
-                            onClick={() => handleAttachmentsClick(parcel)} title="Attachments">
-                            <Paperclip className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
-                            onClick={() => handleInvoiceClick(parcel)} disabled={loadingInvoice} title="Generate AWB / Invoice">
-                            <FileText className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-sky-600 hover:bg-sky-50"
-                            onClick={() => { setLabelParcel(parcel); setShowLabel(true); }} title="Print Shipping Label">
-                            <Printer className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50"
-                            onClick={() => handleDeleteParcel(parcel.id, parcel.tracking_id)} title="Delete">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost" size="icon"
-                            className={`h-7 w-7 ${emailedIds.has(parcel.id) ? "text-emerald-500 hover:bg-emerald-50" : "text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"}`}
-                            onClick={() => handleSendXrayEmail(parcel)}
-                            disabled={emailingId === parcel.id || !parcel.sender_email}
-                            title={emailedIds.has(parcel.id) ? "Resend X-Ray Email" : "Send X-Ray Email"}
-                          >
-                            {emailingId === parcel.id
-                              ? <span className="animate-spin h-3.5 w-3.5 border-2 border-emerald-300 border-t-emerald-600 rounded-full inline-block" />
-                              : emailedIds.has(parcel.id)
-                                ? <CheckCircle className="h-3.5 w-3.5" />
-                                : <Mail className="h-3.5 w-3.5" />
-                            }
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                    {/* Actions row */}
+                    <div className="mt-2.5 ml-7 flex items-center gap-1 flex-wrap">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
+                        onClick={() => { setSelectedParcel(parcel); setShowDetailsModal(true); }} title="View details">
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-amber-600 hover:bg-amber-50"
+                        onClick={() => handleEditClick(parcel)} title="Edit">
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-violet-600 hover:bg-violet-50"
+                        onClick={() => handleAttachmentsClick(parcel)} title="Attachments">
+                        <Paperclip className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
+                        onClick={() => handleInvoiceClick(parcel)} disabled={loadingInvoice} title="AWB / Invoice">
+                        <FileText className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-sky-600 hover:bg-sky-50"
+                        onClick={() => { setLabelParcel(parcel); setShowLabel(true); }} title="Shipping Label">
+                        <Printer className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50"
+                        onClick={() => handleDeleteParcel(parcel.id, parcel.tracking_id)} title="Delete">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost" size="icon"
+                        className={`h-8 w-8 ${emailedIds.has(parcel.id) ? "text-emerald-500 hover:bg-emerald-50" : "text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"}`}
+                        onClick={() => handleSendXrayEmail(parcel)}
+                        disabled={emailingId === parcel.id || !parcel.sender_email}
+                        title={emailedIds.has(parcel.id) ? "Resend X-Ray Email" : "Send X-Ray Email"}
+                      >
+                        {emailingId === parcel.id
+                          ? <span className="animate-spin h-4 w-4 border-2 border-emerald-300 border-t-emerald-600 rounded-full inline-block" />
+                          : emailedIds.has(parcel.id)
+                            ? <CheckCircle className="h-4 w-4" />
+                            : <Mail className="h-4 w-4" />
+                        }
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
             {parcels.length === 0 && !loading && (
               <div className="text-center py-12">
