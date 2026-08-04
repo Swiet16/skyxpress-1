@@ -33,13 +33,12 @@ function originCode(city: string | undefined, countryCode: string | undefined): 
   return "???";
 }
 
-/** Format today's date as YYYY - MM-DD */
-function labelDate(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y} - ${m}-${day} SKYXPRESS`;
+/** Format a date as DD MMM YYYY */
+function labelDate(d: Date): string {
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
+    timeZone: "Asia/Karachi",
+  }).toUpperCase();
 }
 
 /* ─── Barcode sub-component ──────────────────────── */
@@ -188,13 +187,36 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
           {/* ── Header row ── */}
           <div style={{ display: "flex", alignItems: "stretch", borderBottom: "2px solid #000" }}>
-            {/* EXPRESS WORLDWIDE */}
+            {/* EXPRESS WORLDWIDE + service type + date */}
             <div style={{ flex: 1, padding: "8px 10px" }}>
-              <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: 0.5 }}>
+              <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: 0.5, lineHeight: 1.1 }}>
                 EXPRESS WORLDWIDE
               </div>
-              <div style={{ fontSize: 9, color: "#555", marginTop: 2, letterSpacing: 1 }}>
-                {labelDate()}
+              {/* Service type — styled accent line */}
+              <div style={{
+                display: "inline-block",
+                marginTop: 4,
+                fontSize: 11,
+                fontWeight: 800,
+                letterSpacing: 2,
+                textTransform: "uppercase",
+                color: "#fff",
+                background: "#1a1a2e",
+                padding: "1px 7px",
+                borderRadius: 2,
+              }}>
+                {serviceType}
+              </div>
+              {/* Date — clean, no SKYXPRESS */}
+              <div style={{
+                marginTop: 4,
+                fontSize: 9,
+                fontWeight: 600,
+                letterSpacing: 1.5,
+                color: "#444",
+                textTransform: "uppercase",
+              }}>
+                {labelDate(createdDate)}
               </div>
             </div>
 
