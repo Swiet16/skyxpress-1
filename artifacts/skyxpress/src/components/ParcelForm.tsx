@@ -13,6 +13,7 @@ import {
   Phone, Mail, CreditCard, Box, Truck, Globe, FileText,
   DollarSign, Weight, Ruler, ArrowRight, ArrowLeft,
   CheckCircle2, Sparkles, Hash, Building2, ClipboardList,
+  Zap, Moon, Leaf, Star,
 } from "lucide-react";
 
 // ─── types ───────────────────────────────────────────────────────────────────
@@ -241,10 +242,60 @@ const QuickFill = ({
 );
 
 // ─── Service type card selector ──────────────────────────────────────────────
-const SERVICE_ICONS: Record<string, string> = {
-  standard: "🚚", express: "⚡", overnight: "🌙", economic: "🌿",
-  priority: "🏆", dhl_pk: "🔴", ups_pk: "🟤", skynet: "🔵",
-  dpd_uk: "🟣", dhl_via_uk: "✈️", ups_via_belfast: "🟠", ups_saver: "💰",
+
+// Brand logo URLs (Clearbit) for courier companies; null = use lucide icon
+const SERVICE_LOGO_URL: Record<string, string | null> = {
+  standard:         null,
+  express:          null,
+  overnight:        null,
+  economic:         null,
+  priority:         null,
+  dhl_pk:           "https://logo.clearbit.com/dhl.com",
+  ups_pk:           "https://logo.clearbit.com/ups.com",
+  skynet:           "https://logo.clearbit.com/skynetworldwide.net",
+  dpd_uk:           "https://logo.clearbit.com/dpd.co.uk",
+  dhl_via_uk:       "https://logo.clearbit.com/dhl.com",
+  ups_via_belfast:  "https://logo.clearbit.com/ups.com",
+  ups_saver:        "https://logo.clearbit.com/ups.com",
+};
+
+// Lucide icons + colours for generic (non-branded) service types
+const SERVICE_LUCIDE: Record<string, { icon: React.ElementType; bg: string }> = {
+  standard:  { icon: Truck,       bg: "#3B82F6" },
+  express:   { icon: Zap,         bg: "#8B5CF6" },
+  overnight: { icon: Moon,        bg: "#F97316" },
+  economic:  { icon: Leaf,        bg: "#22C55E" },
+  priority:  { icon: Star,        bg: "#EAB308" },
+};
+
+const ServiceIcon = ({ serviceValue, color }: { serviceValue: string; color: string }) => {
+  const logoUrl = SERVICE_LOGO_URL[serviceValue];
+  if (logoUrl) {
+    return (
+      <div
+        className="h-7 w-7 rounded-lg flex items-center justify-center overflow-hidden shrink-0"
+        style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)" }}
+      >
+        <img
+          src={logoUrl}
+          alt={serviceValue}
+          className="h-5 w-5 object-contain"
+          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+        />
+      </div>
+    );
+  }
+  const lucide = SERVICE_LUCIDE[serviceValue];
+  if (!lucide) return null;
+  const Icon = lucide.icon;
+  return (
+    <div
+      className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
+      style={{ background: `${lucide.bg}22`, border: `1px solid ${lucide.bg}40` }}
+    >
+      <Icon className="h-3.5 w-3.5" style={{ color: lucide.bg }} />
+    </div>
+  );
 };
 
 const ServicePicker = ({
@@ -273,9 +324,9 @@ const ServicePicker = ({
             className="absolute left-0 top-0 h-full w-1 rounded-l-xl transition-opacity"
             style={{ background: s.color, opacity: active ? 1 : 0.25 }}
           />
-          <div className="pl-4 pr-3 py-2.5">
-            <div className="flex items-center gap-1.5 mb-0.5">
-              <span className="text-base leading-none">{SERVICE_ICONS[s.value]}</span>
+          <div className="pl-3 pr-3 py-2.5">
+            <div className="flex items-center gap-2 mb-0.5">
+              <ServiceIcon serviceValue={s.value} color={s.color} />
               <p
                 className="text-xs font-bold leading-none transition-colors"
                 style={{ color: active ? s.color : "rgba(255,255,255,0.75)" }}
@@ -283,7 +334,7 @@ const ServicePicker = ({
                 {s.label}
               </p>
             </div>
-            <p className="text-[10px] text-white/35 mt-1">{s.desc}</p>
+            <p className="text-[10px] text-white/35 mt-1.5 pl-9">{s.desc}</p>
           </div>
           {active && (
             <motion.div
