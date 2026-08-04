@@ -1,109 +1,138 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
+/* ─── config ─── */
 const STEPS = [
-  { icon: "📦", label: "Parcel Received",  sub: "Origin warehouse",  color: "#34d399", glow: "rgba(52,211,153,0.5)"  },
-  { icon: "🚚", label: "Collected",        sub: "Courier dispatch",  color: "#60a5fa", glow: "rgba(96,165,250,0.5)"  },
-  { icon: "✈️", label: "In Flight",        sub: "SkyXpress air",     color: "#ff6a1a", glow: "rgba(255,106,26,0.6)"  },
-  { icon: "🛂", label: "Customs Clear",    sub: "Border approved",   color: "#c084fc", glow: "rgba(192,132,252,0.5)" },
-  { icon: "📍", label: "Hub Arrived",      sub: "Destination city",  color: "#fb923c", glow: "rgba(251,146,60,0.5)"  },
-  { icon: "🏠", label: "Delivered",        sub: "Door-to-door ✓",    color: "#4ade80", glow: "rgba(74,222,128,0.6)"  },
+  { icon: "📦", label: "Parcel Received",  sub: "Origin warehouse",  color: "#34d399", glow: "rgba(52,211,153,0.45)"  },
+  { icon: "🚚", label: "Collected",        sub: "Courier dispatch",  color: "#60a5fa", glow: "rgba(96,165,250,0.45)"  },
+  { icon: "✈️", label: "In Flight",        sub: "SkyXpress air",     color: "#ff6a1a", glow: "rgba(255,106,26,0.55)"  },
+  { icon: "🛂", label: "Customs Clear",    sub: "Border approved",   color: "#c084fc", glow: "rgba(192,132,252,0.45)" },
+  { icon: "📍", label: "Hub Arrived",      sub: "Destination city",  color: "#fb923c", glow: "rgba(251,146,60,0.45)"  },
+  { icon: "🏠", label: "Delivered",        sub: "Door-to-door ✓",    color: "#4ade80", glow: "rgba(74,222,128,0.55)"  },
 ];
 
-const STEP_MS   = 1600;                       // ms per step
-const PAUSE_MS  = 2200;                       // pause at end before restart
-const TRAVEL_MS = STEP_MS * STEPS.length;     // 9600 ms
-const TOTAL_MS  = TRAVEL_MS + PAUSE_MS;       // 11800 ms
 const N         = STEPS.length;
+const STEP_MS   = 1800;           // time per step
+const PAUSE_MS  = 2400;           // hold at "Delivered" before restart
+const TOTAL_MS  = STEP_MS * N + PAUSE_MS;
 
-// Percentage of total cycle that is "travelling" (vs pause)
-const TRAVEL_PCT = (TRAVEL_MS / TOTAL_MS) * 100; // ≈ 81.36 %
+// Horizontal node positions as % of the track container
+const TRACK_L = 6;                // left  edge %
+const TRACK_R = 94;               // right edge %
+const nodeX   = (i: number) => TRACK_L + (i / (N - 1)) * (TRACK_R - TRACK_L);
 
-// Horizontal positions of each step node (matches CSS node flex layout)
-// Nodes are evenly distributed across [LEFT_PCT, RIGHT_PCT] of the container
-const LEFT_PCT  = 6;    // left edge node centre %
-const RIGHT_PCT = 94;   // right edge node centre %
-const span      = RIGHT_PCT - LEFT_PCT;
-
-// Plane x at step i (%, offset for 28px plane width ÷ 2 = 14px accounted in CSS)
-const nodeX = (i: number) => LEFT_PCT + (i / (N - 1)) * span;
-
-// Build keyframe string: plane glides from step 0 → step N-1 in TRAVEL_PCT of the cycle,
-// then stays off-screen / invisible during the pause, then snaps back.
-const planeKF = `
-  @keyframes planeGlide {
-    ${STEPS.map((_, i) => {
-      const timePct = ((i / (N - 1)) * TRAVEL_PCT).toFixed(3);
-      return `${timePct}% { left: calc(${nodeX(i)}% - 14px); opacity: 1; }`;
-    }).join("\n    ")}
-    ${(TRAVEL_PCT + 0.01).toFixed(2)}% { opacity: 0; left: calc(${nodeX(N - 1)}% - 14px); }
-    99.99%  { opacity: 0; left: calc(${nodeX(0)}% - 14px); }
-    100%    { opacity: 1; left: calc(${nodeX(0)}% - 14px); }
-  }
-`;
-
-const progressKF = `
-  @keyframes progressFill {
-    0%                        { width: 0%;   opacity: 1; }
-    ${TRAVEL_PCT.toFixed(2)}% { width: ${span}%; opacity: 1; }
-    ${(TRAVEL_PCT + 0.01).toFixed(2)}% { width: ${span}%; opacity: 0; }
-    99.99%                    { width: 0%;   opacity: 0; }
-    100%                      { width: 0%;   opacity: 1; }
-  }
-`;
-
+/* ─── component ─── */
 export default function ShipmentJourney() {
-  const [active, setActive] = useState(0);
+  const [active, setActive]       = useState(0);
   const [completed, setCompleted] = useState(false);
 
-  // Advance React state in lock-step with the CSS animation timing
+  const planeRef    = useRef<HTMLDivElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
+  const activeRef   = useRef(0);
+  const startRef    = useRef<number | null>(null);
+  const rafRef      = useRef<number>(0);
+
+  /* ── single rAF loop: drives plane + progress bar via direct DOM ── */
   useEffect(() => {
-    if (completed) {
-      const t = setTimeout(() => { setActive(0); setCompleted(false); }, PAUSE_MS);
-      return () => clearTimeout(t);
-    }
-    const t = setTimeout(() => {
-      if (active < N - 1) setActive(p => p + 1);
-      else setCompleted(true);
-    }, STEP_MS);
-    return () => clearTimeout(t);
-  }, [active, completed]);
+    const tick = (ts: number) => {
+      if (!startRef.current) startRef.current = ts;
+      const elapsed = (ts - startRef.current) % TOTAL_MS;
+      const isTravelling = elapsed < STEP_MS * N;
+
+      if (isTravelling) {
+        /* ── plane position ── */
+        const stepFloat = elapsed / STEP_MS;          // e.g. 2.34 = midway through step 2→3
+        const stepIdx   = Math.min(Math.floor(stepFloat), N - 1);
+        const frac      = stepFloat - stepIdx;         // 0..1 within this step
+        const fromX     = nodeX(stepIdx);
+        const toX       = nodeX(Math.min(stepIdx + 1, N - 1));
+        // Ease in-out within each step for natural feel
+        const eased     = frac < 0.5
+          ? 2 * frac * frac
+          : 1 - Math.pow(-2 * frac + 2, 2) / 2;
+        const px        = stepIdx < N - 1 ? fromX + eased * (toX - fromX) : nodeX(N - 1);
+
+        if (planeRef.current) {
+          planeRef.current.style.left    = `calc(${px}% - 14px)`;
+          planeRef.current.style.opacity = "1";
+        }
+
+        /* ── progress bar ── */
+        if (progressRef.current) {
+          const trackW = TRACK_R - TRACK_L;
+          const fillW  = ((px - TRACK_L) / trackW) * trackW;
+          progressRef.current.style.width   = `${fillW}%`;
+          progressRef.current.style.opacity = "1";
+        }
+
+        /* ── active step (state — triggers re-render only on change) ── */
+        if (stepIdx !== activeRef.current) {
+          activeRef.current = stepIdx;
+          setActive(stepIdx);
+          setCompleted(false);
+        }
+
+      } else {
+        /* ── pause phase ── */
+        if (planeRef.current) {
+          planeRef.current.style.left    = `calc(${nodeX(N - 1)}% - 14px)`;
+          planeRef.current.style.opacity = "0.35";
+        }
+        if (progressRef.current) {
+          progressRef.current.style.width = `${TRACK_R - TRACK_L}%`;
+        }
+        if (activeRef.current !== N - 1) {
+          activeRef.current = N - 1;
+          setActive(N - 1);
+          setCompleted(true);
+        }
+      }
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  const cur = STEPS[active];
 
   return (
-    <div className="relative w-full overflow-hidden" style={{ background: "transparent" }}>
+    <div className="relative w-full overflow-hidden">
       <style>{`
-        ${planeKF}
-        ${progressKF}
         @keyframes nodeRing {
-          0%   { transform: scale(1);   opacity: 0.75; }
+          0%   { transform: scale(1);   opacity: 0.7; }
           100% { transform: scale(2.8); opacity: 0; }
         }
         @keyframes nodePop {
-          0%   { transform: scale(0.7); opacity: 0; }
-          60%  { transform: scale(1.12); }
+          0%   { transform: scale(0.65); opacity: 0; }
+          65%  { transform: scale(1.1); }
           100% { transform: scale(1);   opacity: 1; }
         }
         @keyframes planeBob {
-          0%,100% { transform: translateY(0px);  }
+          0%,100% { transform: translateY(0px); }
           50%     { transform: translateY(-5px); }
         }
-        @keyframes fadeSlideUp {
-          from { opacity:0; transform:translateY(18px); }
+        @keyframes fadeUp {
+          from { opacity:0; transform:translateY(16px); }
           to   { opacity:1; transform:translateY(0); }
         }
-        @keyframes shimmerText {
+        @keyframes shimmerTxt {
           0%   { background-position: -200% center; }
           100% { background-position:  200% center; }
         }
         @keyframes liveDot {
           0%,100% { opacity:0.5; transform:scale(1);    }
-          50%     { opacity:1;   transform:scale(1.25); }
+          50%     { opacity:1;   transform:scale(1.3);  }
+        }
+        @keyframes dashMove {
+          to { stroke-dashoffset: -16; }
         }
       `}</style>
 
-      <div className="relative mx-auto px-4 py-14 md:py-20" style={{ maxWidth: 900 }}>
+      <div className="relative mx-auto px-4 py-14 md:py-20" style={{ maxWidth: 920 }}>
 
-        {/* ── Header ── */}
-        <div className="text-center mb-12" style={{ animation: "fadeSlideUp 0.7s ease both" }}>
+        {/* ── header ── */}
+        <div className="text-center mb-12" style={{ animation: "fadeUp 0.7s ease both" }}>
           <div
             className="inline-flex items-center gap-2 text-[10px] font-black px-3 py-1 rounded-full mb-3 uppercase tracking-widest"
             style={{ background: "rgba(255,106,26,0.12)", border: "1px solid rgba(255,106,26,0.3)", color: "#ff6a1a" }}
@@ -114,11 +143,11 @@ export default function ShipmentJourney() {
           <h2
             className="text-2xl md:text-4xl font-black leading-tight"
             style={{
-              background: "linear-gradient(90deg,#ffffff 0%,#93c5fd 50%,#ff6a1a 100%)",
+              background: "linear-gradient(90deg,#fff 0%,#93c5fd 45%,#ff6a1a 100%)",
               backgroundSize: "200% auto",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
-              animation: "shimmerText 4s linear infinite",
+              animation: "shimmerTxt 4s linear infinite",
             }}
           >
             Every Parcel. Every Step. Tracked.
@@ -128,44 +157,41 @@ export default function ShipmentJourney() {
           </p>
         </div>
 
-        {/* ── Desktop track ── */}
-        <div className="hidden md:block relative" style={{ height: 110 }}>
+        {/* ═══════════════ DESKTOP TRACK ═══════════════ */}
+        <div className="hidden md:block relative" style={{ height: 116 }}>
 
-          {/* Dashed background rail */}
-          <div
-            className="absolute"
-            style={{
-              top: 28, left: `${LEFT_PCT}%`, right: `${100 - RIGHT_PCT}%`,
-              height: 2,
-              background: "repeating-linear-gradient(90deg,rgba(255,255,255,0.1) 0,rgba(255,255,255,0.1) 6px,transparent 6px,transparent 11px)",
-            }}
-          />
+          {/* Dashed rail */}
+          <svg className="absolute inset-0 w-full pointer-events-none" height="60"
+            style={{ top: 20, overflow: "visible" }}>
+            <line
+              x1={`${TRACK_L}%`} y1="30" x2={`${TRACK_R}%`} y2="30"
+              stroke="rgba(255,255,255,0.08)" strokeWidth="2"
+              strokeDasharray="6 5"
+              style={{ animation: "dashMove 1s linear infinite" }}
+            />
+          </svg>
 
-          {/* Animated progress fill — pure CSS, perfectly smooth */}
+          {/* Progress fill — updated directly by rAF */}
           <div
-            className="absolute"
-            style={{
-              top: 28,
-              left: `${LEFT_PCT}%`,
-              height: 2,
-              borderRadius: 4,
-              background: "linear-gradient(90deg,#34d399,#60a5fa,#ff6a1a,#c084fc,#fb923c,#4ade80)",
-              boxShadow: "0 0 8px rgba(255,106,26,0.5)",
-              animation: `progressFill ${TOTAL_MS}ms linear infinite`,
-            }}
-          />
-
-          {/* Animated plane — pure CSS linear, no jumps */}
-          <div
+            ref={progressRef}
             className="absolute pointer-events-none"
             style={{
-              top: 0,
-              width: 28,
-              zIndex: 10,
-              animation: `planeGlide ${TOTAL_MS}ms linear infinite`,
+              top: 49, left: `${TRACK_L}%`,
+              height: 2, width: "0%",
+              borderRadius: 4,
+              background: "linear-gradient(90deg,#34d399,#60a5fa,#ff6a1a,#c084fc,#fb923c,#4ade80)",
+              boxShadow: "0 0 8px rgba(255,140,50,0.5)",
+              opacity: 1,
             }}
+          />
+
+          {/* ✈️ Plane — position updated directly by rAF, NO CSS left transition */}
+          <div
+            ref={planeRef}
+            className="absolute pointer-events-none"
+            style={{ top: 8, left: `calc(${TRACK_L}% - 14px)`, width: 28, zIndex: 10 }}
           >
-            <div style={{ animation: "planeBob 1.6s ease-in-out infinite", fontSize: 26, lineHeight: 1 }}>
+            <div style={{ animation: "planeBob 1.4s ease-in-out infinite", fontSize: 26, lineHeight: 1 }}>
               ✈️
             </div>
           </div>
@@ -173,7 +199,7 @@ export default function ShipmentJourney() {
           {/* Step nodes */}
           <div
             className="absolute inset-0 flex justify-between items-start"
-            style={{ paddingLeft: `${LEFT_PCT}%`, paddingRight: `${100 - RIGHT_PCT}%`, paddingTop: 8 }}
+            style={{ paddingLeft: `${TRACK_L}%`, paddingRight: `${100 - TRACK_R}%`, paddingTop: 6 }}
           >
             {STEPS.map((s, i) => {
               const isDone    = i < active;
@@ -184,12 +210,13 @@ export default function ShipmentJourney() {
                   className="flex flex-col items-center gap-2"
                   style={{ animation: `nodePop 0.5s ${i * 0.07}s ease both` }}
                 >
-                  {/* Circle */}
-                  <div className="relative flex items-center justify-center" style={{ width: 56, height: 56 }}>
+                  <div className="relative flex items-center justify-center" style={{ width: 58, height: 58 }}>
                     {isCurrent && (
                       <>
-                        <span className="absolute inset-0 rounded-full" style={{ background: s.glow, animation: "nodeRing 1.1s ease-out infinite" }} />
-                        <span className="absolute inset-0 rounded-full" style={{ background: s.glow, animation: "nodeRing 1.1s 0.45s ease-out infinite" }} />
+                        <span className="absolute inset-0 rounded-full"
+                          style={{ background: s.glow, animation: "nodeRing 1.1s ease-out infinite" }} />
+                        <span className="absolute inset-0 rounded-full"
+                          style={{ background: s.glow, animation: "nodeRing 1.1s 0.45s ease-out infinite" }} />
                       </>
                     )}
                     <div
@@ -199,36 +226,25 @@ export default function ShipmentJourney() {
                         height: isCurrent ? 52 : 40,
                         background: isCurrent
                           ? `linear-gradient(135deg,${s.color},${s.color}bb)`
-                          : isDone
-                          ? `linear-gradient(135deg,${s.color}44,${s.color}18)`
-                          : "rgba(255,255,255,0.04)",
-                        border: isCurrent
-                          ? `2px solid ${s.color}`
-                          : isDone
-                          ? `1.5px solid ${s.color}55`
-                          : "1.5px solid rgba(255,255,255,0.1)",
-                        boxShadow: isCurrent ? `0 0 22px ${s.glow}, 0 0 44px ${s.glow}` : "none",
-                        transition: "all 0.5s cubic-bezier(0.4,0,0.2,1)",
+                          : isDone ? `${s.color}28` : "rgba(255,255,255,0.04)",
+                        border: `2px solid ${isCurrent ? s.color : isDone ? s.color + "44" : "rgba(255,255,255,0.1)"}`,
+                        boxShadow: isCurrent ? `0 0 24px ${s.glow}, 0 0 48px ${s.glow}` : "none",
+                        transition: "all 0.45s cubic-bezier(0.4,0,0.2,1)",
                       }}
                     >
-                      <span style={{ filter: isCurrent ? "drop-shadow(0 0 4px rgba(255,255,255,0.7))" : "none" }}>
+                      <span style={{ filter: isCurrent ? "drop-shadow(0 0 5px rgba(255,255,255,0.7))" : "none" }}>
                         {isDone ? "✅" : s.icon}
                       </span>
                     </div>
                   </div>
 
-                  {/* Label */}
-                  <div className="text-center" style={{ minWidth: 82 }}>
-                    <div
-                      className="text-[11px] font-bold leading-tight transition-colors duration-500"
-                      style={{ color: isCurrent ? s.color : isDone ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.2)" }}
-                    >
+                  <div className="text-center" style={{ minWidth: 84 }}>
+                    <div className="text-[11px] font-bold leading-tight transition-colors duration-400"
+                      style={{ color: isCurrent ? s.color : isDone ? "rgba(255,255,255,0.48)" : "rgba(255,255,255,0.18)" }}>
                       {s.label}
                     </div>
-                    <div
-                      className="text-[10px] font-medium mt-0.5 transition-colors duration-500"
-                      style={{ color: isCurrent ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.13)" }}
-                    >
+                    <div className="text-[10px] font-medium mt-0.5 transition-colors duration-400"
+                      style={{ color: isCurrent ? "rgba(255,255,255,0.48)" : "rgba(255,255,255,0.12)" }}>
                       {s.sub}
                     </div>
                   </div>
@@ -238,47 +254,36 @@ export default function ShipmentJourney() {
           </div>
         </div>
 
-        {/* ── Mobile vertical list ── */}
+        {/* ═══════════════ MOBILE LIST ═══════════════ */}
         <div className="md:hidden flex flex-col gap-2.5">
           {STEPS.map((s, i) => {
             const isDone    = i < active;
             const isCurrent = i === active;
             return (
-              <div
-                key={i}
-                className="flex items-center gap-4 rounded-2xl px-4 py-3 transition-all duration-500"
+              <div key={i} className="flex items-center gap-3 rounded-2xl px-4 py-3 transition-all duration-500"
                 style={{
-                  background: isCurrent ? `${s.color}12` : "rgba(255,255,255,0.02)",
+                  background: isCurrent ? `${s.color}10` : "rgba(255,255,255,0.02)",
                   border: `1px solid ${isCurrent ? s.color + "44" : isDone ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.04)"}`,
-                  boxShadow: isCurrent ? `0 0 18px ${s.glow}` : "none",
-                }}
-              >
-                {/* Mobile progress line on left */}
-                <div className="flex flex-col items-center gap-0 self-stretch" style={{ width: 2, marginRight: 2 }}>
-                  <div className="flex-1 rounded-full transition-all duration-700"
-                    style={{ width: 2, background: isDone || isCurrent ? s.color : "rgba(255,255,255,0.08)" }} />
-                </div>
-
-                <div
-                  className="flex items-center justify-center rounded-full text-lg flex-shrink-0"
+                  boxShadow: isCurrent ? `0 0 20px ${s.glow}` : "none",
+                }}>
+                <div className="flex items-center justify-center rounded-full text-lg flex-shrink-0 transition-all duration-500"
                   style={{
                     width: 44, height: 44,
                     background: isCurrent ? `${s.color}28` : "rgba(255,255,255,0.04)",
                     border: `1.5px solid ${isCurrent ? s.color : "rgba(255,255,255,0.08)"}`,
-                  }}
-                >
+                  }}>
                   {isDone ? "✅" : s.icon}
                 </div>
                 <div className="flex-1">
                   <div className="text-sm font-bold transition-colors duration-500"
-                    style={{ color: isCurrent ? s.color : isDone ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.2)" }}>
+                    style={{ color: isCurrent ? s.color : isDone ? "rgba(255,255,255,0.42)" : "rgba(255,255,255,0.18)" }}>
                     {s.label}
                   </div>
                   <div className="text-[11px] text-white/25">{s.sub}</div>
                 </div>
                 {isCurrent && (
                   <div className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                    style={{ background: `${s.color}22`, color: s.color, border: `1px solid ${s.color}35` }}>
+                    style={{ background: `${s.color}20`, color: s.color, border: `1px solid ${s.color}35` }}>
                     LIVE
                   </div>
                 )}
@@ -289,48 +294,35 @@ export default function ShipmentJourney() {
 
         {/* ── Active step detail pill ── */}
         <div key={active} className="mt-10 flex flex-col items-center gap-3"
-          style={{ animation: "fadeSlideUp 0.4s ease both" }}>
-          <div
-            className="flex items-center gap-3 px-5 py-3 rounded-2xl"
+          style={{ animation: "fadeUp 0.4s ease both" }}>
+          <div className="flex items-center gap-3 px-5 py-3 rounded-2xl"
             style={{
-              background: `${STEPS[active].color}10`,
-              border:     `1px solid ${STEPS[active].color}30`,
-              boxShadow:  `0 4px 28px ${STEPS[active].glow}`,
-            }}
-          >
-            <span style={{ fontSize: 22 }}>{STEPS[active].icon}</span>
+              background: `${cur.color}0e`,
+              border: `1px solid ${cur.color}2e`,
+              boxShadow: `0 4px 30px ${cur.glow}`,
+            }}>
+            <span style={{ fontSize: 22 }}>{cur.icon}</span>
             <div>
-              <div className="text-sm font-black" style={{ color: STEPS[active].color }}>
-                {STEPS[active].label}
-              </div>
-              <div className="text-xs text-white/35">{STEPS[active].sub}</div>
+              <div className="text-sm font-black" style={{ color: cur.color }}>{cur.label}</div>
+              <div className="text-xs text-white/35">{cur.sub}</div>
             </div>
-            <div
-              className="ml-4 flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-widest"
-              style={{
-                background: `${STEPS[active].color}18`,
-                color:       STEPS[active].color,
-                border:     `1px solid ${STEPS[active].color}35`,
-              }}
-            >
+            <div className="ml-4 flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-widest"
+              style={{ background: `${cur.color}18`, color: cur.color, border: `1px solid ${cur.color}30` }}>
               <span className="w-1.5 h-1.5 rounded-full"
-                style={{ background: STEPS[active].color, animation: "liveDot 0.9s ease infinite" }} />
+                style={{ background: cur.color, animation: "liveDot 0.9s ease infinite" }} />
               {completed ? "Complete" : "In Progress"}
             </div>
           </div>
 
-          {/* Step progress dots */}
+          {/* dots */}
           <div className="flex gap-2">
             {STEPS.map((s, i) => (
               <div key={i} className="rounded-full transition-all duration-500"
-                style={{
-                  width: i === active ? 20 : 6,
-                  height: 6,
-                  background: i <= active ? s.color : "rgba(255,255,255,0.1)",
-                }} />
+                style={{ width: i === active ? 20 : 6, height: 6, background: i <= active ? s.color : "rgba(255,255,255,0.1)" }} />
             ))}
           </div>
         </div>
+
       </div>
     </div>
   );
