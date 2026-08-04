@@ -383,11 +383,11 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   const fw   = colW - pad * 2;  // inner text width = 91mm
   const lg   = 3.8;             // line gap mm
 
-  // column headers
+  // column headers — draw above the box, then leave 8 mm gap before names start
   setFont(7.5, 'bold'); setText(0,0,0);
-  pdf.text('SHIP FROM:', M,          y + 4);
+  pdf.text('SHIP FROM:', M,              y + 4);
   pdf.text('SHIP TO:',   M + colW + pad, y + 4);
-  y += 6;
+  y += 9;
 
   const boxTop = y;
 
@@ -667,19 +667,6 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   pdf.text('Company Stamp',      M + sigW*2 + sigW/2, y + 12, { align: 'center' });
 
   y += 25;
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // FOOTER
-  // ══════════════════════════════════════════════════════════════════════════
-  const fy = PH - 8;
-  hRule(fy - 2, 0.3);
-  setFont(6.5); setText(80,80,80);
-  pdf.text(
-    'Email: skyxpresss786@gmail.com  |  Tel: (042) 37255473  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411',
-    PW/2, fy, { align: 'center' }
-  );
-  setText(100,100,100);
-  pdf.text('Page 1 of 1', M + U, fy, { align: 'right' });
 
   handlePDFOutput(pdf, `Performa-Invoice-${ref}.pdf`, mode);
 };
