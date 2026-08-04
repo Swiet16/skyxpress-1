@@ -7,25 +7,25 @@ import {
   Users,
   Package,
   FileText,
-  Settings,
   Plus,
   DollarSign,
-  Radio,
   Activity,
   ClipboardCheck,
-  Terminal,
   ClipboardList,
   Building2,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { UserManagement } from "./UserManagement";
 import { ParcelManagement } from "./ParcelManagement";
-import { PricingManager } from "./PricingManager";
 import { AdminRequestsSection } from "./AdminRequestsSection";
 import { ApprovedParcelsSection } from "./ApprovedParcelsSection";
 import { ManifestStock } from "./ManifestStock";
 import { PartnerManagement } from "./PartnerManagement";
 import { useLiveData } from "@/hooks/useLiveData";
+import { useTableCount } from "@/hooks/useTableCount";
 import {
   FlightPathChart,
   ManifestBar,
@@ -137,20 +137,25 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
     orderBy: { column: "created_at", ascending: false },
   });
 
+  // Exact counts — not capped at Supabase's 1000-row default
+  const { count: exactUserCount } = useTableCount("profiles");
+  const { count: exactParcelCount } = useTableCount("parcels");
+  const { count: exactInvoiceCount } = useTableCount("invoices");
+  const { count: exactActiveParcelCount } = useTableCount("parcels", { column: "current_status", value: "in_transit" });
+
   const [activeTab, setActiveTab] = useState("overview");
   const navigate = useNavigate();
 
   const role = resolveRole(profile?.role);
   const theme = ROLE_THEME[role];
   const isAdmin = role === "admin";
-  const isDeveloper = role === "developer";
 
   // ---------- derived stats ----------
   const stats = {
-    totalUsers: users.length,
-    totalParcels: parcels.length,
-    activeParcels: parcels.filter((p) => !["delivered", "cancelled"].includes(p.current_status)).length,
-    totalInvoices: invoices.length,
+    totalUsers: exactUserCount ?? users.length,
+    totalParcels: exactParcelCount ?? parcels.length,
+    activeParcels: exactActiveParcelCount ?? parcels.filter((p) => !["delivered", "cancelled"].includes(p.current_status)).length,
+    totalInvoices: exactInvoiceCount ?? invoices.length,
     pendingQuotes: quotes.filter((q) => q.status === "pending").length,
     todayRevenue: invoices
       .filter((inv) => new Date(inv.created_at).toDateString() === new Date().toDateString())
@@ -217,77 +222,99 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
             <ClipboardList className="h-3.5 w-3.5" />
             Manifest Stock
           </TabsTrigger>
-          {isAdmin && <TabsTrigger value="rates">Rates</TabsTrigger>}
-          {(isDeveloper || isAdmin) && <TabsTrigger value="system">System</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
           {/* ---------- Stat cards ---------- */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Users</CardTitle>
-                <Users className="h-4 w-4" style={{ color: METRIC_ACCENT.users }} />
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-end justify-between gap-3">
-                  <div>
-                    <div className="text-2xl font-bold">{stats.totalUsers}</div>
-                    <p className="text-xs text-muted-foreground">
-                      {usersDelta >= 0 ? "+" : ""}
-                      {usersDelta}% vs prior week
-                    </p>
-                  </div>
-                  <Sparkline data={usersPerDay14.slice(7)} accent={METRIC_ACCENT.users} />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Users */}
+            <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-violet-500/10 via-violet-500/5 to-transparent p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Users</span>
+                <div className="rounded-lg p-2" style={{ backgroundColor: `${METRIC_ACCENT.users}20` }}>
+                  <Users className="h-4 w-4" style={{ color: METRIC_ACCENT.users }} />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+              <div className="text-3xl font-bold tracking-tight">{stats.totalUsers}</div>
+              <div className="mt-2 flex items-center gap-1 text-xs">
+                {usersDelta > 0 ? (
+                  <TrendingUp className="h-3 w-3 text-emerald-400" />
+                ) : usersDelta < 0 ? (
+                  <TrendingDown className="h-3 w-3 text-red-400" />
+                ) : (
+                  <Minus className="h-3 w-3 text-muted-foreground" />
+                )}
+                <span className={usersDelta > 0 ? "text-emerald-400" : usersDelta < 0 ? "text-red-400" : "text-muted-foreground"}>
+                  {usersDelta > 0 ? "+" : ""}{usersDelta}% vs prior week
+                </span>
+              </div>
+              <div className="absolute bottom-3 right-3 opacity-60">
+                <Sparkline data={usersPerDay14.slice(7)} accent={METRIC_ACCENT.users} />
+              </div>
+            </div>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Parcels</CardTitle>
-                <Package className="h-4 w-4" style={{ color: METRIC_ACCENT.parcels }} />
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-end justify-between gap-3">
-                  <div>
-                    <div className="text-2xl font-bold">{stats.totalParcels}</div>
-                    <p className="text-xs text-muted-foreground">{stats.activeParcels} active</p>
-                  </div>
-                  <Sparkline data={parcelsPerDay14.slice(7)} accent={METRIC_ACCENT.parcels} />
+            {/* Parcels */}
+            <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Parcels</span>
+                <div className="rounded-lg p-2" style={{ backgroundColor: `${METRIC_ACCENT.parcels}20` }}>
+                  <Package className="h-4 w-4" style={{ color: METRIC_ACCENT.parcels }} />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+              <div className="text-3xl font-bold tracking-tight">{stats.totalParcels.toLocaleString()}</div>
+              <div className="mt-2 flex items-center gap-1 text-xs">
+                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-400" />
+                  </span>
+                  {stats.activeParcels.toLocaleString()} in transit
+                </span>
+              </div>
+              <div className="absolute bottom-3 right-3 opacity-60">
+                <Sparkline data={parcelsPerDay14.slice(7)} accent={METRIC_ACCENT.parcels} />
+              </div>
+            </div>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Invoices</CardTitle>
-                <FileText className="h-4 w-4" style={{ color: METRIC_ACCENT.invoices }} />
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-end justify-between gap-3">
-                  <div>
-                    <div className="text-2xl font-bold">{stats.totalInvoices}</div>
-                    <p className="text-xs text-muted-foreground">
-                      {invoicesDelta >= 0 ? "+" : ""}
-                      {invoicesDelta}% vs prior week
-                    </p>
-                  </div>
-                  <Sparkline data={invoicesPerDay14.slice(7)} accent={METRIC_ACCENT.invoices} />
+            {/* Invoices */}
+            <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-teal-500/10 via-teal-500/5 to-transparent p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Invoices</span>
+                <div className="rounded-lg p-2" style={{ backgroundColor: `${METRIC_ACCENT.invoices}20` }}>
+                  <FileText className="h-4 w-4" style={{ color: METRIC_ACCENT.invoices }} />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+              <div className="text-3xl font-bold tracking-tight">{stats.totalInvoices.toLocaleString()}</div>
+              <div className="mt-2 flex items-center gap-1 text-xs">
+                {invoicesDelta > 0 ? (
+                  <TrendingUp className="h-3 w-3 text-emerald-400" />
+                ) : invoicesDelta < 0 ? (
+                  <TrendingDown className="h-3 w-3 text-red-400" />
+                ) : (
+                  <Minus className="h-3 w-3 text-muted-foreground" />
+                )}
+                <span className={invoicesDelta > 0 ? "text-emerald-400" : invoicesDelta < 0 ? "text-red-400" : "text-muted-foreground"}>
+                  {invoicesDelta > 0 ? "+" : ""}{invoicesDelta}% vs prior week
+                </span>
+              </div>
+              <div className="absolute bottom-3 right-3 opacity-60">
+                <Sparkline data={invoicesPerDay14.slice(7)} accent={METRIC_ACCENT.invoices} />
+              </div>
+            </div>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Today's Revenue</CardTitle>
-                <DollarSign className="h-4 w-4" style={{ color: METRIC_ACCENT.revenue }} />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">${stats.todayRevenue.toFixed(2)}</div>
-                <p className="text-xs text-muted-foreground">{stats.pendingQuotes} pending quotes</p>
-              </CardContent>
-            </Card>
+            {/* Revenue */}
+            <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Today's Revenue</span>
+                <div className="rounded-lg p-2" style={{ backgroundColor: `${METRIC_ACCENT.revenue}20` }}>
+                  <DollarSign className="h-4 w-4" style={{ color: METRIC_ACCENT.revenue }} />
+                </div>
+              </div>
+              <div className="text-3xl font-bold tracking-tight">${stats.todayRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              <div className="mt-2 text-xs text-muted-foreground">
+                {stats.pendingQuotes} quote{stats.pendingQuotes !== 1 ? "s" : ""} pending
+              </div>
+            </div>
           </div>
 
           {/* ---------- Ops board: progress charts ---------- */}
@@ -356,9 +383,9 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
                     <Users className="h-6 w-6" />
                     Manage Users
                   </Button>
-                  <Button variant="outline" className="h-16 flex-col gap-2" onClick={() => setActiveTab("rates")}>
-                    <Settings className="h-6 w-6" />
-                    Update Rates
+                  <Button variant="outline" className="h-16 flex-col gap-2" onClick={() => setActiveTab("manifests")}>
+                    <ClipboardList className="h-6 w-6" />
+                    Manifest Stock
                   </Button>
                 </div>
               )}
@@ -374,13 +401,9 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
                   </Button>
                 </div>
               )}
-              {isDeveloper && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Button className="h-16 flex-col gap-2" onClick={() => setActiveTab("system")}>
-                    <Terminal className="h-6 w-6" />
-                    System Diagnostics
-                  </Button>
-                  <Button variant="outline" className="h-16 flex-col gap-2" onClick={() => setActiveTab("parcels")}>
+              {role === "developer" && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Button className="h-16 flex-col gap-2" onClick={() => setActiveTab("parcels")}>
                     <Package className="h-6 w-6" />
                     View All Parcels
                   </Button>
@@ -421,52 +444,6 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
         <TabsContent value="manifests">
           <ManifestStock />
         </TabsContent>
-
-        {isAdmin && (
-          <TabsContent value="rates">
-            <PricingManager />
-          </TabsContent>
-        )}
-
-        {(isDeveloper || isAdmin) && (
-          <TabsContent value="system" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Radio className="h-4 w-4" style={{ color: theme.accent }} />
-                  Live Channels
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Diagnostics reflect the same realtime Supabase channels powering this dashboard.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {[
-                    { table: "profiles", label: "Profiles", count: users.length },
-                    { table: "parcels", label: "Parcels", count: parcels.length },
-                    { table: "invoices", label: "Invoices", count: invoices.length },
-                    { table: "quotes", label: "Quotes", count: quotes.length },
-                  ].map((row) => (
-                    <div key={row.table} className="rounded-lg border p-4">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium">{row.label}</p>
-                        <span className="relative flex h-1.5 w-1.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                        </span>
-                      </div>
-                      <p className="text-2xl font-bold font-mono mt-1">{row.count}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        last write {formatRelativeTime((latestByTable as any)[row.table])}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        )}
       </Tabs>
     </div>
   );
