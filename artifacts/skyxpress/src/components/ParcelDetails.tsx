@@ -827,7 +827,25 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps)
       </Card>
 
       {/* Actions */}
-      <div className="flex justify-end pt-4">
+      <div className="flex items-center justify-between pt-4 border-t gap-3 flex-wrap">
+        <Button
+          onClick={() => sendXrayEmail(parcel)}
+          disabled={emailSending || !parcel.sender_email}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+        >
+          {emailSending ? (
+            <>
+              <span className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full inline-block" />
+              Sending…
+            </>
+          ) : (
+            <>
+              <Mail className="h-4 w-4" />
+              {emailSentAt ? "Resend X-Ray Email" : "Send X-Ray Email"}
+              {emailSentAt && <CheckCircle className="h-3.5 w-3.5 ml-1 opacity-80" />}
+            </>
+          )}
+        </Button>
         <Button variant="outline" onClick={onClose}>
           Close
         </Button>
