@@ -109,7 +109,7 @@ function PartnerCard({ seen }: { seen: boolean }) {
       <div className="absolute right-0 top-0 w-64 h-64 rounded-full pointer-events-none"
         style={{ background: "radial-gradient(circle, rgba(46,134,255,0.15) 0%, transparent 70%)" }} />
 
-      <div className="relative z-10 p-8 md:p-10 grid md:grid-cols-2 gap-8 items-center">
+      <div className="relative z-10 p-5 md:p-10 grid md:grid-cols-2 gap-6 md:gap-8 items-center">
         <div>
           <div
             className="inline-flex items-center gap-2 text-xs font-bold px-3 py-1 rounded-full mb-4 uppercase tracking-widest"
@@ -117,39 +117,41 @@ function PartnerCard({ seen }: { seen: boolean }) {
           >
             <Users className="h-3 w-3" /> Partner Program
           </div>
-          <h3 className="text-2xl md:text-3xl font-black text-white mb-3 leading-tight">
+          <h3 className="text-xl md:text-3xl font-black text-white mb-3 leading-tight">
             Grow your business with the <span style={{ color: "#2e86ff" }}>SkyXpress</span> network
           </h3>
-          <p className="text-white/50 text-sm leading-relaxed mb-6">
+          <p className="text-white/50 text-sm leading-relaxed mb-5">
             Join hundreds of logistics partners worldwide. Get access to our global cargo network,
             dedicated account management, real-time manifest tools, and competitive rates.
           </p>
-          <div className="flex flex-wrap gap-3 mb-6">
+          {/* benefit badges — 2-col grid on mobile so they never overflow */}
+          <div className="grid grid-cols-2 gap-2 mb-5">
             {["Competitive Rates", "Dedicated Support", "Manifest Tools", "Volume Discounts"].map(b => (
               <span
                 key={b}
-                className="text-xs font-semibold px-3 py-1 rounded-lg"
+                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg truncate"
                 style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)" }}
               >
                 ✓ {b}
               </span>
             ))}
           </div>
-          <div className="flex gap-3">
-            <Link to="/auth">
+          {/* buttons — stack on mobile, side-by-side on sm+ */}
+          <div className="flex flex-col sm:flex-row gap-2.5">
+            <Link to="/auth" className="w-full sm:w-auto">
               <Button
                 size="sm"
-                className="h-9 px-5 text-xs font-bold rounded-xl"
+                className="w-full sm:w-auto h-9 px-5 text-xs font-bold rounded-xl"
                 style={{ background: "linear-gradient(135deg,#2e86ff,#1a5aff)", border: "none" }}
               >
                 Become a Partner <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
               </Button>
             </Link>
-            <Link to="/network">
+            <Link to="/network" className="w-full sm:w-auto">
               <Button
                 variant="outline"
                 size="sm"
-                className="h-9 px-5 text-xs font-bold rounded-xl"
+                className="w-full sm:w-auto h-9 px-5 text-xs font-bold rounded-xl"
                 style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)", background: "transparent" }}
               >
                 View Network
@@ -158,20 +160,21 @@ function PartnerCard({ seen }: { seen: boolean }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        {/* stat cards — always 2-col */}
+        <div className="grid grid-cols-2 gap-2.5">
           {[
-            { label: "Active Partners", value: "480+", color: "#2e86ff" },
-            { label: "Countries Covered", value: "195+", color: "#ff6a1a" },
-            { label: "Daily Flights", value: "1,200+", color: "#0f9d58" },
-            { label: "Partner Revenue", value: "+34%", color: "#ffb020" },
+            { label: "Active Partners",  value: "480+",    color: "#2e86ff" },
+            { label: "Countries Covered",value: "195+",    color: "#ff6a1a" },
+            { label: "Daily Flights",    value: "1,200+",  color: "#0f9d58" },
+            { label: "Partner Revenue",  value: "+34%",    color: "#ffb020" },
           ].map(s => (
             <div
               key={s.label}
-              className="rounded-xl p-4 text-center"
+              className="rounded-xl p-3 md:p-4 text-center"
               style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}
             >
-              <div className="text-2xl font-black" style={{ color: s.color }}>{s.value}</div>
-              <div className="text-[11px] text-white/40 font-semibold mt-0.5 uppercase tracking-wide">{s.label}</div>
+              <div className="text-xl md:text-2xl font-black" style={{ color: s.color }}>{s.value}</div>
+              <div className="text-[10px] md:text-[11px] text-white/40 font-semibold mt-0.5 uppercase tracking-wide leading-tight">{s.label}</div>
             </div>
           ))}
         </div>
