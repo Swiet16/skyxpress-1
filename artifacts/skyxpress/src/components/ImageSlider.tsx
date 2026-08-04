@@ -87,7 +87,10 @@ const ImageSlider = () => {
   const slide = slides[current];
 
   return (
-    <div className="relative w-full h-[70vh] md:h-screen overflow-hidden group">
+    <div className="relative w-full overflow-hidden group" style={{ height: "clamp(220px, 56.25vw, 100vh)" }}
+      // 56.25vw = 16:9 ratio on mobile → full landscape image visible, no crop
+      // clamp(220px, …, 100vh) → min sensible height, max full screen on desktop
+    >
 
       {/* ── Slides (crossfade) ── */}
       {slides.map((s, i) => (
