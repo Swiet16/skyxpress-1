@@ -368,53 +368,107 @@ export const AdminDashboard = ({ user, profile }: AdminDashboardProps) => {
           )}
 
           {/* ---------- Role-based quick actions ---------- */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isAdmin && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Button className="h-16 flex-col gap-2" onClick={() => setActiveTab("parcels")}>
-                    <Plus className="h-6 w-6" />
-                    Create / View Parcels
-                  </Button>
-                  <Button variant="outline" className="h-16 flex-col gap-2" onClick={() => setActiveTab("users")}>
-                    <Users className="h-6 w-6" />
-                    Manage Users
-                  </Button>
-                  <Button variant="outline" className="h-16 flex-col gap-2" onClick={() => setActiveTab("manifests")}>
-                    <ClipboardList className="h-6 w-6" />
-                    Manifest Stock
-                  </Button>
-                </div>
-              )}
-              {role === "staff" && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Button className="h-16 flex-col gap-2" onClick={() => setActiveTab("parcels")}>
-                    <Package className="h-6 w-6" />
-                    View All Parcels
-                  </Button>
-                  <Button variant="outline" className="h-16 flex-col gap-2" onClick={() => setActiveTab("requests")}>
-                    <ClipboardCheck className="h-6 w-6" />
-                    Review Requests
-                  </Button>
-                </div>
-              )}
-              {role === "developer" && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Button className="h-16 flex-col gap-2" onClick={() => setActiveTab("parcels")}>
-                    <Package className="h-6 w-6" />
-                    View All Parcels
-                  </Button>
-                  <Button variant="outline" className="h-16 flex-col gap-2" onClick={() => setActiveTab("approved")}>
-                    <ClipboardCheck className="h-6 w-6" />
-                    Status / Approved
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {(() => {
+            const actionCards: { tab: string; label: string; description: string; icon: React.ReactNode; gradient: string; iconBg: string; iconColor: string }[] =
+              isAdmin
+                ? [
+                    {
+                      tab: "parcels",
+                      label: "Create / View Parcels",
+                      description: "Add new shipments or browse the full parcel list",
+                      icon: <Plus className="h-6 w-6" />,
+                      gradient: "from-blue-500/15 via-blue-500/5 to-transparent",
+                      iconBg: "#3B82F620",
+                      iconColor: "#3B82F6",
+                    },
+                    {
+                      tab: "users",
+                      label: "Manage Users",
+                      description: "View accounts, assign roles, and manage access",
+                      icon: <Users className="h-6 w-6" />,
+                      gradient: "from-violet-500/15 via-violet-500/5 to-transparent",
+                      iconBg: "#8B5CF620",
+                      iconColor: "#8B5CF6",
+                    },
+                    {
+                      tab: "manifests",
+                      label: "Manifest Stock",
+                      description: "Create, lock, and export flight manifests",
+                      icon: <ClipboardList className="h-6 w-6" />,
+                      gradient: "from-amber-500/15 via-amber-500/5 to-transparent",
+                      iconBg: "#F59E0B20",
+                      iconColor: "#F59E0B",
+                    },
+                  ]
+                : role === "staff"
+                ? [
+                    {
+                      tab: "parcels",
+                      label: "View All Parcels",
+                      description: "Browse and update every shipment in the system",
+                      icon: <Package className="h-6 w-6" />,
+                      gradient: "from-blue-500/15 via-blue-500/5 to-transparent",
+                      iconBg: "#3B82F620",
+                      iconColor: "#3B82F6",
+                    },
+                    {
+                      tab: "requests",
+                      label: "Review Requests",
+                      description: "Process and approve pending shipment requests",
+                      icon: <ClipboardCheck className="h-6 w-6" />,
+                      gradient: "from-teal-500/15 via-teal-500/5 to-transparent",
+                      iconBg: "#2B8C7E20",
+                      iconColor: "#2B8C7E",
+                    },
+                  ]
+                : [
+                    {
+                      tab: "parcels",
+                      label: "View All Parcels",
+                      description: "Browse and update every shipment in the system",
+                      icon: <Package className="h-6 w-6" />,
+                      gradient: "from-blue-500/15 via-blue-500/5 to-transparent",
+                      iconBg: "#3B82F620",
+                      iconColor: "#3B82F6",
+                    },
+                    {
+                      tab: "approved",
+                      label: "Status / Approved",
+                      description: "Track approved parcels and update statuses",
+                      icon: <ClipboardCheck className="h-6 w-6" />,
+                      gradient: "from-teal-500/15 via-teal-500/5 to-transparent",
+                      iconBg: "#2B8C7E20",
+                      iconColor: "#2B8C7E",
+                    },
+                  ];
+
+            return (
+              <div className={`grid grid-cols-1 gap-3 ${actionCards.length === 3 ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+                {actionCards.map((a) => (
+                  <button
+                    key={a.tab}
+                    onClick={() => setActiveTab(a.tab)}
+                    className={`group relative overflow-hidden rounded-xl border bg-gradient-to-br ${a.gradient} p-4 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div
+                        className="shrink-0 rounded-xl p-3 transition-transform duration-200 group-hover:scale-110"
+                        style={{ backgroundColor: a.iconBg, color: a.iconColor }}
+                      >
+                        {a.icon}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm leading-snug">{a.label}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground leading-snug">{a.description}</p>
+                      </div>
+                    </div>
+                    {/* subtle corner arrow */}
+                    <span className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-40 transition-opacity text-xs" style={{ color: a.iconColor }}>→</span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
         </TabsContent>
 
         <TabsContent value="requests">
