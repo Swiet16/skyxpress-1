@@ -88,6 +88,7 @@ interface Parcel {
   service_type?: string;
   from_country: string;
   to_country: string;
+  created_at?: string;
   items?: Array<{ description: string }>;
 }
 
@@ -108,6 +109,11 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
   const serviceType = (parcel.service_type || "EXPRESS WORLDWIDE").toUpperCase();
   const pieces = parcel.pieces ?? 1;
   const weightKg = Number(parcel.weight || 0).toFixed(1);
+
+  // Day + Time from created_at (or now)
+  const createdDate = parcel.created_at ? new Date(parcel.created_at) : new Date();
+  const dayStr = createdDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const timeStr = createdDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
   const contentsText = Array.isArray(parcel.items) && parcel.items.length > 0
     ? parcel.items.map((i) => i.description).filter(Boolean).join(", ")
     : parcel.parcel_type || "GENERAL CARGO";
@@ -251,7 +257,10 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
             <div style={{ textAlign: "right", minWidth: 90, fontSize: 9 }}>
               <div style={{ color: "#333", marginBottom: 2 }}>Contact:</div>
               <div style={{ fontSize: 10, fontWeight: 700, wordBreak: "break-word" }}>
-                {parcel.receiver_company || parcel.receiver_name}
+                {parcel.receiver_name}
+              </div>
+              <div style={{ fontSize: 10, color: "#222", marginTop: 2 }}>
+                {parcel.receiver_phone}
               </div>
             </div>
           </div>
@@ -268,16 +277,16 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
           {/* ── Ref / Day / Time row ── */}
           <div style={{ display: "flex", alignItems: "center", padding: "4px 10px", borderBottom: "1px solid #ccc" }}>
             <div style={{ flex: 1, fontSize: 10 }}>
-              Ref: SkyXpress /{refCode}
+              Ref: {refCode}
             </div>
             <div style={{ display: "flex", gap: 20, fontSize: 9, color: "#555" }}>
-              <div>
-                <div style={{ fontWeight: 700, textAlign: "center" }}>Day</div>
-                <div style={{ borderBottom: "1px solid #999", width: 40, marginTop: 2 }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontWeight: 700 }}>Day</div>
+                <div style={{ fontSize: 9, marginTop: 2, whiteSpace: "nowrap" }}>{dayStr}</div>
               </div>
-              <div>
-                <div style={{ fontWeight: 700, textAlign: "center" }}>Time</div>
-                <div style={{ borderBottom: "1px solid #999", width: 40, marginTop: 2 }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontWeight: 700 }}>Time</div>
+                <div style={{ fontSize: 9, marginTop: 2 }}>{timeStr}</div>
               </div>
             </div>
           </div>
@@ -305,7 +314,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
               <div style={{ flex: 1 }}>
                 <Barcode value={refCode || "000000"} height={48} />
                 <div style={{ textAlign: "center", fontSize: 9, marginTop: 2, letterSpacing: 0.5 }}>
-                  WAYBILL {refCode}
+                  {refCode}
                 </div>
               </div>
               <div style={{ minWidth: 110, textAlign: "right", fontSize: 9, paddingTop: 4 }}>
