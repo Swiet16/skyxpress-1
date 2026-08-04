@@ -253,9 +253,14 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     for (const ln of sndWrapped.slice(0, 6)) { txt(ln, pad, fy); fy += LINE_H; }
 
     sf("normal", 6.5, 90, 90, 90);
-    txt("Origin:", W - ORIGIN_W + 1, y + 5);
-    sf("bold", 19, 0, 0, 0);
-    txt(origin, W - ORIGIN_W + 1, y + fromH - 5);
+    txt("Contact:", W - ORIGIN_W + 1, y + 5);
+    sf("bold", 8, 0, 0, 0);
+    const sndNameLines = doc.splitTextToSize(parcel.sender_name, ORIGIN_W - 2);
+    doc.text(sndNameLines, W - ORIGIN_W + 1, y + 10);
+    if (parcel.sender_phone) {
+      sf("normal", 8, 30, 30, 30);
+      txt(parcel.sender_phone, W - ORIGIN_W + 1, y + 10 + sndNameLines.length * LINE_H + 1);
+    }
 
     hline(y + fromH, 0.3, 160, 160, 160);
     y += fromH;
@@ -482,9 +487,10 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
                 <div key={i} style={{ fontSize: 10, color: "#222" }}>{line}</div>
               ))}
             </div>
-            <div style={{ textAlign: "right", minWidth: 60 }}>
-              <div style={{ fontSize: 9, color: "#333", marginBottom: 2 }}>Origin:</div>
-              <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: 1 }}>{origin}</div>
+            <div style={{ textAlign: "right", minWidth: 70 }}>
+              <div style={{ fontSize: 9, color: "#333", marginBottom: 2 }}>Contact:</div>
+              <div style={{ fontSize: 11, fontWeight: 700 }}>{parcel.sender_name}</div>
+              <div style={{ fontSize: 11, color: "#222", marginTop: 2 }}>{parcel.sender_phone}</div>
             </div>
           </div>
 
