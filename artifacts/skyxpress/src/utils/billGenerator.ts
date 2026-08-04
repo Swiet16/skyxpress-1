@@ -294,403 +294,394 @@ const addBarcode = async (
 // ===== 1. INVOICE (Proforma — DHL-style) =====
 export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'download'): Promise<void> => {
   const pdf = new jsPDF('p', 'mm', 'a4');
-  const pageWidth  = pdf.internal.pageSize.getWidth();   // 210mm
-  const pageHeight = pdf.internal.pageSize.getHeight();  // 297mm
-  const M = 10;   // left/right margin
-  const usable = pageWidth - 2 * M;  // 190mm
+  const PW = pdf.internal.pageSize.getWidth();   // 210mm
+  const PH = pdf.internal.pageSize.getHeight();  // 297mm
+  const M  = 10;                                 // left/right margin
+  const U  = PW - 2 * M;                         // 190mm usable
   let y = 8;
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  const lw = (w: number) => { pdf.setLineWidth(w); };
-  const col = (r: number, g: number, b: number) => { pdf.setTextColor(r, g, b); };
-  const drw = (r: number, g: number, b: number) => { pdf.setDrawColor(r, g, b); };
-  const fnt = (f: 'normal'|'bold'|'italic') => { pdf.setFont('helvetica', f); };
-  const sz  = (s: number) => { pdf.setFontSize(s); };
-
-  // draw a thin horizontal rule across usable width
-  const hRule = (yy: number, thick = 0.2) => {
-    drw(0,0,0); lw(thick);
-    pdf.line(M, yy, M + usable, yy);
-  };
-  // draw a vertical divider
-  const vLine = (x: number, yTop: number, yBot: number) => {
-    drw(0,0,0); lw(0.2);
-    pdf.line(x, yTop, x, yBot);
+  // ── tiny helpers (always reset draw+text colour to black after use) ────────
+  const setDraw  = (r=0,g=0,b=0,w=0.2) => { pdf.setDrawColor(r,g,b); pdf.setLineWidth(w); };
+  const setText  = (r=0,g=0,b=0)       => { pdf.setTextColor(r,g,b); };
+  const setFont  = (s: number, f: 'normal'|'bold'|'italic' = 'normal') => {
+    pdf.setFontSize(s); pdf.setFont('helvetica', f);
   };
 
-  // labeled value helper: prints "Label" bold + value normal on same line
-  const labelVal = (label: string, value: string, x: number, yy: number, labelW: number, valW: number) => {
-    sz(7); fnt('bold'); col(0,0,0);
-    pdf.text(label, x, yy);
-    fnt('normal');
-    const lines = pdf.splitTextToSize(value, valW);
-    pdf.text(lines[0] ?? '', x + labelW, yy);
-    return yy;
+  const hRule = (yy: number, w=0.3) => {
+    setDraw(0,0,0,w); pdf.line(M, yy, M+U, yy);
+  };
+  const vLine = (x: number, y0: number, y1: number) => {
+    setDraw(0,0,0,0.2); pdf.line(x, y0, x, y1);
+  };
+  const cellText = (
+    text: string, cellX: number, cellY: number,
+    cellW: number, cellH: number,
+    align: 'left'|'center'|'right' = 'center',
+    fontSize = 6.5
+  ) => {
+    setFont(fontSize); setText(0,0,0);
+    const lines = pdf.splitTextToSize(text, cellW - 2) as string[];
+    const line = lines[0] ?? '';
+    const tx = align === 'center' ? cellX + cellW / 2
+             : align === 'right'  ? cellX + cellW - 1
+             :                      cellX + 1;
+    pdf.text(line, tx, cellY + cellH / 2 + 1, { align });
   };
 
-  const refNumber  = safeText(parcel.reference_id || parcel.tracking_id, '000000000');
-  const invoiceDate = parcel.created_at
+  // ── parcel data ────────────────────────────────────────────────────────────
+  const ref          = safeText(parcel.reference_id || parcel.tracking_id, '000000000');
+  const invDate      = parcel.created_at
     ? new Date(parcel.created_at).toISOString().split('T')[0]
     : new Date().toISOString().split('T')[0];
-  const currency   = parcel.currency || 'USD';
-  const items      = parcel.items || [{ description: 'General Goods', quantity: 1, unit_price: parcel.total_price || 0 }];
-  const actualWeight  = parcel.weight || 0;
-  const pieces        = parcel.pieces || 1;
-  const length        = parcel.length || 0;
-  const width         = parcel.width  || 0;
-  const height        = parcel.height || 0;
-  const calcDimW      = parseFloat(((length * width * height) / 5000).toFixed(3));
-  const dimWeight     = parcel.dim_weight_override != null ? Number(parcel.dim_weight_override) : calcDimW;
-  const netWeight     = actualWeight;
-  const grossWeight   = actualWeight; // use actual; override if parcel has gross field
-  const senderCountry   = codeToCountryName(safeText(parcel.sender_country,   'Pakistan'));
-  const receiverCountry = codeToCountryName(safeText(parcel.receiver_country,  'United Kingdom'));
+  const cur          = parcel.currency || 'USD';
+  const items        = (parcel.items && parcel.items.length)
+    ? parcel.items
+    : [{ description: 'General Goods', quantity: 1, unit_price: parcel.total_price || 0 }];
+  const weight       = parcel.weight  || 0;
+  const pieces       = parcel.pieces  || 1;
+  const fromCountry  = codeToCountryName(safeText(parcel.sender_country,  'Pakistan'));
+  const toCountry    = codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom'));
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SECTION 1 — HEADER  (title left · barcode top-right)
+  // 1 — HEADER: title left · barcode box top-right
   // ══════════════════════════════════════════════════════════════════════════
-  const bcW = 70; const bcH = 30;
-  const bcX = M + usable - bcW;
+  const bcW = 68; const bcH = 30;
+  const bcX = M + U - bcW;
 
-  // "Proforma Invoice" title — left, plain and simple
-  sz(16); fnt('bold'); col(0,0,0);
+  // Title
+  setFont(16, 'bold'); setText(0,0,0);
   pdf.text('Proforma Invoice', M, y + 10);
 
-  // Barcode box — top-right, thin black border
-  drw(0,0,0); lw(0.3);
+  // Barcode box (thin border, no fill)
+  setDraw(0,0,0,0.3);
   pdf.rect(bcX, y, bcW, bcH);
-
-  sz(6.5); fnt('bold'); col(0,0,0);
-  pdf.text('AWB / REFERENCE NO', bcX + bcW / 2, y + 5, { align: 'center' });
-
-  sz(9); fnt('bold');
-  pdf.text(refNumber, bcX + bcW / 2, y + 10.5, { align: 'center' });
-
-  // barcode — larger height for better visibility
-  await addBarcode(pdf, refNumber, bcX + 2, y + 12, bcW - 4, 15);
-
-  sz(6); fnt('normal'); col(40,40,40);
-  pdf.text(refNumber, bcX + bcW / 2, y + 28.5, { align: 'center' });
+  setFont(6.5, 'bold'); setText(0,0,0);
+  pdf.text('AWB / REFERENCE NO', bcX + bcW/2, y + 5, { align: 'center' });
+  setFont(8.5, 'bold');
+  pdf.text(ref, bcX + bcW/2, y + 10.5, { align: 'center' });
+  // barcode image fills the interior
+  await addBarcode(pdf, ref, bcX + 2, y + 12, bcW - 4, 14);
+  setFont(6, 'normal'); setText(50,50,50);
+  pdf.text(ref, bcX + bcW/2, y + 28.5, { align: 'center' });
 
   y += bcH + 2;
 
-  // ── AWB / Date / Invoice No strip ─────────────────────────────────────────
+  // ── AWB / Date / Invoice No info strip ───────────────────────────────────
   hRule(y, 0.5); y += 1;
-  sz(7.5); fnt('normal'); col(0,0,0);
-  pdf.text(`AWB No: ${refNumber}`, M, y + 4.5);
-  pdf.text(`Invoice Date: ${invoiceDate}`, pageWidth / 2, y + 4.5, { align: 'center' });
-  pdf.text(`Invoice No: ${refNumber}`, M + usable, y + 4.5, { align: 'right' });
-  y += 6;
+  setFont(7.5); setText(0,0,0);
+  pdf.text(`AWB No: ${ref}`,         M,      y + 5);
+  pdf.text(`Invoice Date: ${invDate}`, PW/2,  y + 5, { align: 'center' });
+  pdf.text(`Invoice No: ${ref}`,      M + U,  y + 5, { align: 'right' });
+  y += 7;
   hRule(y, 0.5); y += 3;
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SECTION 2 — SHIP FROM / SHIP TO  (two equal columns)
+  // 2 — SHIP FROM / SHIP TO
   // ══════════════════════════════════════════════════════════════════════════
-  const colW  = usable / 2;   // 95mm each
-  const shipFromX = M;
-  const shipToX   = M + colW;
+  const colW = U / 2;   // 95mm per column
+  const pad  = 2;
+  const fw   = colW - pad * 2;  // inner text width = 91mm
+  const lg   = 3.8;             // line gap mm
 
-  // Column headers
-  sz(8); fnt('bold'); col(0,0,0);
-  pdf.text('SHIP FROM:', shipFromX, y + 4);
-  pdf.text('SHIP TO:', shipToX + 2, y + 4);
+  // column headers
+  setFont(7.5, 'bold'); setText(0,0,0);
+  pdf.text('SHIP FROM:', M,          y + 4);
+  pdf.text('SHIP TO:',   M + colW + pad, y + 4);
   y += 6;
 
-  const addrBoxTop = y;
+  const boxTop = y;
 
-  // helper: render one address column, returns final Y
-  const renderAddr = (
-    side: 'from'|'to',
-    x: number,
-    startY: number
-  ): number => {
-    let cy = startY;
-    const pad = 2;
-    const fw = colW - pad * 2;
-    const lg = 3.8; // line gap
-    sz(7); col(0,0,0);
-
-    const name    = side === 'from' ? safeText(parcel.sender_name, '')   : safeText(parcel.receiver_name, '');
+  const drawAddrCol = (side: 'from'|'to', startX: number): number => {
+    let cy = startX;   // actually used as Y; reuse variable name kept for clarity
+    // resolve fields
+    const name    = side === 'from' ? safeText(parcel.sender_name,   '') : safeText(parcel.receiver_name, '');
     const company = side === 'from' ? safeText(parcel.sender_company,'') : safeText(parcel.receiver_company,'');
     const addr1   = side === 'from' ? safeText(parcel.sender_address,'') : safeText(parcel.receiver_address,'');
-    const addr2   = side === 'from' ? safeText(parcel.sender_address_2 ?? '','') : safeText(parcel.receiver_address_2 ?? '','');
-    const addr3   = side === 'from' ? safeText(parcel.sender_address_3 ?? '','') : safeText(parcel.receiver_address_3 ?? '','');
-    const city    = side === 'from' ? safeText(parcel.sender_city,'')   : safeText(parcel.receiver_city,'');
-    const state   = side === 'from' ? ''                                 : safeText(parcel.receiver_state,'');
-    const postal  = side === 'from' ? ''                                 : safeText(parcel.receiver_postal_code,'');
-    const country = side === 'from' ? senderCountry                      : receiverCountry;
-    const phone   = side === 'from' ? safeText(parcel.sender_phone,'')  : safeText(parcel.receiver_phone,'');
-    const email   = side === 'from'
-      ? safeText(parcel.sender_email ?? 'skyxpresss786@gmail.com','')
-      : safeText(parcel.receiver_email ?? 'skyxpresss786@gmail.com','');
-    const traderType = side === 'from' ? 'BUSINESS' : 'PRIVATE';
-    const cnic   = side === 'from' ? safeText(parcel.sender_cnic ?? '','') : '';
+    const addr2   = side === 'from' ? safeText(parcel.sender_address_2??'','') : safeText(parcel.receiver_address_2??'','');
+    const addr3   = side === 'from' ? safeText(parcel.sender_address_3??'','') : safeText(parcel.receiver_address_3??'','');
+    const city    = side === 'from' ? safeText(parcel.sender_city,   '') : safeText(parcel.receiver_city,'');
+    const state   = side === 'from' ? '' : safeText(parcel.receiver_state,'');
+    const postal  = side === 'from' ? '' : safeText(parcel.receiver_postal_code,'');
+    const country = side === 'from' ? fromCountry : toCountry;
+    const phone   = side === 'from' ? safeText(parcel.sender_phone,  '') : safeText(parcel.receiver_phone,'');
+    const email   = side === 'from' ? safeText(parcel.sender_email??'','') : safeText(parcel.receiver_email??'','');
+    const cnic    = side === 'from' ? safeText(parcel.sender_cnic??'','') : '';
 
-    // Name (bold, possibly 2 lines like DHL)
-    fnt('bold');
-    const nameLines = pdf.splitTextToSize(name.toUpperCase(), fw);
-    nameLines.slice(0,2).forEach((ln: string) => { pdf.text(ln, x + pad, cy); cy += lg; });
-    if (company) {
-      fnt('normal');
-      const coLines = pdf.splitTextToSize(company, fw);
-      coLines.slice(0,1).forEach((ln: string) => { pdf.text(ln, x + pad, cy); cy += lg; });
-    }
+    const colX = side === 'from' ? M : M + colW;
+    let rowY   = boxTop;
 
-    // Address lines
-    fnt('normal');
-    const addrParts = [addr1, addr2, addr3].filter(Boolean);
-    addrParts.forEach(ap => {
-      const ls = pdf.splitTextToSize(ap, fw);
-      ls.slice(0,2).forEach((ln: string) => { pdf.text(ln, x + pad, cy); cy += lg; });
-    });
+    const writeLine = (txt: string, bold = false) => {
+      if (!txt) return;
+      setFont(7, bold ? 'bold' : 'normal'); setText(0,0,0);
+      const ls = pdf.splitTextToSize(txt, fw) as string[];
+      ls.slice(0, 2).forEach((ln: string) => {
+        pdf.text(ln, colX + pad, rowY);
+        rowY += lg;
+      });
+    };
 
-    // City + state + postal
-    const cityLine = [city, state, postal].filter(Boolean).join(', ');
-    if (cityLine) { pdf.text(pdf.splitTextToSize(cityLine, fw)[0], x + pad, cy); cy += lg; }
-    if (state && side === 'to') { /* already in cityLine */ }
-
-    // Country
-    fnt('bold');
-    pdf.text(country, x + pad, cy); cy += lg;
-    fnt('normal');
-
-    // Phone
-    if (phone) { pdf.text(phone, x + pad, cy); cy += lg; }
-
-    // Email
+    writeLine(name.toUpperCase(), true);
+    if (company) writeLine(company);
+    [addr1, addr2, addr3].filter(Boolean).forEach(a => writeLine(a));
+    writeLine([city, state, postal].filter(Boolean).join(', '));
+    writeLine(country, true);
+    if (phone) writeLine(phone);
     if (email) {
-      const eLines = pdf.splitTextToSize(email, fw);
-      eLines.slice(0,1).forEach((ln: string) => { pdf.text(ln, x + pad, cy); cy += lg; });
+      setFont(7); setText(0,0,0);
+      const el = pdf.splitTextToSize(email, fw) as string[];
+      pdf.text(el[0] ?? '', colX + pad, rowY);
+      rowY += lg;
     }
+    rowY += 1;
+    writeLine(`Trader Type: ${side === 'from' ? 'BUSINESS' : 'PRIVATE'}`);
+    writeLine('VAT No:');
+    writeLine('EORI:');
+    if (side === 'from') writeLine('TAX ID:');
+    if (cnic) writeLine(`CNIC: ${cnic}`);
 
-    cy += 1;
-    // Trader Type / VAT / EORI / TAX ID
-    pdf.text(`Trader Type:${traderType}`, x + pad, cy); cy += lg;
-    pdf.text('VAT No:', x + pad, cy); cy += lg;
-    pdf.text('EORI:', x + pad, cy); cy += lg;
-    if (side === 'from') { pdf.text('TAX ID:', x + pad, cy); cy += lg; }
-    if (cnic) { pdf.text(`CNIC: ${cnic}`, x + pad, cy); cy += lg; }
-
-    return cy;
+    return rowY;
   };
 
-  const fromEndY = renderAddr('from', shipFromX, addrBoxTop);
-  const toEndY   = renderAddr('to',   shipToX,   addrBoxTop);
-  const addrBoxBot = Math.max(fromEndY, toEndY) + 2;
+  // draw both columns (text only), capture end Y for box sizing
+  const fromEndY = drawAddrCol('from', 0);   // arg 2 unused, uses boxTop internally
+  const toEndY   = drawAddrCol('to',   0);
+  const boxBot   = Math.max(fromEndY, toEndY) + 2;
 
-  // Draw column borders
-  drw(0,0,0); lw(0.2);
-  pdf.rect(shipFromX, addrBoxTop - 1, colW, addrBoxBot - addrBoxTop + 1);
-  pdf.rect(shipToX,   addrBoxTop - 1, colW, addrBoxBot - addrBoxTop + 1);
+  // borders drawn AFTER text so they don't get clipped under fill
+  setDraw(0,0,0,0.2);
+  pdf.rect(M,         boxTop - 1, colW, boxBot - boxTop + 1);
+  pdf.rect(M + colW,  boxTop - 1, colW, boxBot - boxTop + 1);
 
-  y = addrBoxBot + 2;
+  y = boxBot + 3;
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SECTION 3 — REFERENCES & REMARKS
+  // 3 — REFERENCES & REMARKS (only if there's data)
   // ══════════════════════════════════════════════════════════════════════════
+  hRule(y, 0.2); y += 4;
+
+  const writeRef = (label: string, value: string) => {
+    setFont(7, 'bold'); setText(0,0,0); pdf.text(label, M, y);
+    setFont(7, 'normal');
+    const vx = M + pdf.getTextWidth(label) + 1;
+    const vw = U - (vx - M);
+    if (value) {
+      const ls = pdf.splitTextToSize(value, vw) as string[];
+      pdf.text(ls[0] ?? '', vx, y);
+    }
+    y += 4.5;
+  };
+
+  writeRef('Shipper Reference:', ref);
+  const remarks = safeText(parcel.remarks??'','');
+  if (remarks) writeRef('Remarks:', remarks);
+
   hRule(y, 0.2); y += 3;
-  sz(7); col(0,0,0);
-  labelVal('Shipper Reference: ', safeText(parcel.reference_id || parcel.tracking_id, ''), M, y, 30, usable - 30);
-  y += 4;
-  labelVal('Receiver Reference: ', '', M, y, 32, usable - 32);
-  y += 4;
-  labelVal('Remarks: ', safeText(parcel.remarks ?? '', ''), M, y, 18, usable - 18);
-  y += 5;
-  hRule(y, 0.2); y += 3;
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SECTION 4 — ITEMS TABLE  (DHL-style columns)
+  // 4 — ITEMS TABLE
+  //
+  // Columns and widths (total = 190mm = usable):
+  //  #(8) | Description(55) | HS Code(18) | Item Wt(16) | Total Wt(16) |
+  //  COO(12) | QTY(11) | Unit Value(27) | Sub Total(27)
   // ══════════════════════════════════════════════════════════════════════════
-  // Column layout (mm from left margin):
-  //  #   | Description | Comm.Code | Item Wt | Item Total Wt | COO | QTY | Unit Value | Sub Total
-  //  6   |    52       |    18     |   16    |     16        | 14  |  12 |    22      |    22
-  // Starts at M; total = 178mm < 190mm usable ✓
-  const tblX = M;
-  const cols = [
-    { label: '#',            w: 7  },
-    { label: 'Description',  w: 52 },
-    { label: 'Comm.\nCode',  w: 19 },
-    { label: 'Item Wt\n(kg)',w: 16 },
-    { label: 'Total Wt\n(kg)',w:16 },
-    { label: 'COO',          w: 14 },
-    { label: 'QTY',          w: 13 },
-    { label: 'Unit\nValue',  w: 25 },
-    { label: 'Sub\nTotal',   w: 28 },
-  ];
-  const tblW   = cols.reduce((s, c) => s + c.w, 0); // 190mm exact
-  const hdrH   = 9;   // header row height
-  const rowH   = 10;  // item row height
+  interface TCol { label: string; w: number; x: number; }
+  const tCols: TCol[] = (() => {
+    const defs = [
+      { label: '#',             w: 8  },
+      { label: 'Description',   w: 55 },
+      { label: 'HS Code',       w: 18 },
+      { label: 'Item Wt\n(kg)', w: 16 },
+      { label: 'Total Wt\n(kg)',w: 16 },
+      { label: 'COO',           w: 12 },
+      { label: 'QTY',           w: 11 },
+      { label: 'Unit Value',    w: 27 },
+      { label: 'Sub Total',     w: 27 },
+    ];
+    let acc = M;
+    return defs.map(d => { const c = { ...d, x: acc }; acc += d.w; return c; });
+  })();
+  const tblW  = tCols.reduce((s, c) => s + c.w, 0); // must = 190
+  const hdrH  = 9;
+  const rowH  = 11;
 
-  // Header row
-  pdf.setFillColor(240, 240, 240);
-  pdf.rect(tblX, y, tblW, hdrH, 'F');
-  drw(0,0,0); lw(0.2);
-  pdf.rect(tblX, y, tblW, hdrH);
-
-  let cx = tblX;
-  sz(6); fnt('bold'); col(0,0,0);
-  cols.forEach((c, i) => {
-    if (i > 0) { vLine(cx, y, y + hdrH); }
+  // header
+  pdf.setFillColor(230, 230, 230);
+  pdf.rect(M, y, tblW, hdrH, 'F');
+  setDraw(0,0,0,0.25);
+  pdf.rect(M, y, tblW, hdrH);
+  tCols.forEach((c, i) => {
+    if (i > 0) vLine(c.x, y, y + hdrH);
+    setFont(6, 'bold'); setText(0,0,0);
     const lines = c.label.split('\n');
+    const startY = lines.length === 1 ? y + hdrH/2 + 1.5 : y + 3;
     lines.forEach((ln, li) => {
-      pdf.text(ln, cx + c.w / 2, y + 3.5 + li * 3.5, { align: 'center' });
+      pdf.text(ln, c.x + c.w/2, startY + li * 3.2, { align: 'center' });
     });
-    cx += c.w;
   });
   y += hdrH;
 
-  // Item rows
+  // rows
   let grandTotal = 0;
   let totalQty   = 0;
+
   items.forEach((item: any, idx: number) => {
-    const qty      = item.quantity  || 1;
-    const unitVal  = item.unit_price ?? 0;
+    const qty      = Number(item.quantity)   || 1;
+    const unitVal  = Number(item.unit_price) || 0;
     const subTotal = qty * unitVal;
+    const hsCode   = safeText(item.hs_code ?? '', '');
+    const coo      = safeText(item.country_of_origin ?? countryNameToCode(fromCountry), '');
+    // per-item weight: spread total weight evenly across items
+    const itemW    = items.length > 0 ? weight / items.length : 0;
+    const itemWStr = itemW.toFixed(3);
+    const totWStr  = (itemW * qty).toFixed(3);
+
     grandTotal += subTotal;
     totalQty   += qty;
 
-    const itemNetW = (actualWeight / items.length).toFixed(3);
-    const itemTotW = (actualWeight / items.length * qty).toFixed(3);
-    const hsCode   = safeText(item.hs_code ?? '', '');
-    const coo      = safeText(item.country_of_origin ?? countryNameToCode(senderCountry), '');
+    const rg = idx % 2 === 0 ? 255 : 246;
+    pdf.setFillColor(rg, rg, rg);
+    pdf.rect(M, y, tblW, rowH, 'F');
+    setDraw(0,0,0,0.2);
+    pdf.rect(M, y, tblW, rowH);
 
-    pdf.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 248);
-    pdf.rect(tblX, y, tblW, rowH, 'F');
-    drw(0,0,0); lw(0.2);
-    pdf.rect(tblX, y, tblW, rowH);
+    tCols.forEach((c, ci) => {
+      if (ci > 0) vLine(c.x, y, y + rowH);
 
-    sz(6.5); fnt('normal'); col(0,0,0);
-    const rowData = [
-      String(idx + 1),
-      safeText(item.description, 'General Goods'),
-      hsCode,
-      itemNetW,
-      itemTotW,
-      coo,
-      String(qty),
-      `${unitVal.toFixed(2)} ${currency}`,
-      `${subTotal.toFixed(2)} ${currency}`,
-    ];
-    cx = tblX;
-    cols.forEach((c, ci) => {
-      if (ci > 0) { vLine(cx, y, y + rowH); }
+      setFont(6.5, 'normal'); setText(0,0,0);
+
       if (ci === 1) {
-        // description wraps
-        const dLines = pdf.splitTextToSize(rowData[ci], c.w - 2);
-        dLines.slice(0, 2).forEach((dl: string, di: number) => {
-          pdf.text(dl, cx + 2, y + 4 + di * 3.5);
+        // Description — left-aligned, up to 2 wrap lines
+        const ls = pdf.splitTextToSize(safeText(item.description, 'General Goods'), c.w - 2) as string[];
+        ls.slice(0, 2).forEach((ln: string, li: number) => {
+          pdf.text(ln, c.x + 1.5, y + 4 + li * 3.5);
         });
       } else {
-        pdf.text(rowData[ci], cx + c.w / 2, y + 5.5, { align: 'center' });
+        // All other cells — centered, single line, clipped to column
+        const val = [
+          String(idx + 1),
+          '',                              // handled above
+          hsCode,
+          itemWStr,
+          totWStr,
+          coo,
+          String(qty),
+          `${unitVal.toFixed(2)} ${cur}`,
+          `${subTotal.toFixed(2)} ${cur}`,
+        ][ci];
+        const trimmed = (pdf.splitTextToSize(val, c.w - 1) as string[])[0] ?? '';
+        pdf.text(trimmed, c.x + c.w/2, y + rowH/2 + 1.5, { align: 'center' });
       }
-      cx += c.w;
     });
     y += rowH;
   });
 
-  // Totals row
-  drw(0,0,0); lw(0.3);
-  pdf.rect(tblX, y, tblW, 7);
-  sz(7); fnt('bold'); col(0,0,0);
-  pdf.text(`Total Goods Value:`, M + 2, y + 4.5);
-  pdf.text(`${grandTotal.toFixed(2)} ${currency}`, M + 48, y + 4.5);
-  pdf.text(`Total line items: ${items.length}`, M + usable - 55, y + 4.5);
-  pdf.text(`Total units: ${totalQty}`, M + usable - 25, y + 4.5);
-  y += 9;
+  // totals footer row (two lines to avoid overlap)
+  setDraw(0,0,0,0.3);
+  pdf.rect(M, y, tblW, 10);
+  setFont(7, 'bold'); setText(0,0,0);
+  pdf.text('Total Goods Value:', M + 2, y + 4);
+  setFont(7, 'normal');
+  pdf.text(`${grandTotal.toFixed(2)} ${cur}`, M + 42, y + 4);
+  setFont(7, 'bold');
+  pdf.text('Total line items:', M + 2, y + 8.5);
+  setFont(7, 'normal');
+  pdf.text(String(items.length), M + 32, y + 8.5);
+  setFont(7, 'bold');
+  pdf.text('Total units:', M + U/2, y + 4);
+  setFont(7, 'normal');
+  pdf.text(String(totalQty), M + U/2 + 22, y + 4);
+  y += 12;
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SECTION 5 — SUMMARY  (two columns: left = goods/trade | right = logistics)
+  // 5 — SUMMARY (only real parcel fields, two columns)
   // ══════════════════════════════════════════════════════════════════════════
-  hRule(y, 0.2); y += 2;
-  const sumColW  = usable / 2;
-  const sumLeftX  = M;
-  const sumRightX = M + sumColW;
-  const sumLg     = 4.2;
+  hRule(y, 0.2); y += 3;
 
-  // Only render a summary row when the value is non-empty
-  const renderSumRow = (label: string, value: string, x: number, yy: number): number => {
-    if (!value || value.trim() === '') return yy; // skip blank rows
-    sz(7); fnt('bold'); col(0,0,0);
+  const sumLg    = 4.5;
+  const labelW   = 48;   // width reserved for label text
+  const valueW   = U/2 - labelW - 2;
+
+  const sumRow = (label: string, value: string, x: number, yy: number): number => {
+    if (!value || !value.trim()) return yy;
+    setFont(7, 'bold'); setText(0,0,0);
     pdf.text(label, x + 1, yy);
-    fnt('normal');
-    const valLines = pdf.splitTextToSize(value, sumColW - 44);
-    pdf.text(valLines[0] ?? '', x + 1 + 42, yy);
+    setFont(7, 'normal');
+    const vx = x + 1 + labelW;
+    const ls = pdf.splitTextToSize(value, valueW) as string[];
+    pdf.text(ls[0] ?? '', vx, yy);
     return yy + sumLg;
   };
 
   let ly = y;
   let ry = y;
+  const lx = M;
+  const rx = M + U/2 + 2;
 
-  // Left column — only fields with real data
-  ly = renderSumRow('Total Goods Value:', `${grandTotal.toFixed(2)} ${currency}`, sumLeftX, ly);
-  ly = renderSumRow('Total Invoice Amount:', `${grandTotal.toFixed(2)} ${currency}`, sumLeftX, ly);
-  ly = renderSumRow('Currency Code:', currency, sumLeftX, ly);
-  if (netWeight > 0) ly = renderSumRow('Total Net Weight:', `${netWeight.toFixed(3)}kg`, sumLeftX, ly);
-  if (grossWeight > 0) ly = renderSumRow('Total Gross Weight:', `${grossWeight.toFixed(3)}kg`, sumLeftX, ly);
-  if (pieces > 1) ly = renderSumRow('Total Pieces:', String(pieces), sumLeftX, ly);
+  // left column
+  ly = sumRow('Total Goods Value:',   `${grandTotal.toFixed(2)} ${cur}`, lx, ly);
+  ly = sumRow('Total Invoice Amount:',`${grandTotal.toFixed(2)} ${cur}`, lx, ly);
+  ly = sumRow('Currency Code:',        cur,                              lx, ly);
+  if (weight > 0) {
+    ly = sumRow('Total Net Weight:',   `${weight.toFixed(3)} kg`,        lx, ly);
+    ly = sumRow('Total Gross Weight:', `${weight.toFixed(3)} kg`,        lx, ly);
+  }
+  if (pieces > 1) ly = sumRow('Total Pieces:', String(pieces),           lx, ly);
 
-  // Right column — only non-empty logistics fields
+  // right column
   const carrier = safeText(parcel.service_type, '');
-  if (carrier) ry = renderSumRow('Carrier:', carrier, sumRightX, ry);
-  ry = renderSumRow('Duty / taxes acct:', 'Receiver Will Pay', sumRightX, ry);
-  const shipperRef = safeText(parcel.reference_id || parcel.tracking_id, '');
-  if (shipperRef) ry = renderSumRow('Shipper Reference:', shipperRef, sumRightX, ry);
+  if (carrier) ry = sumRow('Carrier:',           carrier,                rx, ry);
+  ry = sumRow('Duty / taxes acct:', 'Receiver Will Pay',                 rx, ry);
 
   y = Math.max(ly, ry) + 3;
   hRule(y, 0.2); y += 4;
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SECTION 6 — CERTIFICATION TEXT
+  // 6 — CERTIFICATION
   // ══════════════════════════════════════════════════════════════════════════
-  sz(7); fnt('italic'); col(40,40,40);
-  const certText = 'I/We hereby certify that the information contained in the invoice is true and correct and that the contents of this shipment are as stated above.';
-  const certLines = pdf.splitTextToSize(certText, usable);
-  pdf.text(certLines, M, y);
-  y += certLines.length * 4 + 3;
+  setFont(7, 'italic'); setText(50,50,50);
+  const cert = pdf.splitTextToSize(
+    'I/We hereby certify that the information contained in the invoice is true and correct and that the contents of this shipment are as stated above.',
+    U
+  ) as string[];
+  pdf.text(cert, M, y);
+  y += cert.length * 4 + 4;
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SECTION 7 — SIGNATURE BLOCK
+  // 7 — SIGNATURE BLOCK
   // ══════════════════════════════════════════════════════════════════════════
   hRule(y, 0.2); y += 3;
+  const sigW = U / 3;
+  setDraw(0,0,0,0.2);
+  pdf.rect(M, y, U, 22);
+  vLine(M + sigW,     y, y + 22);
+  vLine(M + sigW * 2, y, y + 22);
 
-  // Three panels: Name+Position+Date | Signature | Company Stamp
-  const sigColW = usable / 3;
-  drw(0,0,0); lw(0.2);
-  pdf.rect(M, y, usable, 22);
-  vLine(M + sigColW,     y, y + 22);
-  vLine(M + sigColW * 2, y, y + 22);
-
-  sz(7); fnt('bold'); col(0,0,0);
-  // Left panel
-  pdf.text('Name:', M + 2, y + 4);
-  pdf.text('Position:', M + 2, y + 10);
-  pdf.text('Date of Signature:', M + 2, y + 16);
-  fnt('normal');
-  pdf.text(invoiceDate, M + 32, y + 16);
-
-  // Centre panel
-  fnt('bold');
-  pdf.text('Signature:', M + sigColW + 2, y + 4);
-
-  // Right panel
-  pdf.text('Company Stamp', M + sigColW * 2 + sigColW / 2, y + 11, { align: 'center' });
+  setFont(7, 'bold'); setText(0,0,0);
+  pdf.text('Name:',              M + 2,            y + 5);
+  pdf.text('Position:',          M + 2,            y + 11);
+  pdf.text('Date of Signature:', M + 2,            y + 17);
+  setFont(7, 'normal');
+  pdf.text(invDate,              M + 34,           y + 17);
+  setFont(7, 'bold');
+  pdf.text('Signature:',         M + sigW + 2,     y + 5);
+  pdf.text('Company Stamp',      M + sigW*2 + sigW/2, y + 12, { align: 'center' });
 
   y += 25;
 
   // ══════════════════════════════════════════════════════════════════════════
   // FOOTER
   // ══════════════════════════════════════════════════════════════════════════
-  const footerY = pageHeight - 8;
-  hRule(footerY - 2, 0.3);
-  sz(6.5); fnt('normal'); col(80,80,80);
+  const fy = PH - 8;
+  hRule(fy - 2, 0.3);
+  setFont(6.5); setText(80,80,80);
   pdf.text(
-    'Email: skyxpresss786@gmail.com  |  Phone: (042) 37255473  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411',
-    pageWidth / 2, footerY, { align: 'center' }
+    'Email: skyxpresss786@gmail.com  |  Tel: (042) 37255473  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411',
+    PW/2, fy, { align: 'center' }
   );
-  fnt('normal'); col(100,100,100);
-  pdf.text('Page 1 of 1', M + usable, footerY, { align: 'right' });
+  setText(100,100,100);
+  pdf.text('Page 1 of 1', M + U, fy, { align: 'right' });
 
-  handlePDFOutput(pdf, `Performa-Invoice-${refNumber}.pdf`, mode);
+  handlePDFOutput(pdf, `Performa-Invoice-${ref}.pdf`, mode);
 };
 
 // ===== 2. AIRWAY BILL (Verification) =====
