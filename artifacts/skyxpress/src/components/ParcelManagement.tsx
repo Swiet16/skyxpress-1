@@ -133,6 +133,7 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
   const [labelParcel, setLabelParcel] = useState<Parcel | null>(null);
   const [emailingId, setEmailingId] = useState<string | null>(null);
   const [emailedIds, setEmailedIds] = useState<Set<string>>(new Set());
+  const [totalCount, setTotalCount] = useState(0);
 
   const handleSendXrayEmail = async (parcel: Parcel) => {
     if (!parcel.sender_email) {
@@ -208,21 +209,46 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
   const isSavingRef = useRef(false);
 
   useEffect(() => {
-    fetchParcels();
+    fetchParcels(1, searchQuery);
     fetchCountries();
   }, [filterUserId]);
 
-  const fetchParcels = async () => {
+  // Re-fetch when page changes
+  useEffect(() => {
+    fetchParcels(page, searchQuery);
+  }, [page]);
+
+  // Reset to page 1 and re-fetch when search changes
+  useEffect(() => {
+    setPage(1);
+    fetchParcels(1, searchQuery);
+  }, [searchQuery]);
+
+  const fetchParcels = async (pageNum: number, search: string) => {
+    setLoading(true);
     try {
+      const from = (pageNum - 1) * PAGE_SIZE;
+      const to = pageNum * PAGE_SIZE - 1;
+
       let query = supabase
         .from("parcels")
-        .select("*")
-        .order("created_at", { ascending: false });
+        .select("*", { count: "exact" })
+        .order("created_at", { ascending: false })
+        .range(from, to);
+
       if (filterUserId) query = query.eq("created_by", filterUserId);
-      const { data, error } = await query;
+
+      if (search.trim()) {
+        const s = search.trim();
+        query = query.or(
+          `tracking_id.ilike.%${s}%,reference_id.ilike.%${s}%,sender_name.ilike.%${s}%,receiver_name.ilike.%${s}%,sender_phone.ilike.%${s}%,receiver_phone.ilike.%${s}%`
+        );
+      }
+
+      const { data, error, count } = await query;
       if (error) throw error;
       setParcels(data || []);
-      // Pre-populate emailed set from DB so the icon shows correctly on load
+      setTotalCount(count ?? 0);
       setEmailedIds(new Set((data || []).filter((p: any) => p.xray_email_sent_at).map((p: any) => p.id)));
     } catch (error: any) {
       toast({ title: "Error", description: "Failed to load parcels", variant: "destructive" });
@@ -244,46 +270,29 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
     return countryMap[code] || code;
   };
 
-  // ── Selection helpers ─────────────────────────────────────────────────
-  const filteredParcels = parcels.filter((parcel) => {
-    const query = searchQuery.toLowerCase();
-    return (
-      parcel.tracking_id.toLowerCase().includes(query) ||
-      (parcel.reference_id || "").toLowerCase().includes(query) ||
-      parcel.sender_name.toLowerCase().includes(query) ||
-      parcel.receiver_name.toLowerCase().includes(query) ||
-      parcel.sender_phone.toLowerCase().includes(query) ||
-      parcel.receiver_phone.toLowerCase().includes(query)
-    );
-  });
-  const totalPages = Math.max(1, Math.ceil(filteredParcels.length / PAGE_SIZE));
+  // ── Pagination (server-side) ──────────────────────────────────────────
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
-  const paginatedParcels = filteredParcels.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE,
-  );
+  // `parcels` already contains only the current page from the DB query
+  const paginatedParcels = parcels;
 
-  useEffect(() => {
-    setPage(1);
-  }, [searchQuery]);
-
+  // ── Selection helpers (current page) ─────────────────────────────────
   const allFilteredSelected =
-    filteredParcels.length > 0 &&
-    filteredParcels.every((p) => selectedIds.has(p.id));
+    parcels.length > 0 && parcels.every((p) => selectedIds.has(p.id));
   const someFilteredSelected =
-    !allFilteredSelected && filteredParcels.some((p) => selectedIds.has(p.id));
+    !allFilteredSelected && parcels.some((p) => selectedIds.has(p.id));
 
   const toggleSelectAll = () => {
     if (allFilteredSelected) {
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        filteredParcels.forEach((p) => next.delete(p.id));
+        parcels.forEach((p) => next.delete(p.id));
         return next;
       });
     } else {
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        filteredParcels.forEach((p) => next.add(p.id));
+        parcels.forEach((p) => next.add(p.id));
         return next;
       });
     }
@@ -699,7 +708,7 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
               </TableBody>
             </Table>
 
-            {filteredParcels.length === 0 && (
+            {parcels.length === 0 && !loading && (
               <div className="text-center py-12">
                 <Package className="h-12 w-12 mx-auto text-muted-foreground opacity-40 mb-3" />
                 <p className="text-muted-foreground">No parcels found</p>
@@ -707,11 +716,11 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
             )}
           </div>
 
-          {filteredParcels.length > 0 && (
+          {totalCount > 0 && (
             <div className="mt-4 flex flex-col gap-3 border-t pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
               <p className="text-muted-foreground">
                 Showing {(currentPage - 1) * PAGE_SIZE + 1}–
-                {Math.min(currentPage * PAGE_SIZE, filteredParcels.length)} of {filteredParcels.length} parcels
+                {Math.min(currentPage * PAGE_SIZE, totalCount)} of {totalCount} parcels
               </p>
               <div className="flex items-center justify-between gap-2 sm:justify-end">
                 <Button
