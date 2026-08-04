@@ -146,11 +146,39 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
   const handleSavePDF = async () => {
     const { default: jsPDF } = await import("jspdf");
 
-    const W = 105, H = 185;
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [W, H] });
+    // ── constants ─────────────────────────────────────────────────────────
+    const W = 105;
     const pad = 4;
+    const CONTACT_W = 34;        // right panel width for contact
+    const ORIGIN_W  = 22;        // right panel width for origin
+    const addrMaxW  = W - CONTACT_W - pad - 3;  // max width for address lines
 
-    // ── helpers ──────────────────────────────────────────────────────────
+    // ── temp doc to measure text before we know final height ─────────────
+    const tmp = new jsPDF({ unit: "mm", format: [W, 300] });
+    tmp.setFont("helvetica", "normal"); tmp.setFontSize(7.5);
+
+    // Pre-wrap address lines so we know how many rows each section needs
+    const sndWrapped: string[] = sndLines.flatMap(ln =>
+      tmp.splitTextToSize(ln, W - ORIGIN_W - pad - 3));
+    const rcvWrapped: string[] = rcvLines.flatMap(ln =>
+      tmp.splitTextToSize(ln, addrMaxW));
+
+    const LINE_H = 3.6;
+    const fromBodyH = Math.max(0, (sndWrapped.slice(0, 6).length) * LINE_H);
+    const toBodyH   = Math.max(0, (rcvWrapped.slice(0, 7).length) * LINE_H);
+
+    const hdrH  = 25;
+    const fromH = Math.max(24, 13 + fromBodyH + 3);
+    const toH   = Math.max(28, 13 + toBodyH   + 3);
+    const barH  = 8;
+    const refH  = 11;
+    const wH    = 15;
+    const bcH   = 17;   // barcode image height
+    const H = hdrH + fromH + toH + barH + refH + wH + 4 + (bcH + 7) * 2 + 6;
+
+    // ── real doc ──────────────────────────────────────────────────────────
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [W, H] });
+
     const fillRect = (x: number, y: number, w: number, h: number, r: number, g: number, b: number) => {
       doc.setFillColor(r, g, b); doc.rect(x, y, w, h, "F");
     };
@@ -158,194 +186,183 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
       doc.setDrawColor(r, g, b); doc.setLineWidth(lw); doc.line(0, y, W, y);
     };
     const txt = (s: string, x: number, y: number, opts?: any) => doc.text(s, x, y, opts);
-    const setFont = (style: string, size: number, r = 0, g = 0, b = 0) => {
+    const sf = (style: string, size: number, r = 0, g = 0, b = 0) => {
       doc.setFont("helvetica", style); doc.setFontSize(size); doc.setTextColor(r, g, b);
     };
 
-    // ── logo (fetch → base64) ─────────────────────────────────────────────
+    // ── logo ──────────────────────────────────────────────────────────────
     let logoDataUrl: string | null = null;
     try {
       const resp = await fetch(skyxpressLogo);
       const blob = await resp.blob();
       logoDataUrl = await new Promise<string>((res) => {
-        const r = new FileReader(); r.onload = () => res(r.result as string); r.readAsDataURL(blob);
+        const fr = new FileReader(); fr.onload = () => res(fr.result as string); fr.readAsDataURL(blob);
       });
-    } catch { /* skip logo if fetch fails */ }
+    } catch { /* ok */ }
 
-    // ── barcodes (canvas → base64) ────────────────────────────────────────
-    const makeBarcodeUrl = (value: string) => {
+    // ── barcodes ──────────────────────────────────────────────────────────
+    const makeBC = (val: string) => {
       const c = document.createElement("canvas");
-      try {
-        JsBarcode(c, value, { format: "CODE128", height: 60, displayValue: false, margin: 2, background: "#fff", lineColor: "#000" });
-      } catch { /* silent */ }
+      try { JsBarcode(c, val, { format: "CODE128", height: 80, displayValue: false, margin: 4, background: "#fff", lineColor: "#000" }); } catch { /* */ }
       return c.toDataURL("image/png");
     };
-    const refBarcodeUrl = makeBarcodeUrl(refCode || "000000");
-    const trkBarcodeUrl = makeBarcodeUrl(trackCode || "000000");
+    const refBC = makeBC(refCode || "000000");
+    const trkBC = makeBC(trackCode || "000000");
 
     // ── outer border ──────────────────────────────────────────────────────
-    doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.4); doc.rect(0, 0, W, H);
+    doc.setDrawColor(0); doc.setLineWidth(0.4); doc.rect(0, 0, W, H);
 
     // ════════════════════════════════════════════════════════════════════
-    // HEADER  (0 → 24)
+    // HEADER
     // ════════════════════════════════════════════════════════════════════
-    const hdrH = 24;
-    const doxW = dox === "DOX" ? 18 : 22;
+    const doxW  = dox === "DOX" ? 18 : 22;
     const logoW = 26;
     const mainW = W - doxW - logoW;
 
-    // DOX / NON DOX badge
     fillRect(mainW, 0, doxW, hdrH, 0, 0, 0);
-    setFont("bold", dox === "DOX" ? 13 : 9, 255, 255, 255);
+    sf("bold", dox === "DOX" ? 13 : 9, 255, 255, 255);
     txt(dox, mainW + doxW / 2, hdrH / 2 + 2, { align: "center" });
 
-    // Logo
-    if (logoDataUrl) {
-      doc.addImage(logoDataUrl, "PNG", mainW + doxW + 1, 1.5, logoW - 2, hdrH - 3);
-    }
+    if (logoDataUrl) doc.addImage(logoDataUrl, "PNG", mainW + doxW + 1, 2, logoW - 2, hdrH - 4);
 
-    // EXPRESS WORLDWIDE
-    setFont("bold", 13, 0, 0, 0);
+    sf("bold", 13, 0, 0, 0);
     txt("EXPRESS WORLDWIDE", pad, 8);
 
-    // Service type mini-badge
-    setFont("bold", 7, 255, 255, 255);
-    const stW = Math.min(doc.getTextWidth(serviceType) + 5, mainW - pad - 2);
-    fillRect(pad, 10.5, stW, 5, 26, 26, 46);
-    txt(serviceType, pad + 2.5, 14.7);
+    // service type badge
+    sf("bold", 7, 255, 255, 255);
+    const stBadgeW = Math.min(doc.getTextWidth(serviceType) + 5, mainW - pad - 2);
+    fillRect(pad, 11, stBadgeW, 5, 26, 26, 46);
+    txt(serviceType, pad + 2.5, 15);
 
-    // Date
-    setFont("normal", 6.5, 90, 90, 90);
-    txt(labelDate(createdDate), pad, 21);
+    sf("normal", 6.5, 90, 90, 90);
+    txt(labelDate(createdDate), pad, hdrH - 2);
 
     hline(hdrH, 0.6);
     let y = hdrH;
 
     // ════════════════════════════════════════════════════════════════════
-    // FROM / ORIGIN  (hdrH → +24)
+    // FROM / ORIGIN
     // ════════════════════════════════════════════════════════════════════
-    const fromH = 24;
-
-    setFont("bold", 7, 60, 60, 60);
+    sf("bold", 7, 60, 60, 60);
     txt("FROM:", pad, y + 5);
-    setFont("bold", 9, 0, 0, 0);
-    txt(parcel.sender_name, pad, y + 10);
+    sf("bold", 9.5, 0, 0, 0);
+    txt(parcel.sender_name, pad, y + 10.5);
 
-    setFont("normal", 7.5, 30, 30, 30);
-    let fy = y + 14;
-    for (const ln of sndLines.slice(0, 4)) { txt(ln, pad, fy); fy += 3.5; }
+    sf("normal", 7.5, 30, 30, 30);
+    let fy = y + 15;
+    for (const ln of sndWrapped.slice(0, 6)) { txt(ln, pad, fy); fy += LINE_H; }
 
-    // Origin code
-    setFont("normal", 6.5, 90, 90, 90);
-    txt("Origin:", W - 19, y + 5);
-    setFont("bold", 18, 0, 0, 0);
-    txt(origin, W - 19, y + 19);
+    sf("normal", 6.5, 90, 90, 90);
+    txt("Origin:", W - ORIGIN_W + 1, y + 5);
+    sf("bold", 19, 0, 0, 0);
+    txt(origin, W - ORIGIN_W + 1, y + fromH - 5);
 
-    hline(y + fromH, 0.3, 150, 150, 150);
+    hline(y + fromH, 0.3, 160, 160, 160);
     y += fromH;
 
     // ════════════════════════════════════════════════════════════════════
-    // TO / CONTACT  (y → +28)
+    // TO / CONTACT
     // ════════════════════════════════════════════════════════════════════
-    const toH = 28;
     hline(y, 0.6);
+    const cxLeft = W - CONTACT_W;
 
-    setFont("bold", 7, 60, 60, 60);
+    sf("bold", 7, 60, 60, 60);
     txt("TO:", pad, y + 5);
-    setFont("bold", 9, 0, 0, 0);
-    txt(parcel.receiver_name, pad, y + 10);
+    sf("bold", 9.5, 0, 0, 0);
+    txt(parcel.receiver_name, pad, y + 10.5);
 
-    setFont("normal", 7.5, 30, 30, 30);
-    let ty = y + 14;
-    for (const ln of rcvLines.slice(0, 5)) { txt(ln, pad, ty); ty += 3.5; }
+    sf("normal", 7.5, 30, 30, 30);
+    let ty = y + 15;
+    for (const ln of rcvWrapped.slice(0, 7)) { txt(ln, pad, ty); ty += LINE_H; }
 
-    // Contact
-    const ctxX = W - 30;
-    setFont("normal", 6.5, 90, 90, 90);
-    txt("Contact:", ctxX, y + 5);
-    setFont("bold", 7.5, 0, 0, 0);
-    txt(parcel.receiver_name, ctxX, y + 10);
+    // vertical divider between address and contact
+    doc.setDrawColor(200); doc.setLineWidth(0.2);
+    doc.line(cxLeft - 1, y, cxLeft - 1, y + toH);
+
+    sf("normal", 6.5, 90, 90, 90);
+    txt("Contact:", cxLeft + 1, y + 5);
+    sf("bold", 8, 0, 0, 0);
+    // wrap contact name if too long
+    const cNameLines = doc.splitTextToSize(parcel.receiver_name, CONTACT_W - 2);
+    doc.text(cNameLines, cxLeft + 1, y + 10.5);
     if (parcel.receiver_phone) {
-      setFont("normal", 7.5, 30, 30, 30);
-      txt(parcel.receiver_phone, ctxX, y + 14.5);
+      sf("normal", 8, 30, 30, 30);
+      txt(parcel.receiver_phone, cxLeft + 1, y + 10.5 + cNameLines.length * LINE_H + 1);
     }
 
     hline(y + toH, 0.5);
     y += toH;
 
     // ════════════════════════════════════════════════════════════════════
-    // SERVICE TYPE BAR (black)
+    // SERVICE TYPE BAR
     // ════════════════════════════════════════════════════════════════════
-    const barH = 8;
     fillRect(0, y, W, barH, 0, 0, 0);
-    setFont("bold", 11, 255, 255, 255);
-    txt(serviceType, pad, y + barH - 1.5);
+    sf("bold", 11, 255, 255, 255);
+    txt(serviceType, pad, y + barH - 2);
     y += barH;
 
     // ════════════════════════════════════════════════════════════════════
     // REF / DAY / TIME
     // ════════════════════════════════════════════════════════════════════
-    const refH = 10;
-    setFont("normal", 8, 0, 0, 0);
-    txt(`Ref: ${refCode}`, pad, y + 6.5);
+    sf("normal", 8, 0, 0, 0);
+    txt(`Ref: ${refCode}`, pad, y + 7);
 
-    setFont("bold", 6.5, 80, 80, 80);
-    txt("Day", W - 38, y + 3.5, { align: "center" });
-    setFont("normal", 7, 0, 0, 0);
-    txt(dayStr, W - 38, y + 8, { align: "center" });
+    // day column
+    sf("bold", 6.5, 80, 80, 80);
+    txt("Day", W - 36, y + 3.5, { align: "center" });
+    sf("normal", 7, 0, 0, 0);
+    txt(dayStr, W - 36, y + 8.5, { align: "center" });
 
-    setFont("bold", 6.5, 80, 80, 80);
+    // time column
+    sf("bold", 6.5, 80, 80, 80);
     txt("Time", W - 14, y + 3.5, { align: "center" });
-    setFont("normal", 7, 0, 0, 0);
-    txt(timeStr, W - 14, y + 8, { align: "center" });
+    sf("normal", 7, 0, 0, 0);
+    txt(timeStr, W - 14, y + 8.5, { align: "center" });
 
     hline(y + refH, 0.2, 200, 200, 200);
     y += refH;
 
     // ════════════════════════════════════════════════════════════════════
-    // WEIGHT / PIECES
+    // WEIGHT / PIECES  — labels on top, values below
     // ════════════════════════════════════════════════════════════════════
-    const wH = 14;
-    setFont("normal", 6.5, 90, 90, 90);
-    txt("Pce/Shpt", W - 68, y + wH - 2);
+    const colW = (W - pad) / 3;
 
-    setFont("normal", 6.5, 90, 90, 90);
-    txt("Weight", W - 42, y + 4, { align: "center" });
-    setFont("bold", 14, 0, 0, 0);
-    txt(`${weightKg} kg`, W - 42, y + 12, { align: "center" });
+    // Pce/Shpt  |  Weight  |  Piece
+    sf("normal", 6.5, 90, 90, 90);
+    txt("Pce/Shpt", pad + colW * 0 + 2, y + 5, { align: "left" });
+    txt("Weight",   pad + colW * 1 + colW / 2, y + 5, { align: "center" });
+    txt("Piece",    pad + colW * 2 + colW / 2, y + 5, { align: "center" });
 
-    setFont("normal", 6.5, 90, 90, 90);
-    txt("Piece", W - 16, y + 4, { align: "center" });
-    setFont("bold", 14, 0, 0, 0);
-    txt(`1/${pieces}`, W - 16, y + 12, { align: "center" });
+    sf("bold", 15, 0, 0, 0);
+    txt(`${weightKg} kg`, pad + colW * 1 + colW / 2, y + 13, { align: "center" });
+    txt(`1/${pieces}`,    pad + colW * 2 + colW / 2, y + 13, { align: "center" });
 
     hline(y + wH, 0.2, 200, 200, 200);
-    y += wH + 3;
+    y += wH + 4;
 
     // ════════════════════════════════════════════════════════════════════
     // BARCODES
     // ════════════════════════════════════════════════════════════════════
-    const bcW = 62, bcH = 16;
+    const cntX  = pad + 65 + 3;   // contents start x
+    const bcW   = 63;             // barcode image width
 
     // Upper — reference ID
-    doc.addImage(refBarcodeUrl, "PNG", pad, y, bcW, bcH);
-    setFont("normal", 7, 0, 0, 0);
+    doc.addImage(refBC, "PNG", pad, y, bcW, bcH);
+    sf("normal", 7, 0, 0, 0);
     txt(refCode, pad + bcW / 2, y + bcH + 3.5, { align: "center" });
 
-    // Contents (right of upper barcode)
-    const cxX = pad + bcW + 4;
-    setFont("bold", 6.5, 60, 60, 60);
-    txt("Contents:", cxX, y + 4);
-    setFont("normal", 6.5, 30, 30, 30);
-    const wrapped = doc.splitTextToSize(contentsText.toUpperCase().slice(0, 80), W - cxX - pad);
-    doc.text(wrapped, cxX, y + 8);
+    sf("bold", 6.5, 60, 60, 60);
+    txt("Contents:", cntX, y + 5);
+    sf("normal", 6.5, 30, 30, 30);
+    const cntWrapped = doc.splitTextToSize(contentsText.toUpperCase().slice(0, 80), W - cntX - pad);
+    doc.text(cntWrapped, cntX, y + 9.5);
 
     y += bcH + 8;
 
-    // Lower — tracking ID
-    doc.addImage(trkBarcodeUrl, "PNG", pad, y, bcW, bcH);
-    setFont("normal", 7, 0, 0, 0);
-    txt(trackCode, pad + bcW / 2, y + bcH + 3.5, { align: "center" });
+    // Lower — tracking ID (full width for prominence)
+    doc.addImage(trkBC, "PNG", pad, y, W - pad * 2, bcH);
+    sf("normal", 7, 0, 0, 0);
+    txt(trackCode, W / 2, y + bcH + 3.5, { align: "center" });
 
     // ── save ─────────────────────────────────────────────────────────────
     doc.save(`SkyXpress_Label_${trackCode}.pdf`);
