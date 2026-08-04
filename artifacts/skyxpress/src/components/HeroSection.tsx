@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Globe, Zap, Shield, TrendingUp } from "lucide-react";
+import ShipmentJourney from "./ShipmentJourney";
 
 /* ── animated counter hook ── */
 function useCounter(target: number, duration = 1800, start = false) {
@@ -128,8 +129,10 @@ const HeroSection = () => {
         ✈
       </div>
 
-      {/* ── CONTENT (empty — CTAs and stats live elsewhere) ── */}
-      <div className="relative z-10 container mx-auto px-4 py-20" />
+      {/* ── SHIPMENT JOURNEY ANIMATION ── */}
+      <div className="relative z-10 w-full">
+        <ShipmentJourney />
+      </div>
 
       {/* bottom fade */}
       <div
