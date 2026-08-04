@@ -67,6 +67,7 @@ interface Parcel {
   tracking_id: string;
   reference_id?: string;
   sender_name: string;
+  sender_cnic?: string;
   sender_company?: string;
   sender_address?: string;
   sender_address_2?: string;
@@ -103,7 +104,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
   const dox = getDoxLabel(parcel.parcel_type);
   const origin = originCode(parcel.sender_city, parcel.from_country);
-  const refCode = parcel.reference_id || parcel.tracking_id;
+  const refCode = parcel.sender_cnic || parcel.reference_id || parcel.tracking_id;
   const trackCode = parcel.tracking_id;
   const serviceType = (parcel.service_type || "EXPRESS WORLDWIDE").toUpperCase();
   const pieces = parcel.pieces ?? 1;
