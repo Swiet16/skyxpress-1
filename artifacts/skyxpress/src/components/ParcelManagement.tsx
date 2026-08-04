@@ -139,6 +139,11 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
       toast({ title: "No sender email", description: "This parcel has no sender email on record.", variant: "destructive" });
       return;
     }
+    // Block re-send if already emailed
+    if (emailedIds.has(parcel.id)) {
+      toast({ title: "Already sent", description: `X-ray email was already sent to ${parcel.sender_email}. Open parcel details to resend.` });
+      return;
+    }
     setEmailingId(parcel.id);
     try {
       const response = await fetch("/api/send-parcel-email", {
@@ -147,9 +152,19 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
         body: JSON.stringify({ parcel }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Failed to send email");
+      if (!response.ok) {
+        if (result.error === "ip_not_authorized") {
+          toast({
+            title: "⚠️ Brevo IP Not Authorized",
+            description: `Go to app.brevo.com/security/authorised_ips and add: ${result.ipAddress || "your server IP"}`,
+            variant: "destructive",
+          });
+          return;
+        }
+        throw new Error(result.error || "Failed to send email");
+      }
       setEmailedIds((prev) => new Set(prev).add(parcel.id));
-      // Best-effort Supabase record
+      // Persist send timestamp in Supabase (run SQL migration first if column missing)
       await supabase.from("parcels").update({ xray_email_sent_at: new Date().toISOString() }).eq("id", parcel.id);
       toast({ title: "✉ Email sent!", description: `X-ray notification sent to ${parcel.sender_email}` });
     } catch (err: any) {
@@ -207,6 +222,8 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
       const { data, error } = await query;
       if (error) throw error;
       setParcels(data || []);
+      // Pre-populate emailed set from DB so the icon shows correctly on load
+      setEmailedIds(new Set((data || []).filter((p: any) => p.xray_email_sent_at).map((p: any) => p.id)));
     } catch (error: any) {
       toast({ title: "Error", description: "Failed to load parcels", variant: "destructive" });
     } finally {

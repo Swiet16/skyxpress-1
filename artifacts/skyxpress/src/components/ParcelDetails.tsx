@@ -231,6 +231,14 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps)
       const result = await response.json();
 
       if (!response.ok) {
+        if (result.error === "ip_not_authorized") {
+          toast({
+            title: "⚠️ Brevo IP Not Authorized",
+            description: `Add ${result.ipAddress || "your server IP"} at app.brevo.com/security/authorised_ips`,
+            variant: "destructive",
+          });
+          return;
+        }
         throw new Error(result.error || "Failed to send email");
       }
 
