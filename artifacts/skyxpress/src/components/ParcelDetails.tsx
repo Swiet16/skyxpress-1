@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Package, User, MapPin, Clock, Truck, CheckCircle, Plane, AlertCircle, Pencil, Save, X } from "lucide-react";
+import { Package, User, MapPin, Clock, Truck, CheckCircle, Plane, AlertCircle, Pencil, Save, X, Mail, ScanLine } from "lucide-react";
 import { BillDownloader } from "./BillDownloader";
 
 interface ParcelDetailsProps {
@@ -29,6 +29,7 @@ const statusOptions = [
   { value: 'in_custom_clearance', label: 'In Custom Clearance', icon: AlertCircle },
   { value: 'arrived_hub', label: 'Arrived Hub', icon: MapPin },
   { value: 'customs', label: 'In Customs', icon: MapPin },
+  { value: 'x_rayed', label: 'X-Rayed ✉', icon: ScanLine },
   { value: 'out_for_delivery', label: 'Out for Delivery', icon: Truck },
   { value: 'delivered', label: 'Delivered', icon: CheckCircle },
   { value: 'cancelled', label: 'Cancelled', icon: Clock },
@@ -45,6 +46,7 @@ const statusColors = {
   in_custom_clearance: "bg-yellow-100 text-yellow-800",
   arrived_hub: "bg-blue-100 text-blue-800",
   customs: "bg-orange-100 text-orange-800",
+  x_rayed: "bg-emerald-100 text-emerald-800",
   out_for_delivery: "bg-indigo-100 text-indigo-800",
   delivered: "bg-green-100 text-green-800",
   cancelled: "bg-red-100 text-red-800",
@@ -101,6 +103,9 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps)
   const [statusDateTime, setStatusDateTime] = useState(
     new Date().toISOString().slice(0, 16)
   );
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+  const [emailSentAt, setEmailSentAt] = useState<string | null>(parcel.xray_email_sent_at || null);
   const { toast } = useToast();
 
   // Local overrides so edits made here show immediately without waiting on the
@@ -205,6 +210,59 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps)
     }
   };
 
+  const sendXrayEmail = async (parcelData = parcel) => {
+    if (!parcelData.sender_email) {
+      toast({
+        title: "No sender email",
+        description: "This parcel has no sender email address on record.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setEmailSending(true);
+    try {
+      const response = await fetch("/api/send-parcel-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parcel: parcelData }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to send email");
+      }
+
+      // Record the send time in Supabase (best-effort — column may not exist yet)
+      const sentAt = new Date().toISOString();
+      const { error: dbError } = await supabase
+        .from("parcels")
+        .update({ xray_email_sent_at: sentAt })
+        .eq("id", parcelData.id);
+      if (dbError) {
+        console.warn("Could not save xray_email_sent_at to DB:", dbError.message);
+      }
+
+      setEmailSent(true);
+      setEmailSentAt(sentAt);
+      toast({
+        title: "✉ Email Sent!",
+        description: `X-ray notification sent to ${parcelData.sender_email}`,
+      });
+      onUpdate();
+    } catch (err: any) {
+      console.error("Email send error:", err);
+      toast({
+        title: "Email failed",
+        description: err.message || "Could not send the notification email.",
+        variant: "destructive",
+      });
+    } finally {
+      setEmailSending(false);
+    }
+  };
+
   const updateParcelStatus = async () => {
     if (!selectedStatus) {
       toast({
@@ -237,6 +295,11 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps)
       setStatusLocation("");
       setAdminComment("");
       setStatusDateTime(new Date().toISOString().slice(0, 16));
+
+      // Auto-send email when status is set to x_rayed
+      if (selectedStatus === 'x_rayed') {
+        await sendXrayEmail(parcel);
+      }
       
       onUpdate();
     } catch (error: any) {
@@ -694,6 +757,74 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps)
           </CardContent>
         </Card>
       )}
+
+      {/* X-Ray Email Notification */}
+      <Card className="border-emerald-200 bg-emerald-50/40">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-emerald-800">
+            <ScanLine className="h-5 w-5" />
+            X-Ray Notification Email
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Sender email display */}
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-white border border-emerald-100">
+            <Mail className="h-4 w-4 text-emerald-600 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-muted-foreground">Sending to</p>
+              <p className="text-sm font-semibold truncate text-emerald-900">
+                {parcel.sender_email || (
+                  <span className="text-red-500 font-normal">No email address on this parcel</span>
+                )}
+              </p>
+            </div>
+            {emailSentAt && (
+              <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full font-medium whitespace-nowrap">
+                ✓ Sent {new Date(emailSentAt).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+
+          {/* Already-sent success banner */}
+          {(emailSent || emailSentAt) && (
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-100 border border-emerald-300">
+              <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-emerald-800">Email sent successfully!</p>
+                <p className="text-xs text-emerald-600">
+                  X-ray notification delivered to {parcel.sender_email}
+                  {emailSentAt && ` on ${new Date(emailSentAt).toLocaleString()}`}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-3 items-center">
+            <Button
+              onClick={() => sendXrayEmail(parcel)}
+              disabled={emailSending || !parcel.sender_email}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white flex-1"
+            >
+              {emailSending ? (
+                <>
+                  <span className="animate-spin mr-2 h-4 w-4 border-2 border-white/30 border-t-white rounded-full inline-block" />
+                  Sending…
+                </>
+              ) : (
+                <>
+                  <Mail className="h-4 w-4 mr-2" />
+                  {emailSentAt ? "Resend X-Ray Email" : "Send X-Ray Email"}
+                </>
+              )}
+            </Button>
+            <p className="text-xs text-muted-foreground flex-1">
+              {parcel.current_status === 'x_rayed'
+                ? "Sent automatically when status was set to X-Rayed."
+                : "Also fires automatically when status is updated to X-Rayed."}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Actions */}
       <div className="flex justify-end pt-4">
