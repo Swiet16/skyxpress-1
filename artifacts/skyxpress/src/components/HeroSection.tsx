@@ -128,68 +128,8 @@ const HeroSection = () => {
         ✈
       </div>
 
-      {/* ── CONTENT ── */}
-      <div className="relative z-10 container mx-auto px-4 py-20 flex flex-col items-center text-center gap-10">
-
-        {/* CTAs */}
-        <div
-          className="flex flex-wrap justify-center gap-4"
-          style={{ animation: visible ? "slideUp 0.7s 0.3s ease both" : "none", opacity: 0 }}
-        >
-          <Link to="/track">
-            <Button
-              size="lg"
-              className="h-12 px-8 text-sm font-bold rounded-xl gap-2 shadow-2xl"
-              style={{ background: "linear-gradient(135deg,#2e86ff,#1a5aff)", border: "none" }}
-            >
-              Track Shipment <ArrowRight className="h-4 w-4" />
-            </Button>
-          </Link>
-          <Link to="/quote">
-            <Button
-              variant="outline"
-              size="lg"
-              className="h-12 px-8 text-sm font-bold rounded-xl gap-2"
-              style={{ borderColor: "rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.85)", background: "rgba(255,255,255,0.05)" }}
-            >
-              Get a Quote
-            </Button>
-          </Link>
-          <Link to="/auth">
-            <Button
-              size="lg"
-              className="h-12 px-8 text-sm font-bold rounded-xl gap-2"
-              style={{ background: "linear-gradient(135deg,#ff6a1a,#e55a0a)", border: "none" }}
-            >
-              Partner Portal
-            </Button>
-          </Link>
-        </div>
-
-        {/* animated stat counters */}
-        <div
-          className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full max-w-3xl"
-          style={{ animation: visible ? "slideUp 0.7s 0.45s ease both" : "none", opacity: 0 }}
-        >
-          <StatCard value={195}  suffix="+"  label="Countries"  icon={Globe}       color="#2e86ff"  started={visible} />
-          <StatCard value={40}   suffix="yr" label="Experience" icon={TrendingUp}   color="#ffb020"  started={visible} />
-          <StatCard value={1000} suffix="K+" label="Shipments"  icon={ArrowRight}   color="#0f9d58"  started={visible} />
-          <StatCard value={99}   suffix=".8%" label="On-time"   icon={Shield}       color="#ff6a1a"  started={visible} />
-        </div>
-
-        {/* trust strip */}
-        <div
-          className="flex flex-wrap justify-center gap-x-8 gap-y-2 text-xs text-white/35 font-semibold tracking-widest uppercase"
-          style={{ animation: visible ? "fadeIn 1s 0.8s ease both" : "none", opacity: 0 }}
-        >
-          {["ISO Certified", "IATA Member", "Worldwide Coverage", "24/7 Support", "Real-time Tracking"].map(t => (
-            <span key={t} className="flex items-center gap-1.5">
-              <span className="w-1 h-1 rounded-full bg-white/25" />
-              {t}
-            </span>
-          ))}
-        </div>
-      </div>
+      {/* ── CONTENT (empty — CTAs and stats live elsewhere) ── */}
+      <div className="relative z-10 container mx-auto px-4 py-20" />
 
       {/* bottom fade */}
       <div
