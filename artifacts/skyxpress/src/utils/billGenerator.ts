@@ -408,7 +408,7 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
     const cnic    = side === 'from' ? safeText(parcel.sender_cnic??'','') : '';
 
     const colX = side === 'from' ? M : M + colW;
-    let rowY   = boxTop;
+    let rowY   = boxTop + 3;  // top padding inside box so text clears the border
 
     const writeLine = (txt: string, bold = false) => {
       if (!txt) return;
@@ -462,7 +462,7 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   const writeRef = (label: string, value: string) => {
     setFont(7, 'bold'); setText(0,0,0); pdf.text(label, M, y);
     setFont(7, 'normal');
-    const vx = M + pdf.getTextWidth(label) + 1;
+    const vx = M + pdf.getTextWidth(label) + 3;
     const vw = U - (vx - M);
     if (value) {
       const ls = pdf.splitTextToSize(value, vw) as string[];
@@ -630,7 +630,6 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   // right column
   const carrier = safeText(parcel.service_type, '');
   if (carrier) ry = sumRow('Carrier:',           carrier,                rx, ry);
-  ry = sumRow('Duty / taxes acct:', 'Receiver Will Pay',                 rx, ry);
 
   y = Math.max(ly, ry) + 3;
   hRule(y, 0.2); y += 4;
