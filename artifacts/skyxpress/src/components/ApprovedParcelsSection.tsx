@@ -446,8 +446,9 @@ export const ApprovedParcelsSection = () => {
           </div>
         )}
       </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
+      <CardContent className="p-0 sm:p-6">
+        {/* ── Desktop table (md+) ──────────────────────────────────────────── */}
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -469,7 +470,7 @@ export const ApprovedParcelsSection = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-               {paginatedParcels.map((parcel) => (
+              {paginatedParcels.map((parcel) => (
                 <TableRow key={parcel.id} data-state={selectedIds.has(parcel.id) ? "selected" : undefined}>
                   <TableCell>
                     <Checkbox
@@ -486,33 +487,18 @@ export const ApprovedParcelsSection = () => {
                       <div className="font-mono text-xs text-slate-400 mt-0.5">{parcel.tracking_id}</div>
                     )}
                   </TableCell>
-                  <TableCell>
-                    <div className="font-medium">{parcel.sender_name}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">{parcel.receiver_name}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">{parcel.from_country} → {parcel.to_country}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-semibold">${parcel.total_price?.toFixed(2)}</div>
-                  </TableCell>
+                  <TableCell><div className="font-medium">{parcel.sender_name}</div></TableCell>
+                  <TableCell><div className="font-medium">{parcel.receiver_name}</div></TableCell>
+                  <TableCell><div className="text-sm">{parcel.from_country} → {parcel.to_country}</div></TableCell>
+                  <TableCell><div className="font-semibold">${parcel.total_price?.toFixed(2)}</div></TableCell>
                   <TableCell>
                     <Badge className={statusColors[parcel.shipping_status as keyof typeof statusColors]}>
                       {parcel.shipping_status?.replace('_', ' ').toUpperCase()}
                     </Badge>
                   </TableCell>
+                  <TableCell><div className="text-sm">{new Date(parcel.approved_at).toLocaleDateString()}</div></TableCell>
                   <TableCell>
-                    <div className="text-sm">{new Date(parcel.approved_at).toLocaleDateString()}</div>
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openStatusDialog(parcel)}
-                      disabled={updatingStatus === parcel.id}
-                    >
+                    <Button variant="outline" size="sm" onClick={() => openStatusDialog(parcel)} disabled={updatingStatus === parcel.id}>
                       <Edit className="h-4 w-4 mr-1" />
                       Update Status
                     </Button>
@@ -521,14 +507,96 @@ export const ApprovedParcelsSection = () => {
               ))}
             </TableBody>
           </Table>
+        </div>
 
-          {filteredParcels.length === 0 && (
-            <div className="text-center py-8">
-              <Package className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
-              <p className="text-muted-foreground">No approved parcels yet</p>
+        {/* ── Mobile cards (< md) ─────────────────────────────────────────── */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {paginatedParcels.length > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 border-b">
+              <Checkbox
+                checked={allFilteredSelected ? true : someFilteredSelected ? "indeterminate" : false}
+                onCheckedChange={(checked) => toggleSelectAllFiltered(checked === true)}
+                aria-label="Select all"
+              />
+              <span className="text-xs font-semibold text-slate-600">Select all on this page</span>
             </div>
           )}
+
+          {paginatedParcels.map((parcel, i) => (
+            <div
+              key={parcel.id}
+              className={`px-4 py-3 ${selectedIds.has(parcel.id) ? "bg-blue-50" : i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}
+            >
+              {/* Top row: checkbox + ID + status */}
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  checked={selectedIds.has(parcel.id)}
+                  onCheckedChange={(checked) => toggleSelectOne(parcel.id, checked === true)}
+                  aria-label={`Select parcel ${parcel.reference_id || parcel.tracking_id}`}
+                  className="mt-0.5 shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="font-mono font-semibold text-primary text-sm truncate">
+                      {parcel.reference_id || parcel.tracking_id}
+                    </span>
+                    <Badge className={`shrink-0 text-[10px] px-1.5 py-0.5 ${statusColors[parcel.shipping_status as keyof typeof statusColors]}`}>
+                      {parcel.shipping_status?.replace(/_/g, ' ').toUpperCase()}
+                    </Badge>
+                  </div>
+                  {parcel.reference_id && (
+                    <div className="font-mono text-[10px] text-slate-400 mt-0.5 truncate">{parcel.tracking_id}</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Details grid */}
+              <div className="mt-2.5 ml-7 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                <div>
+                  <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">Sender</p>
+                  <p className="text-xs font-medium text-slate-800 truncate">{parcel.sender_name}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">Receiver</p>
+                  <p className="text-xs font-medium text-slate-800 truncate">{parcel.receiver_name}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">Route</p>
+                  <p className="text-xs text-slate-600">{parcel.from_country} → {parcel.to_country}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">Price</p>
+                  <p className="text-xs font-semibold text-slate-800">${parcel.total_price?.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">Approved</p>
+                  <p className="text-xs text-slate-600">{new Date(parcel.approved_at).toLocaleDateString()}</p>
+                </div>
+              </div>
+
+              {/* Action */}
+              <div className="mt-2.5 ml-7">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => openStatusDialog(parcel)}
+                  disabled={updatingStatus === parcel.id}
+                >
+                  <Edit className="h-3.5 w-3.5 mr-1" />
+                  Update Status
+                </Button>
+              </div>
+            </div>
+          ))}
         </div>
+
+        {filteredParcels.length === 0 && (
+          <div className="text-center py-8">
+            <Package className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
+            <p className="text-muted-foreground">No approved parcels yet</p>
+          </div>
+        )}
 
         {filteredParcels.length > 0 && (
           <div className="mt-4 flex flex-col gap-3 border-t pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">

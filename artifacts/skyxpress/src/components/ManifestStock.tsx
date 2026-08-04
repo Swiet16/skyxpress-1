@@ -1041,7 +1041,8 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                 </div>
               )}
 
-              <div className="overflow-x-auto rounded-xl border border-slate-100">
+              {/* ── Desktop table (md+) ────────────────────────────────────── */}
+              <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-100">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-gradient-to-r from-slate-800 to-blue-900 hover:from-slate-800 hover:to-blue-900">
@@ -1063,18 +1064,13 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                         className={`cursor-pointer transition-colors ${selectedIds.has(entry.manifestId) ? "bg-blue-50 ring-1 ring-blue-300" : i % 2 === 0 ? "bg-white hover:bg-blue-50/50" : "bg-slate-50/40 hover:bg-blue-50/50"}`}
                         onClick={() => openDetail(entry)}>
                         <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            checked={selectedIds.has(entry.manifestId)}
-                            onCheckedChange={() => toggleSelect(entry.manifestId)}
-                            className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
-                          />
+                          <Checkbox checked={selectedIds.has(entry.manifestId)} onCheckedChange={() => toggleSelect(entry.manifestId)}
+                            className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600" />
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1.5">
                             {entry.isLocked && <Lock className="h-3 w-3 text-slate-400 flex-shrink-0" />}
-                            <span className="font-mono font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded text-sm tracking-wider border border-orange-100">
-                              {entry.manifestId}
-                            </span>
+                            <span className="font-mono font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded text-sm tracking-wider border border-orange-100">{entry.manifestId}</span>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -1082,138 +1078,114 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                             <Calendar className="h-3.5 w-3.5 text-slate-400" />
                             {new Date(entry.createdAt).toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" })}
                           </div>
-                          <div className="text-[11px] text-muted-foreground mt-0.5">
-                            {new Date(entry.createdAt).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })}
-                          </div>
+                          <div className="text-[11px] text-muted-foreground mt-0.5">{new Date(entry.createdAt).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })}</div>
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            <Package className="h-3.5 w-3.5 text-blue-400" />
-                            <span className="font-semibold text-slate-800">{entry.parcelCount}</span>
-                            <span className="text-xs text-muted-foreground">AWBs</span>
-                          </div>
-                          <div className="text-[11px] text-muted-foreground font-mono mt-0.5">
-                            {entry.trackingIds.slice(0, 2).join(", ")}{entry.trackingIds.length > 2 && ` +${entry.trackingIds.length - 2}`}
-                          </div>
+                          <div className="flex items-center gap-1.5"><Package className="h-3.5 w-3.5 text-blue-400" /><span className="font-semibold text-slate-800">{entry.parcelCount}</span><span className="text-xs text-muted-foreground">AWBs</span></div>
+                          <div className="text-[11px] text-muted-foreground font-mono mt-0.5">{entry.trackingIds.slice(0, 2).join(", ")}{entry.trackingIds.length > 2 && ` +${entry.trackingIds.length - 2}`}</div>
                         </TableCell>
-                        <TableCell>
-                          <div className="text-sm font-medium text-slate-700">{entry.fromCountry || "—"}</div>
-                          <div className="text-xs text-muted-foreground">→ {entry.toCountry || "—"}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-xs text-slate-600 max-w-[120px] truncate" title={entry.destinationHub}>
-                            {entry.destinationHub || <span className="text-slate-300">—</span>}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="font-semibold text-slate-800">{entry.totalWeight.toFixed(2)}</span>
-                          <span className="text-xs text-muted-foreground ml-1">kg</span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs border-slate-200 text-slate-600">{entry.serviceType}</Badge>
-                        </TableCell>
-                        {/* Branch / Made By */}
-                        <TableCell>
-                          {(() => {
-                            const pInfo   = partnerProfileMap[entry.partnerUserId || ""];
-                            const branch  = pInfo?.branch || entry.company;
-                            const username = pInfo?.username;
-                            return branch || entry.createdByUser || username ? (
-                              <div className="space-y-0.5">
-                                {branch && (
-                                  <div
-                                    className="flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5 max-w-[130px] truncate"
-                                    title={branch}
-                                  >
-                                    <Building2 className="h-2.5 w-2.5 flex-shrink-0" />
-                                    {branch}
-                                  </div>
-                                )}
-                                {entry.createdByUser && (
-                                  <div
-                                    className="text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5 inline-block max-w-[130px] truncate"
-                                    title={entry.createdByUser}
-                                  >
-                                    {entry.createdByUser}
-                                  </div>
-                                )}
-                                {username && (
-                                  <div
-                                    className="flex items-center gap-1 text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-100 rounded px-1.5 py-0.5 max-w-[130px] truncate"
-                                    title={username}
-                                  >
-                                    <User className="h-2.5 w-2.5 flex-shrink-0" />
-                                    {username}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-slate-300 text-xs">—</span>
-                            );
-                          })()}
-                        </TableCell>
-
-                        <TableCell>
-                          {entry.flightNo ? (
-                            <div className="flex items-center gap-1 text-xs text-slate-700">
-                              <Plane className="h-3 w-3 text-blue-400" />{entry.flightNo}
-                            </div>
-                          ) : <span className="text-slate-300 text-xs">—</span>}
-                        </TableCell>
+                        <TableCell><div className="text-sm font-medium text-slate-700">{entry.fromCountry || "—"}</div><div className="text-xs text-muted-foreground">→ {entry.toCountry || "—"}</div></TableCell>
+                        <TableCell><div className="text-xs text-slate-600 max-w-[120px] truncate" title={entry.destinationHub}>{entry.destinationHub || <span className="text-slate-300">—</span>}</div></TableCell>
+                        <TableCell><span className="font-semibold text-slate-800">{entry.totalWeight.toFixed(2)}</span><span className="text-xs text-muted-foreground ml-1">kg</span></TableCell>
+                        <TableCell><Badge variant="outline" className="text-xs border-slate-200 text-slate-600">{entry.serviceType}</Badge></TableCell>
+                        <TableCell>{(() => { const pInfo = partnerProfileMap[entry.partnerUserId || ""]; const branch = pInfo?.branch || entry.company; const username = pInfo?.username; return branch || entry.createdByUser || username ? (<div className="space-y-0.5">{branch && <div className="flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5 max-w-[130px] truncate" title={branch}><Building2 className="h-2.5 w-2.5 flex-shrink-0" />{branch}</div>}{entry.createdByUser && <div className="text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5 inline-block max-w-[130px] truncate" title={entry.createdByUser}>{entry.createdByUser}</div>}{username && <div className="flex items-center gap-1 text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-100 rounded px-1.5 py-0.5 max-w-[130px] truncate" title={username}><User className="h-2.5 w-2.5 flex-shrink-0" />{username}</div>}</div>) : <span className="text-slate-300 text-xs">—</span>; })()}</TableCell>
+                        <TableCell>{entry.flightNo ? <div className="flex items-center gap-1 text-xs text-slate-700"><Plane className="h-3 w-3 text-blue-400" />{entry.flightNo}</div> : <span className="text-slate-300 text-xs">—</span>}</TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Select
-                            value={entry.manifestStatus || ""}
-                            onValueChange={(v) => handleSingleStatus(entry.manifestId, v)}>
+                          <Select value={entry.manifestStatus || ""} onValueChange={(v) => handleSingleStatus(entry.manifestId, v)}>
                             <SelectTrigger className="h-7 w-[150px] text-[11px] border-slate-200 bg-white px-2 py-0">
-                              <SelectValue placeholder="Set status…">
-                                {entry.manifestStatus
-                                  ? <ManifestStatusBadge status={entry.manifestStatus} size="xs" />
-                                  : <span className="text-slate-400 text-[11px]">Set status…</span>}
-                              </SelectValue>
+                              <SelectValue placeholder="Set status…">{entry.manifestStatus ? <ManifestStatusBadge status={entry.manifestStatus} size="xs" /> : <span className="text-slate-400 text-[11px]">Set status…</span>}</SelectValue>
                             </SelectTrigger>
-                            <SelectContent>
-                              {MANIFEST_STATUSES.map((s) => (
-                                <SelectItem key={s.value} value={s.value}>
-                                  <span className="flex items-center gap-2">
-                                    <span>{s.icon}</span><span>{s.label}</span>
-                                  </span>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
+                            <SelectContent>{MANIFEST_STATUSES.map((s) => (<SelectItem key={s.value} value={s.value}><span className="flex items-center gap-2"><span>{s.icon}</span><span>{s.label}</span></span></SelectItem>))}</SelectContent>
                           </Select>
                         </TableCell>
-                        <TableCell>
-                          {entry.isLocked ? (
-                            <Badge className="bg-slate-700 text-white text-[10px] gap-1"><Lock className="h-2.5 w-2.5" /> Locked</Badge>
-                          ) : (
-                            <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px]">Open</Badge>
-                          )}
-                        </TableCell>
+                        <TableCell>{entry.isLocked ? <Badge className="bg-slate-700 text-white text-[10px] gap-1"><Lock className="h-2.5 w-2.5" /> Locked</Badge> : <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px]">Open</Badge>}</TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1 justify-end">
-                            <Button variant="ghost" size="sm" title="Excel"
-                              className="gap-1 text-green-700 hover:bg-green-50 h-7 px-2"
-                              onClick={() => handleExcelDownload(entry)}
-                              disabled={downloading === entry.manifestId + "-xls"}>
-                              <FileSpreadsheet className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="sm" title="PDF"
-                              className="gap-1 text-blue-700 hover:bg-blue-50 h-7 px-2"
-                              onClick={() => handlePDFDownload(entry)}
-                              disabled={downloading === entry.manifestId + "-pdf"}>
-                              <FileDown className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="sm" title="Delete"
-                              className="text-red-400 hover:text-red-600 hover:bg-red-50 h-7 px-2"
-                              onClick={() => handleDelete(entry.manifestId)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            <Button variant="ghost" size="sm" title="Excel" className="gap-1 text-green-700 hover:bg-green-50 h-7 px-2" onClick={() => handleExcelDownload(entry)} disabled={downloading === entry.manifestId + "-xls"}><FileSpreadsheet className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="sm" title="PDF" className="gap-1 text-blue-700 hover:bg-blue-50 h-7 px-2" onClick={() => handlePDFDownload(entry)} disabled={downloading === entry.manifestId + "-pdf"}><FileDown className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="sm" title="Delete" className="text-red-400 hover:text-red-600 hover:bg-red-50 h-7 px-2" onClick={() => handleDelete(entry.manifestId)}><Trash2 className="h-3.5 w-3.5" /></Button>
                           </div>
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
+              </div>
+
+              {/* ── Mobile cards (< md) ────────────────────────────────────── */}
+              <div className="md:hidden rounded-xl border border-slate-100 overflow-hidden divide-y divide-slate-100">
+                {/* Select-all row */}
+                <div className="flex items-center gap-3 px-4 py-2.5 bg-gradient-to-r from-slate-800 to-blue-900">
+                  <Checkbox checked={filtered.length > 0 && selectedIds.size === filtered.length} onCheckedChange={toggleSelectAll}
+                    className="border-white/40 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500" />
+                  <span className="text-white text-xs font-semibold">Select all</span>
+                </div>
+                {filtered.map((entry, i) => (
+                  <div key={entry.manifestId}
+                    className={`px-4 py-3 cursor-pointer ${selectedIds.has(entry.manifestId) ? "bg-blue-50" : i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}
+                    onClick={() => openDetail(entry)}>
+                    {/* Top: checkbox + manifest ID + lock/status */}
+                    <div className="flex items-start gap-3">
+                      <div onClick={(e) => e.stopPropagation()} className="mt-0.5 shrink-0">
+                        <Checkbox checked={selectedIds.has(entry.manifestId)} onCheckedChange={() => toggleSelect(entry.manifestId)}
+                          className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5">
+                            {entry.isLocked && <Lock className="h-3 w-3 text-slate-400 shrink-0" />}
+                            <span className="font-mono font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded text-sm tracking-wider border border-orange-100">{entry.manifestId}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {entry.isLocked
+                              ? <Badge className="bg-slate-700 text-white text-[10px] gap-1"><Lock className="h-2.5 w-2.5" /> Locked</Badge>
+                              : <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px]">Open</Badge>}
+                            {entry.manifestStatus && <ManifestStatusBadge status={entry.manifestStatus} size="xs" />}
+                          </div>
+                        </div>
+                        {/* Details grid */}
+                        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                          <div>
+                            <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">Date</p>
+                            <p className="text-xs text-slate-700">{new Date(entry.createdAt).toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" })}</p>
+                            <p className="text-[10px] text-slate-400">{new Date(entry.createdAt).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })}</p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">Parcels</p>
+                            <p className="text-xs font-semibold text-slate-800">{entry.parcelCount} AWBs</p>
+                            <p className="text-[10px] text-slate-400 font-mono truncate">{entry.trackingIds.slice(0,1).join("")}{entry.trackingIds.length > 1 && ` +${entry.trackingIds.length - 1}`}</p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">Route</p>
+                            <p className="text-xs text-slate-700">{entry.fromCountry || "—"} → {entry.toCountry || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">Weight · Service</p>
+                            <p className="text-xs text-slate-700">{entry.totalWeight.toFixed(2)} kg · {entry.serviceType}</p>
+                          </div>
+                          {(entry.destinationHub || entry.flightNo) && (
+                            <div className="col-span-2">
+                              <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">Hub · Flight</p>
+                              <p className="text-xs text-slate-600 truncate">{[entry.destinationHub, entry.flightNo].filter(Boolean).join(" · ") || "—"}</p>
+                            </div>
+                          )}
+                        </div>
+                        {/* Status picker + actions */}
+                        <div className="mt-2.5 flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                          <Select value={entry.manifestStatus || ""} onValueChange={(v) => handleSingleStatus(entry.manifestId, v)}>
+                            <SelectTrigger className="h-7 w-[140px] text-[11px] border-slate-200 bg-white px-2 py-0">
+                              <SelectValue placeholder="Set status…">{entry.manifestStatus ? <ManifestStatusBadge status={entry.manifestStatus} size="xs" /> : <span className="text-slate-400 text-[11px]">Set status…</span>}</SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>{MANIFEST_STATUSES.map((s) => (<SelectItem key={s.value} value={s.value}><span className="flex items-center gap-2"><span>{s.icon}</span><span>{s.label}</span></span></SelectItem>))}</SelectContent>
+                          </Select>
+                          <Button variant="ghost" size="sm" title="Excel" className="h-7 px-2 text-green-700 hover:bg-green-50" onClick={() => handleExcelDownload(entry)} disabled={downloading === entry.manifestId + "-xls"}><FileSpreadsheet className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="sm" title="PDF" className="h-7 px-2 text-blue-700 hover:bg-blue-50" onClick={() => handlePDFDownload(entry)} disabled={downloading === entry.manifestId + "-pdf"}><FileDown className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="sm" title="Delete" className="h-7 px-2 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleDelete(entry.manifestId)}><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </>
           )}
@@ -1241,25 +1213,25 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <Button size="sm" variant="outline"
                     className="h-7 text-xs border-white/20 text-white hover:bg-white/10 bg-transparent gap-1.5"
                     onClick={handleClone}>
-                    <Copy className="h-3 w-3" /> Clone
+                    <Copy className="h-3 w-3" /><span className="hidden sm:inline">Clone</span>
                   </Button>
                   <Button size="sm"
                     className={`h-7 text-xs gap-1.5 ${editing.isLocked ? "bg-orange-500 hover:bg-orange-600" : "bg-slate-600 hover:bg-slate-500"} text-white`}
                     onClick={handleLockToggle}>
-                    {editing.isLocked ? <><Unlock className="h-3 w-3" /> Unlock</> : <><Lock className="h-3 w-3" /> Lock</>}
+                    {editing.isLocked ? <><Unlock className="h-3 w-3" /><span className="hidden sm:inline"> Unlock</span></> : <><Lock className="h-3 w-3" /><span className="hidden sm:inline"> Lock</span></>}
                   </Button>
                   <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
                     onClick={() => handleExcelDownload(editing)} disabled={downloading === editing.manifestId + "-xls"}>
-                    <FileSpreadsheet className="h-3 w-3" /> Excel
+                    <FileSpreadsheet className="h-3 w-3" /><span className="hidden sm:inline">Excel</span>
                   </Button>
                   <Button size="sm"
                     className="h-7 text-xs bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white gap-1.5"
                     onClick={() => handlePDFDownload(editing)} disabled={downloading === editing.manifestId + "-pdf"}>
-                    <FileDown className="h-3 w-3" /> PDF
+                    <FileDown className="h-3 w-3" /><span className="hidden sm:inline">PDF</span>
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-white/60 hover:text-white hover:bg-white/10" onClick={closeDetail}>
                     <X className="h-4 w-4" />
@@ -1270,20 +1242,22 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
               {/* Sub-header: tabs + actions */}
               <div className="bg-slate-100 border-b border-slate-200 flex-shrink-0">
                 <Tabs defaultValue="entry" className="w-full">
-                  <div className="flex items-center justify-between px-4 pt-0">
-                    <TabsList className="h-9 bg-transparent gap-0 rounded-none border-0 p-0">
-                      {[
-                        { value: "entry",    label: "Entry",    icon: ClipboardList },
-                        { value: "tracking", label: "Add Tracking Events", icon: MapPin },
-                        { value: "billing",  label: "Billing",  icon: DollarSign },
-                      ].map(({ value, label, icon: Icon }) => (
-                        <TabsTrigger key={value} value={value}
-                          className="h-9 px-4 rounded-none text-xs font-semibold uppercase tracking-wide border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-blue-700 data-[state=active]:bg-white data-[state=active]:shadow-none text-slate-500 hover:text-slate-700 transition-none">
-                          <Icon className="h-3 w-3 mr-1.5" />{label}
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
-                    <div className="flex items-center gap-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-2 sm:px-4 pt-0 gap-0">
+                    <div className="overflow-x-auto">
+                      <TabsList className="h-9 bg-transparent gap-0 rounded-none border-0 p-0 flex w-max">
+                        {[
+                          { value: "entry",    label: "Entry",         shortLabel: "Entry",    icon: ClipboardList },
+                          { value: "tracking", label: "Add Tracking",  shortLabel: "Tracking", icon: MapPin },
+                          { value: "billing",  label: "Billing",       shortLabel: "Billing",  icon: DollarSign },
+                        ].map(({ value, label, icon: Icon }) => (
+                          <TabsTrigger key={value} value={value}
+                            className="h-9 px-3 sm:px-4 rounded-none text-xs font-semibold uppercase tracking-wide border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-blue-700 data-[state=active]:bg-white data-[state=active]:shadow-none text-slate-500 hover:text-slate-700 transition-none whitespace-nowrap">
+                            <Icon className="h-3 w-3 mr-1.5" />{label}
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                    </div>
+                    <div className="flex items-center gap-2 px-2 pb-2 sm:px-0 sm:pb-0">
                       <Button size="sm"
                         className="h-7 text-[11px] bg-blue-700 hover:bg-blue-800 text-white gap-1"
                         onClick={handleSave} disabled={saving || editing.isLocked}>

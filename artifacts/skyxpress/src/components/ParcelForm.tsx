@@ -187,7 +187,7 @@ const SectionCard = ({
       <span className="text-sm font-bold text-white tracking-wide">{title}</span>
       <div className="ml-auto h-px flex-1 max-w-16" style={{ background: `linear-gradient(to right, ${color}30, transparent)` }} />
     </div>
-    <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="p-3 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
       {children}
     </div>
   </motion.div>
@@ -300,7 +300,7 @@ const ServiceIcon = ({ serviceValue }: { serviceValue: string }) => {
 const ServicePicker = ({
   value, onChange,
 }: { value: string; onChange: (v: string) => void }) => (
-  <div className="col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+  <div className="col-span-2 grid grid-cols-2 md:grid-cols-3 gap-2.5">
     {SERVICE_TYPES.map((s) => {
       const active = value === s.value;
       return (
@@ -408,7 +408,7 @@ const DocTypePicker = ({
 
 // ─── Parcel type pill ─────────────────────────────────────────────────────────
 const TypePicker = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
-  <div className="col-span-2 grid grid-cols-4 gap-2">
+  <div className="col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
     {PARCEL_TYPES.map((t) => {
       const active = value === t.value;
       return (
@@ -1009,7 +1009,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
       </div>
 
       {/* ── All sections ── */}
-      <div className="p-5 space-y-5">
+      <div className="p-3 sm:p-5 space-y-5">
 
         {/* Shipment Details */}
         <div id="parcel-section-0">
