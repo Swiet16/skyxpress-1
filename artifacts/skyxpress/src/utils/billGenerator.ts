@@ -270,8 +270,8 @@ const addBarcode = async (
     bwipjs.toCanvas(canvas, {
       bcid: 'code128',
       text: text,
-      scale: 3,
-      height: 12,
+      scale: 5,
+      height: 22,
       includetext: false,
     });
     const dataUrl = canvas.toDataURL('image/png');
@@ -345,38 +345,30 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   const receiverCountry = codeToCountryName(safeText(parcel.receiver_country,  'United Kingdom'));
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SECTION 1 — HEADER  (logo left · title centre · barcode top-right)
+  // SECTION 1 — HEADER  (title left · barcode top-right)
   // ══════════════════════════════════════════════════════════════════════════
-  const bcW = 58; const bcH = 32;
+  const bcW = 70; const bcH = 30;
   const bcX = M + usable - bcW;
 
-  // Logo (left)
-  await addLogo(pdf, M, y, 35, 20);
-
-  // Title + company info (centre-left)
-  const titleX = M + 38;
-  sz(14); fnt('bold'); col(0,0,0);
-  pdf.text('Proforma Invoice', titleX, y + 9);
-  sz(7); fnt('normal'); col(60,60,60);
-  pdf.text('SKY XPRESS WORLDWIDE EXPRESS', titleX, y + 14);
-  pdf.text('Email: skyxpresss786@gmail.com', titleX, y + 18);
-  pdf.text('Tel: (042) 37255473  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411', titleX, y + 22);
+  // "Proforma Invoice" title — left, plain and simple
+  sz(16); fnt('bold'); col(0,0,0);
+  pdf.text('Proforma Invoice', M, y + 10);
 
   // Barcode box — top-right, thin black border
   drw(0,0,0); lw(0.3);
   pdf.rect(bcX, y, bcW, bcH);
 
-  sz(6); fnt('bold'); col(0,0,0);
+  sz(6.5); fnt('bold'); col(0,0,0);
   pdf.text('AWB / REFERENCE NO', bcX + bcW / 2, y + 5, { align: 'center' });
 
-  sz(8); fnt('bold');
-  pdf.text(refNumber, bcX + bcW / 2, y + 10, { align: 'center' });
+  sz(9); fnt('bold');
+  pdf.text(refNumber, bcX + bcW / 2, y + 10.5, { align: 'center' });
 
-  // barcode fills most of the box
-  await addBarcode(pdf, refNumber, bcX + 2, y + 12, bcW - 4, 14);
+  // barcode — larger height for better visibility
+  await addBarcode(pdf, refNumber, bcX + 2, y + 12, bcW - 4, 15);
 
-  sz(5.5); fnt('normal'); col(40,40,40);
-  pdf.text(refNumber, bcX + bcW / 2, y + 30, { align: 'center' });
+  sz(6); fnt('normal'); col(40,40,40);
+  pdf.text(refNumber, bcX + bcW / 2, y + 28.5, { align: 'center' });
 
   y += bcH + 2;
 
@@ -613,39 +605,36 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   const sumRightX = M + sumColW;
   const sumLg     = 4.2;
 
+  // Only render a summary row when the value is non-empty
   const renderSumRow = (label: string, value: string, x: number, yy: number): number => {
+    if (!value || value.trim() === '') return yy; // skip blank rows
     sz(7); fnt('bold'); col(0,0,0);
     pdf.text(label, x + 1, yy);
     fnt('normal');
-    pdf.text(value, x + 1 + 42, yy);
+    const valLines = pdf.splitTextToSize(value, sumColW - 44);
+    pdf.text(valLines[0] ?? '', x + 1 + 42, yy);
     return yy + sumLg;
   };
 
   let ly = y;
   let ry = y;
 
-  // Left column
+  // Left column — only fields with real data
   ly = renderSumRow('Total Goods Value:', `${grandTotal.toFixed(2)} ${currency}`, sumLeftX, ly);
   ly = renderSumRow('Total Invoice Amount:', `${grandTotal.toFixed(2)} ${currency}`, sumLeftX, ly);
   ly = renderSumRow('Currency Code:', currency, sumLeftX, ly);
-  ly = renderSumRow('Terms of Payment:', '', sumLeftX, ly);
-  ly = renderSumRow('Terms of Trade:', 'Delivered at Place', sumLeftX, ly);
-  ly = renderSumRow('Place of Incoterm:', '', sumLeftX, ly);
+  if (netWeight > 0) ly = renderSumRow('Total Net Weight:', `${netWeight.toFixed(3)}kg`, sumLeftX, ly);
+  if (grossWeight > 0) ly = renderSumRow('Total Gross Weight:', `${grossWeight.toFixed(3)}kg`, sumLeftX, ly);
   ly = renderSumRow('Reason for Export:', 'Gift', sumLeftX, ly);
   ly = renderSumRow('Type of Export:', 'Gift', sumLeftX, ly);
-  ly = renderSumRow('Total Net Weight:', `${netWeight.toFixed(3)}kg`, sumLeftX, ly);
-  ly = renderSumRow('Total Gross Weight:', `${grossWeight.toFixed(3)}kg`, sumLeftX, ly);
+  if (pieces > 1) ly = renderSumRow('Total Pieces:', String(pieces), sumLeftX, ly);
 
-  // Right column
-  ry = renderSumRow('Number of Pallets:', '', sumRightX, ry);
-  ry = renderSumRow('Package Marks / Other Info:', '', sumRightX, ry);
-  ry = renderSumRow('Payer of GST / VAT:', '', sumRightX, ry);
+  // Right column — only non-empty logistics fields
+  const carrier = safeText(parcel.service_type, '');
+  if (carrier) ry = renderSumRow('Carrier:', carrier, sumRightX, ry);
   ry = renderSumRow('Duty / taxes acct:', 'Receiver Will Pay', sumRightX, ry);
-  ry = renderSumRow('Requiere Pedimento:', 'No', sumRightX, ry);
-  ry = renderSumRow('Duty / tax billing service:', '', sumRightX, ry);
-  ry = renderSumRow('Carrier:', safeText(parcel.service_type, 'SKY XPRESS'), sumRightX, ry);
-  ry = renderSumRow('Ultimate Consignee:', '', sumRightX, ry);
-  ry = renderSumRow('Exemption Citation:', '', sumRightX, ry);
+  const shipperRef = safeText(parcel.reference_id || parcel.tracking_id, '');
+  if (shipperRef) ry = renderSumRow('Shipper Reference:', shipperRef, sumRightX, ry);
 
   y = Math.max(ly, ry) + 3;
   hRule(y, 0.2); y += 4;
