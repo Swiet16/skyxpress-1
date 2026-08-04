@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sheet, SheetContent, SheetHeader } from "@/components/ui/sheet";
+// Sheet removed — manifest detail now renders inline on the page
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -1220,13 +1220,12 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
         </CardContent>
       </Card>
 
-      {/* ── MANIFEST DETAIL Sheet ─────────────────────────────────────────────── */}
-      <Sheet open={!!selected} onOpenChange={(o) => { if (!o) closeDetail(); }}>
-        <SheetContent side="right" className="w-full sm:max-w-5xl p-0 overflow-hidden flex flex-col">
-          {editing && (
-            <>
-              {/* Top header */}
-              <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 px-4 py-3 flex items-center justify-between flex-wrap gap-2 flex-shrink-0">
+      {/* ── MANIFEST DETAIL — inline panel (no slide) ────────────────────────── */}
+      {selected && editing && (
+        <div className="rounded-xl border border-slate-200 bg-white shadow-md overflow-hidden">
+          <>
+            {/* Top header */}
+            <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2">
                     <ClipboardList className="h-4 w-4 text-orange-400" />
@@ -1834,9 +1833,8 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                 </Tabs>
               </div>
             </>
-          )}
-        </SheetContent>
-      </Sheet>
+          </div>
+        )}
 
       {/* ── Bagging Dialog ────────────────────────────────────────────────────── */}
       {editing && (
