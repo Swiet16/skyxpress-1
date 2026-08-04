@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import JsBarcode from "jsbarcode";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Printer, X } from "lucide-react";
+import { Printer, X, FileDown } from "lucide-react";
 import skyxpressLogo from "@/assets/skyxpress_logo.png";
 
 /* ─── helpers ─────────────────────────────────────── */
@@ -141,8 +141,214 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
       .filter(Boolean).join(", ") || null,
   ].filter(Boolean) as string[];
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = () => { window.print(); };
+
+  const handleSavePDF = async () => {
+    const { default: jsPDF } = await import("jspdf");
+
+    const W = 105, H = 185;
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [W, H] });
+    const pad = 4;
+
+    // ── helpers ──────────────────────────────────────────────────────────
+    const fillRect = (x: number, y: number, w: number, h: number, r: number, g: number, b: number) => {
+      doc.setFillColor(r, g, b); doc.rect(x, y, w, h, "F");
+    };
+    const hline = (y: number, lw = 0.3, r = 0, g = 0, b = 0) => {
+      doc.setDrawColor(r, g, b); doc.setLineWidth(lw); doc.line(0, y, W, y);
+    };
+    const txt = (s: string, x: number, y: number, opts?: any) => doc.text(s, x, y, opts);
+    const setFont = (style: string, size: number, r = 0, g = 0, b = 0) => {
+      doc.setFont("helvetica", style); doc.setFontSize(size); doc.setTextColor(r, g, b);
+    };
+
+    // ── logo (fetch → base64) ─────────────────────────────────────────────
+    let logoDataUrl: string | null = null;
+    try {
+      const resp = await fetch(skyxpressLogo);
+      const blob = await resp.blob();
+      logoDataUrl = await new Promise<string>((res) => {
+        const r = new FileReader(); r.onload = () => res(r.result as string); r.readAsDataURL(blob);
+      });
+    } catch { /* skip logo if fetch fails */ }
+
+    // ── barcodes (canvas → base64) ────────────────────────────────────────
+    const makeBarcodeUrl = (value: string) => {
+      const c = document.createElement("canvas");
+      try {
+        JsBarcode(c, value, { format: "CODE128", height: 60, displayValue: false, margin: 2, background: "#fff", lineColor: "#000" });
+      } catch { /* silent */ }
+      return c.toDataURL("image/png");
+    };
+    const refBarcodeUrl = makeBarcodeUrl(refCode || "000000");
+    const trkBarcodeUrl = makeBarcodeUrl(trackCode || "000000");
+
+    // ── outer border ──────────────────────────────────────────────────────
+    doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.4); doc.rect(0, 0, W, H);
+
+    // ════════════════════════════════════════════════════════════════════
+    // HEADER  (0 → 24)
+    // ════════════════════════════════════════════════════════════════════
+    const hdrH = 24;
+    const doxW = dox === "DOX" ? 18 : 22;
+    const logoW = 26;
+    const mainW = W - doxW - logoW;
+
+    // DOX / NON DOX badge
+    fillRect(mainW, 0, doxW, hdrH, 0, 0, 0);
+    setFont("bold", dox === "DOX" ? 13 : 9, 255, 255, 255);
+    txt(dox, mainW + doxW / 2, hdrH / 2 + 2, { align: "center" });
+
+    // Logo
+    if (logoDataUrl) {
+      doc.addImage(logoDataUrl, "PNG", mainW + doxW + 1, 1.5, logoW - 2, hdrH - 3);
+    }
+
+    // EXPRESS WORLDWIDE
+    setFont("bold", 13, 0, 0, 0);
+    txt("EXPRESS WORLDWIDE", pad, 8);
+
+    // Service type mini-badge
+    setFont("bold", 7, 255, 255, 255);
+    const stW = Math.min(doc.getTextWidth(serviceType) + 5, mainW - pad - 2);
+    fillRect(pad, 10.5, stW, 5, 26, 26, 46);
+    txt(serviceType, pad + 2.5, 14.7);
+
+    // Date
+    setFont("normal", 6.5, 90, 90, 90);
+    txt(labelDate(createdDate), pad, 21);
+
+    hline(hdrH, 0.6);
+    let y = hdrH;
+
+    // ════════════════════════════════════════════════════════════════════
+    // FROM / ORIGIN  (hdrH → +24)
+    // ════════════════════════════════════════════════════════════════════
+    const fromH = 24;
+
+    setFont("bold", 7, 60, 60, 60);
+    txt("FROM:", pad, y + 5);
+    setFont("bold", 9, 0, 0, 0);
+    txt(parcel.sender_name, pad, y + 10);
+
+    setFont("normal", 7.5, 30, 30, 30);
+    let fy = y + 14;
+    for (const ln of sndLines.slice(0, 4)) { txt(ln, pad, fy); fy += 3.5; }
+
+    // Origin code
+    setFont("normal", 6.5, 90, 90, 90);
+    txt("Origin:", W - 19, y + 5);
+    setFont("bold", 18, 0, 0, 0);
+    txt(origin, W - 19, y + 19);
+
+    hline(y + fromH, 0.3, 150, 150, 150);
+    y += fromH;
+
+    // ════════════════════════════════════════════════════════════════════
+    // TO / CONTACT  (y → +28)
+    // ════════════════════════════════════════════════════════════════════
+    const toH = 28;
+    hline(y, 0.6);
+
+    setFont("bold", 7, 60, 60, 60);
+    txt("TO:", pad, y + 5);
+    setFont("bold", 9, 0, 0, 0);
+    txt(parcel.receiver_name, pad, y + 10);
+
+    setFont("normal", 7.5, 30, 30, 30);
+    let ty = y + 14;
+    for (const ln of rcvLines.slice(0, 5)) { txt(ln, pad, ty); ty += 3.5; }
+
+    // Contact
+    const ctxX = W - 30;
+    setFont("normal", 6.5, 90, 90, 90);
+    txt("Contact:", ctxX, y + 5);
+    setFont("bold", 7.5, 0, 0, 0);
+    txt(parcel.receiver_name, ctxX, y + 10);
+    if (parcel.receiver_phone) {
+      setFont("normal", 7.5, 30, 30, 30);
+      txt(parcel.receiver_phone, ctxX, y + 14.5);
+    }
+
+    hline(y + toH, 0.5);
+    y += toH;
+
+    // ════════════════════════════════════════════════════════════════════
+    // SERVICE TYPE BAR (black)
+    // ════════════════════════════════════════════════════════════════════
+    const barH = 8;
+    fillRect(0, y, W, barH, 0, 0, 0);
+    setFont("bold", 11, 255, 255, 255);
+    txt(serviceType, pad, y + barH - 1.5);
+    y += barH;
+
+    // ════════════════════════════════════════════════════════════════════
+    // REF / DAY / TIME
+    // ════════════════════════════════════════════════════════════════════
+    const refH = 10;
+    setFont("normal", 8, 0, 0, 0);
+    txt(`Ref: ${refCode}`, pad, y + 6.5);
+
+    setFont("bold", 6.5, 80, 80, 80);
+    txt("Day", W - 38, y + 3.5, { align: "center" });
+    setFont("normal", 7, 0, 0, 0);
+    txt(dayStr, W - 38, y + 8, { align: "center" });
+
+    setFont("bold", 6.5, 80, 80, 80);
+    txt("Time", W - 14, y + 3.5, { align: "center" });
+    setFont("normal", 7, 0, 0, 0);
+    txt(timeStr, W - 14, y + 8, { align: "center" });
+
+    hline(y + refH, 0.2, 200, 200, 200);
+    y += refH;
+
+    // ════════════════════════════════════════════════════════════════════
+    // WEIGHT / PIECES
+    // ════════════════════════════════════════════════════════════════════
+    const wH = 14;
+    setFont("normal", 6.5, 90, 90, 90);
+    txt("Pce/Shpt", W - 68, y + wH - 2);
+
+    setFont("normal", 6.5, 90, 90, 90);
+    txt("Weight", W - 42, y + 4, { align: "center" });
+    setFont("bold", 14, 0, 0, 0);
+    txt(`${weightKg} kg`, W - 42, y + 12, { align: "center" });
+
+    setFont("normal", 6.5, 90, 90, 90);
+    txt("Piece", W - 16, y + 4, { align: "center" });
+    setFont("bold", 14, 0, 0, 0);
+    txt(`1/${pieces}`, W - 16, y + 12, { align: "center" });
+
+    hline(y + wH, 0.2, 200, 200, 200);
+    y += wH + 3;
+
+    // ════════════════════════════════════════════════════════════════════
+    // BARCODES
+    // ════════════════════════════════════════════════════════════════════
+    const bcW = 62, bcH = 16;
+
+    // Upper — reference ID
+    doc.addImage(refBarcodeUrl, "PNG", pad, y, bcW, bcH);
+    setFont("normal", 7, 0, 0, 0);
+    txt(refCode, pad + bcW / 2, y + bcH + 3.5, { align: "center" });
+
+    // Contents (right of upper barcode)
+    const cxX = pad + bcW + 4;
+    setFont("bold", 6.5, 60, 60, 60);
+    txt("Contents:", cxX, y + 4);
+    setFont("normal", 6.5, 30, 30, 30);
+    const wrapped = doc.splitTextToSize(contentsText.toUpperCase().slice(0, 80), W - cxX - pad);
+    doc.text(wrapped, cxX, y + 8);
+
+    y += bcH + 8;
+
+    // Lower — tracking ID
+    doc.addImage(trkBarcodeUrl, "PNG", pad, y, bcW, bcH);
+    setFont("normal", 7, 0, 0, 0);
+    txt(trackCode, pad + bcW / 2, y + bcH + 3.5, { align: "center" });
+
+    // ── save ─────────────────────────────────────────────────────────────
+    doc.save(`SkyXpress_Label_${trackCode}.pdf`);
   };
 
   return (
@@ -159,9 +365,13 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
         <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b print:hidden">
           <span className="text-sm font-semibold text-slate-700">Shipping Label Preview</span>
           <div className="flex gap-2">
+            <Button size="sm" onClick={handleSavePDF} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">
+              <FileDown className="h-3.5 w-3.5" />
+              Save PDF
+            </Button>
             <Button size="sm" onClick={handlePrint} className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
               <Printer className="h-3.5 w-3.5" />
-              Print Label
+              Print
             </Button>
             <Button size="sm" variant="ghost" onClick={onClose} className="gap-1.5 text-slate-500">
               <X className="h-3.5 w-3.5" />
