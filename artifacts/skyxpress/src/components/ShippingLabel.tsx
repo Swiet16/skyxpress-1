@@ -104,7 +104,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
   const dox = getDoxLabel(parcel.parcel_type);
   const origin = originCode(parcel.sender_city, parcel.from_country);
-  const refCode = parcel.sender_cnic || parcel.reference_id || parcel.tracking_id;
+  const cnicCode = parcel.sender_cnic || "N/A";
   const trackCode = parcel.tracking_id;
   const serviceType = (parcel.service_type || "EXPRESS WORLDWIDE").toUpperCase();
   const pieces = parcel.pieces ?? 1;
@@ -267,7 +267,8 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
       try { JsBarcode(c, val, { format: "CODE128", height: 80, displayValue: false, margin: 4, background: "#fff", lineColor: "#000" }); } catch { /* */ }
       return c.toDataURL("image/png");
     };
-    const refBC = makeBC(refCode || "000000");
+    const barcodeRef = parcel.reference_id || parcel.tracking_id;
+    const refBC = makeBC(barcodeRef || "000000");
     const trkBC = makeBC(trackCode || "000000");
 
     // ── outer border ──────────────────────────────────────────────────────
@@ -371,7 +372,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     // REF / DAY / TIME
     // ════════════════════════════════════════════════════════════════════
     sf("normal", 8, 0, 0, 0);
-    txt(`Ref: ${refCode}`, pad, y + 7);
+    txt(`CNIC Shipper: ${cnicCode}`, pad, y + 7);
 
     // day column
     sf("bold", 6.5, 80, 80, 80);
@@ -415,7 +416,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     // Upper — reference ID
     doc.addImage(refBC, "PNG", pad, y, bcW, bcH);
     sf("normal", 7, 0, 0, 0);
-    txt(refCode, pad + bcW / 2, y + bcH + 3.5, { align: "center" });
+    txt(barcodeRef, pad + bcW / 2, y + bcH + 3.5, { align: "center" });
 
     sf("bold", 6.5, 60, 60, 60);
     txt("Contents:", cntX, y + 5);
@@ -593,7 +594,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
           {/* ── Ref / Day / Time row ── */}
           <div style={{ display: "flex", alignItems: "center", padding: "4px 10px", borderBottom: "1px solid #ccc" }}>
             <div style={{ flex: 1, fontSize: 10 }}>
-              Ref: {refCode}
+              CNIC Shipper: {cnicCode}
             </div>
             <div style={{ display: "flex", gap: 20, fontSize: 9, color: "#555" }}>
               <div style={{ textAlign: "center" }}>
@@ -628,9 +629,9 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
             {/* Upper barcode — reference ID */}
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
               <div style={{ flex: 1 }}>
-                <Barcode value={refCode || "000000"} height={48} />
+                <Barcode value={parcel.reference_id || parcel.tracking_id || "000000"} height={48} />
                 <div style={{ textAlign: "center", fontSize: 9, marginTop: 2, letterSpacing: 0.5 }}>
-                  {refCode}
+                  {parcel.reference_id || parcel.tracking_id}
                 </div>
               </div>
               <div style={{ minWidth: 110, textAlign: "right", fontSize: 9, paddingTop: 4 }}>
