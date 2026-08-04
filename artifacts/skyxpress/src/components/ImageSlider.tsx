@@ -34,7 +34,7 @@ const slides = [
     accent: "#fb923c",
   },
   {
-    image: "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/pic6.png",
+    image: "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/image3.png",
     title: "Reliable Global Logistics",
     subtitle: "Courier and cargo services built around your business",
     accent: "#34d399",
