@@ -112,8 +112,8 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
   // Day + Time from created_at (or now)
   const createdDate = parcel.created_at ? new Date(parcel.created_at) : new Date();
-  const dayStr = createdDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-  const timeStr = createdDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const dayStr = createdDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Karachi" });
+  const timeStr = createdDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Karachi" });
   const contentsText = Array.isArray(parcel.items) && parcel.items.length > 0
     ? parcel.items.map((i) => i.description).filter(Boolean).join(", ")
     : parcel.parcel_type || "GENERAL CARGO";
