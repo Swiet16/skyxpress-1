@@ -10,7 +10,7 @@ const slides = [
     accent: "#34d399",
   },
   {
-    image: "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/pic2.png",
+    image: "https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/image2.png",
     title: "Express Delivery Solutions",
     subtitle: "Door-to-door courier services worldwide",
     accent: "#60a5fa",
