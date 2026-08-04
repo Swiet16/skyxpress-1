@@ -289,590 +289,417 @@ const addBarcode = async (
   }
 };
 
-// ===== 1. INVOICE =====
+// ===== 1. INVOICE (Proforma — DHL-style) =====
 export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'download'): Promise<void> => {
   const pdf = new jsPDF('p', 'mm', 'a4');
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 10;
-  let yPos = 6;
+  const pageWidth  = pdf.internal.pageSize.getWidth();   // 210mm
+  const pageHeight = pdf.internal.pageSize.getHeight();  // 297mm
+  const M = 10;   // left/right margin
+  const usable = pageWidth - 2 * M;  // 190mm
+  let y = 8;
 
-  // Professional border
-  pdf.setDrawColor(30, 144, 255);
-  pdf.setLineWidth(0.8);
-  pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const lw = (w: number) => { pdf.setLineWidth(w); };
+  const col = (r: number, g: number, b: number) => { pdf.setTextColor(r, g, b); };
+  const drw = (r: number, g: number, b: number) => { pdf.setDrawColor(r, g, b); };
+  const fnt = (f: 'normal'|'bold'|'italic') => { pdf.setFont('helvetica', f); };
+  const sz  = (s: number) => { pdf.setFontSize(s); };
 
-  // USE REFERENCE_ID instead of tracking_id
-  const refNumber = safeText(parcel.reference_id || parcel.tracking_id, '000000000');
+  // draw a thin horizontal rule across usable width
+  const hRule = (yy: number, thick = 0.2) => {
+    drw(0,0,0); lw(thick);
+    pdf.line(M, yy, M + usable, yy);
+  };
+  // draw a vertical divider
+  const vLine = (x: number, yTop: number, yBot: number) => {
+    drw(0,0,0); lw(0.2);
+    pdf.line(x, yTop, x, yBot);
+  };
 
-  // ── Header section ──────────────────────────────────────────────────────────
-  // Left blue band: logo + title
-  const headerH = 36;
-  pdf.setFillColor(30, 144, 255);
-  pdf.rect(margin, yPos, pageWidth - margin * 2 - 68, headerH, 'F');
+  // labeled value helper: prints "Label" bold + value normal on same line
+  const labelVal = (label: string, value: string, x: number, yy: number, labelW: number, valW: number) => {
+    sz(7); fnt('bold'); col(0,0,0);
+    pdf.text(label, x, yy);
+    fnt('normal');
+    const lines = pdf.splitTextToSize(value, valW);
+    pdf.text(lines[0] ?? '', x + labelW, yy);
+    return yy;
+  };
 
-  // Logo on top-left inside the blue band
-  await addLogo(pdf, margin + 2, yPos + 2, 34, 20);
-
-  // "Proforma Invoice" title in the blue band
-  pdf.setFontSize(15);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('Proforma Invoice', margin + 40, yPos + 13);
-
-  // Company tagline below title
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(220, 235, 255);
-  pdf.text('SKY XPRESS WORLDWIDE EXPRESS', margin + 40, yPos + 19);
-  pdf.text('skyxpresss786@gmail.com  |  +92 326 9422411', margin + 40, yPos + 24);
-  pdf.text('Tel: (042) 37255473  |  Mobile: 0321 4710522', margin + 40, yPos + 29);
-
-  // ── Top-right: Barcode box ────────────────────────────────────────────────
-  const bcBoxX = pageWidth - margin - 66;
-  const bcBoxW = 66;
-  const bcBoxH = headerH;
-
-  // White background with blue border
-  pdf.setFillColor(255, 255, 255);
-  pdf.setDrawColor(30, 144, 255);
-  pdf.setLineWidth(0.6);
-  pdf.rect(bcBoxX, yPos, bcBoxW, bcBoxH, 'FD');
-
-  // "REFERENCE / AWB" label
-  pdf.setFontSize(6.5);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(30, 144, 255);
-  pdf.text('REFERENCE / AWB NO', bcBoxX + bcBoxW / 2, yPos + 5, { align: 'center' });
-
-  // Reference number text
-  pdf.setFontSize(8.5);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(20, 20, 20);
-  pdf.text(refNumber, bcBoxX + bcBoxW / 2, yPos + 11, { align: 'center' });
-
-  // Barcode spanning full box width
-  await addBarcode(pdf, refNumber, bcBoxX + 2, yPos + 13, bcBoxW - 4, 16);
-
-  // Ref number repeated below barcode in small text
-  pdf.setFontSize(5.5);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(60, 60, 60);
-  pdf.text(refNumber, bcBoxX + bcBoxW / 2, yPos + 33, { align: 'center' });
-
-  yPos += headerH + 2;
-
-  // ── Info strip: AWB No | Invoice Date | Invoice No ──────────────────────
-  const infoStripH = 8;
-  pdf.setFillColor(235, 243, 255);
-  pdf.setDrawColor(30, 144, 255);
-  pdf.setLineWidth(0.3);
-  pdf.rect(margin, yPos, pageWidth - 2 * margin, infoStripH, 'FD');
-
+  const refNumber  = safeText(parcel.reference_id || parcel.tracking_id, '000000000');
   const invoiceDate = parcel.created_at
     ? new Date(parcel.created_at).toISOString().split('T')[0]
     : new Date().toISOString().split('T')[0];
+  const currency   = parcel.currency || 'USD';
+  const items      = parcel.items || [{ description: 'General Goods', quantity: 1, unit_price: parcel.total_price || 0 }];
+  const actualWeight  = parcel.weight || 0;
+  const pieces        = parcel.pieces || 1;
+  const length        = parcel.length || 0;
+  const width         = parcel.width  || 0;
+  const height        = parcel.height || 0;
+  const calcDimW      = parseFloat(((length * width * height) / 5000).toFixed(3));
+  const dimWeight     = parcel.dim_weight_override != null ? Number(parcel.dim_weight_override) : calcDimW;
+  const netWeight     = actualWeight;
+  const grossWeight   = actualWeight; // use actual; override if parcel has gross field
+  const senderCountry   = codeToCountryName(safeText(parcel.sender_country,   'Pakistan'));
+  const receiverCountry = codeToCountryName(safeText(parcel.receiver_country,  'United Kingdom'));
 
-  pdf.setFontSize(7.5);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(30, 80, 160);
-  const stripY = yPos + 5.5;
-  pdf.text(`AWB No: ${refNumber}`, margin + 4, stripY);
-  pdf.text(`Invoice Date: ${invoiceDate}`, pageWidth / 2, stripY, { align: 'center' });
-  pdf.text(`Invoice No: ${refNumber}`, pageWidth - margin - 4, stripY, { align: 'right' });
+  // ══════════════════════════════════════════════════════════════════════════
+  // SECTION 1 — HEADER  (logo left · title centre · barcode top-right)
+  // ══════════════════════════════════════════════════════════════════════════
+  const bcW = 58; const bcH = 32;
+  const bcX = M + usable - bcW;
 
-  yPos += infoStripH + 4;
+  // Logo (left)
+  await addLogo(pdf, M, y, 35, 20);
 
-  // Shipper & Receiver sections
-  const boxWidth = (pageWidth - 2 * margin - 3) / 2;
+  // Title + company info (centre-left)
+  const titleX = M + 38;
+  sz(14); fnt('bold'); col(0,0,0);
+  pdf.text('Proforma Invoice', titleX, y + 9);
+  sz(7); fnt('normal'); col(60,60,60);
+  pdf.text('SKY XPRESS WORLDWIDE EXPRESS', titleX, y + 14);
+  pdf.text('Email: skyxpresss786@gmail.com', titleX, y + 18);
+  pdf.text('Tel: (042) 37255473  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411', titleX, y + 22);
 
-  // Determine if extra address lines are present for shipper
-  const hasSenderExtra = !!(parcel.sender_address_2 || parcel.sender_address_3);
-  const senderFontSize = hasSenderExtra ? 7.5 : 9;
-  const senderLineGap = hasSenderExtra ? 4 : 5;
+  // Barcode box — top-right, thin black border
+  drw(0,0,0); lw(0.3);
+  pdf.rect(bcX, y, bcW, bcH);
 
-  // Determine if extra address lines are present for receiver
-  const hasReceiverExtra = !!(parcel.receiver_address_2 || parcel.receiver_address_3);
-  const receiverFontSize = hasReceiverExtra ? 7.5 : 9;
-  const receiverLineGap = hasReceiverExtra ? 4 : 5;
-  const contactGap = 3.5; // safe row gap for postal/phone/email at small font size
+  sz(6); fnt('bold'); col(0,0,0);
+  pdf.text('AWB / REFERENCE NO', bcX + bcW / 2, y + 5, { align: 'center' });
 
-  // --- Measure content first so the box can be sized to fit (no overlap, no clipping) ---
-  const senderAddrHeight = measureWrappedAddressHeight(
-    pdf,
-    [
-      parcel.sender_address,
-      parcel.sender_address_2,
-      parcel.sender_address_3,
-      `${safeText(parcel.sender_city, '')}, ${codeToCountryName(safeText(parcel.sender_country, 'Pakistan'))}`,
-    ],
-    boxWidth - 4,
-    senderFontSize,
-    senderLineGap - 1
-  );
-  const shipperContentHeight = 5 /* Company */ + senderLineGap /* pre-address gap */ + senderAddrHeight + 5 /* Phone */ + 5 /* CNIC */;
+  sz(8); fnt('bold');
+  pdf.text(refNumber, bcX + bcW / 2, y + 10, { align: 'center' });
 
-  const receiverAddrHeight = measureWrappedAddressHeight(
-    pdf,
-    [
-      parcel.receiver_address,
-      parcel.receiver_address_2,
-      parcel.receiver_address_3,
-      `${safeText(parcel.receiver_city, '')}, ${safeText(parcel.receiver_state, '')}`.replace(/^,\s*|,\s*$/g, ''),
-      codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')),
-    ],
-    boxWidth - 4,
-    receiverFontSize,
-    receiverLineGap - 1
-  );
-  const postalExtra = measureExtraWrapLines(pdf, safeText(parcel.receiver_postal_code, 'N/A'), boxWidth - 25);
-  const phoneExtra = measureExtraWrapLines(pdf, safeText(parcel.receiver_phone, 'N/A'), boxWidth - 17);
-  const emailExtra = measureExtraWrapLines(pdf, safeText(parcel.receiver_email, 'N/A'), boxWidth - 16);
-  const receiverContentHeight =
-    5 /* Company */ + receiverLineGap /* pre-address gap */ + receiverAddrHeight +
-    contactGap + postalExtra * contactGap +
-    contactGap + phoneExtra * contactGap +
-    contactGap + emailExtra * contactGap;
+  // barcode fills most of the box
+  await addBarcode(pdf, refNumber, bcX + 2, y + 12, bcW - 4, 14);
 
-  const boxBodyHeight = Math.max(40, shipperContentHeight + 17, receiverContentHeight + 17); // +17 accounts for top padding to Name row + bottom padding
-  const boxTotalHeight = boxBodyHeight + 7; // + header bar
+  sz(5.5); fnt('normal'); col(40,40,40);
+  pdf.text(refNumber, bcX + bcW / 2, y + 30, { align: 'center' });
 
-  // Shipper box
-  pdf.setFillColor(30, 144, 255);
-  pdf.rect(margin, yPos, boxWidth, 7, 'F');
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('SHIPPER', margin + 2, yPos + 5);
-  
-  pdf.setFillColor(250, 250, 250);
-  pdf.rect(margin, yPos + 7, boxWidth, boxBodyHeight, 'F');
-  pdf.setDrawColor(200, 200, 200);
-  pdf.rect(margin, yPos, boxWidth, boxTotalHeight);
-  
-  pdf.setFontSize(9);
-  pdf.setTextColor(0, 0, 0);
-  let shipperY = yPos + 12;
-  
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Name:', margin + 2, shipperY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_name, 'N/A'), margin + 15, shipperY);
-  
-  shipperY += 5;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Company:', margin + 2, shipperY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_company, 'N/A'), margin + 20, shipperY);
-  
-  // Address block: label + wrapped lines within box width
-  shipperY += senderLineGap;
-  shipperY = drawWrappedAddress(
-    pdf,
-    [
-      parcel.sender_address,
-      parcel.sender_address_2,
-      parcel.sender_address_3,
-      `${safeText(parcel.sender_city, '')}, ${codeToCountryName(safeText(parcel.sender_country, 'Pakistan'))}`,
-    ],
-    margin + 2,
-    shipperY,
-    boxWidth - 4,
-    senderFontSize,
-    senderLineGap - 1
-  );
-  pdf.setFontSize(9);
-  
-  shipperY += 5;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Phone:', margin + 2, shipperY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_phone, 'N/A'), margin + 15, shipperY);
-  
-  shipperY += 5;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('CNIC:', margin + 2, shipperY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_cnic, 'N/A'), margin + 13, shipperY);
+  y += bcH + 2;
 
-  // Receiver box
-  const receiverX = pageWidth / 2 + 1.5;
-  pdf.setFillColor(30, 144, 255);
-  pdf.rect(receiverX, yPos, boxWidth, 7, 'F');
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('RECEIVER', receiverX + 2, yPos + 5);
-  
-  pdf.setFillColor(250, 250, 250);
-  pdf.rect(receiverX, yPos + 7, boxWidth, boxBodyHeight, 'F');
-  pdf.setDrawColor(200, 200, 200);
-  pdf.rect(receiverX, yPos, boxWidth, boxTotalHeight);
-  
-  pdf.setFontSize(9);
-  pdf.setTextColor(0, 0, 0);
-  let receiverY = yPos + 12;
-  
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Name:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_name, 'N/A'), receiverX + 15, receiverY);
-  
-  receiverY += 5;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Company:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.receiver_company, 'N/A'), receiverX + 20, receiverY);
-  
-  // Address block: label + wrapped lines within box width
-  receiverY += receiverLineGap;
-  receiverY = drawWrappedAddress(
-    pdf,
-    [
-      parcel.receiver_address,
-      parcel.receiver_address_2,
-      parcel.receiver_address_3,
-      `${safeText(parcel.receiver_city, '')}, ${safeText(parcel.receiver_state, '')}`.replace(/^,\s*|,\s*$/g, ''),
-      codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')),
-    ],
-    receiverX + 2,
-    receiverY,
-    boxWidth - 4,
-    receiverFontSize,
-    receiverLineGap - 1
-  );
-  pdf.setFontSize(9);
-  
-  // Contact rows: shrink and wrap to keep values inside the receiver box
-  pdf.setFontSize(7.5);
-  receiverY += contactGap;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Postal Code:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  {
-    const lines = pdf.splitTextToSize(safeText(parcel.receiver_postal_code, 'N/A'), boxWidth - 25);
-    lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 23, receiverY + i * contactGap));
-    receiverY += (lines.length - 1) * contactGap;
-  }
+  // ── AWB / Date / Invoice No strip ─────────────────────────────────────────
+  hRule(y, 0.5); y += 1;
+  sz(7.5); fnt('normal'); col(0,0,0);
+  pdf.text(`AWB No: ${refNumber}`, M, y + 4.5);
+  pdf.text(`Invoice Date: ${invoiceDate}`, pageWidth / 2, y + 4.5, { align: 'center' });
+  pdf.text(`Invoice No: ${refNumber}`, M + usable, y + 4.5, { align: 'right' });
+  y += 6;
+  hRule(y, 0.5); y += 3;
 
-  receiverY += contactGap;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Phone:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  {
-    const lines = pdf.splitTextToSize(safeText(parcel.receiver_phone, 'N/A'), boxWidth - 17);
-    lines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 15, receiverY + i * contactGap));
-    receiverY += (lines.length - 1) * contactGap;
-  }
+  // ══════════════════════════════════════════════════════════════════════════
+  // SECTION 2 — SHIP FROM / SHIP TO  (two equal columns)
+  // ══════════════════════════════════════════════════════════════════════════
+  const colW  = usable / 2;   // 95mm each
+  const shipFromX = M;
+  const shipToX   = M + colW;
 
-  receiverY += contactGap;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Email:', receiverX + 2, receiverY);
-  pdf.setFont('helvetica', 'normal');
-  {
-    const receiverEmail = safeText(parcel.receiver_email, 'N/A');
-    const emailLines = pdf.splitTextToSize(receiverEmail, boxWidth - 16);
-    emailLines.forEach((ln: string, i: number) => pdf.text(ln, receiverX + 14, receiverY + i * contactGap));
-    receiverY += (emailLines.length - 1) * contactGap;
-  }
-  pdf.setFontSize(9);
+  // Column headers
+  sz(8); fnt('bold'); col(0,0,0);
+  pdf.text('SHIP FROM:', shipFromX, y + 4);
+  pdf.text('SHIP TO:', shipToX + 2, y + 4);
+  y += 6;
 
-  yPos += boxTotalHeight + 4;
+  const addrBoxTop = y;
 
-  // Items table
-  pdf.setFillColor(30, 144, 255);
-  pdf.rect(margin, yPos, pageWidth - 2 * margin, 7, 'F');
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('ITEMS / CONTENTS', margin + 2, yPos + 5);
-  
-  yPos += 8;
-  
-  // Table header
+  // helper: render one address column, returns final Y
+  const renderAddr = (
+    side: 'from'|'to',
+    x: number,
+    startY: number
+  ): number => {
+    let cy = startY;
+    const pad = 2;
+    const fw = colW - pad * 2;
+    const lg = 3.8; // line gap
+    sz(7); col(0,0,0);
+
+    const name    = side === 'from' ? safeText(parcel.sender_name, '')   : safeText(parcel.receiver_name, '');
+    const company = side === 'from' ? safeText(parcel.sender_company,'') : safeText(parcel.receiver_company,'');
+    const addr1   = side === 'from' ? safeText(parcel.sender_address,'') : safeText(parcel.receiver_address,'');
+    const addr2   = side === 'from' ? safeText(parcel.sender_address_2 ?? '','') : safeText(parcel.receiver_address_2 ?? '','');
+    const addr3   = side === 'from' ? safeText(parcel.sender_address_3 ?? '','') : safeText(parcel.receiver_address_3 ?? '','');
+    const city    = side === 'from' ? safeText(parcel.sender_city,'')   : safeText(parcel.receiver_city,'');
+    const state   = side === 'from' ? ''                                 : safeText(parcel.receiver_state,'');
+    const postal  = side === 'from' ? ''                                 : safeText(parcel.receiver_postal_code,'');
+    const country = side === 'from' ? senderCountry                      : receiverCountry;
+    const phone   = side === 'from' ? safeText(parcel.sender_phone,'')  : safeText(parcel.receiver_phone,'');
+    const email   = side === 'from'
+      ? safeText(parcel.sender_email ?? 'skyxpresss786@gmail.com','')
+      : safeText(parcel.receiver_email ?? 'skyxpresss786@gmail.com','');
+    const traderType = side === 'from' ? 'BUSINESS' : 'PRIVATE';
+    const cnic   = side === 'from' ? safeText(parcel.sender_cnic ?? '','') : '';
+
+    // Name (bold, possibly 2 lines like DHL)
+    fnt('bold');
+    const nameLines = pdf.splitTextToSize(name.toUpperCase(), fw);
+    nameLines.slice(0,2).forEach((ln: string) => { pdf.text(ln, x + pad, cy); cy += lg; });
+    if (company) {
+      fnt('normal');
+      const coLines = pdf.splitTextToSize(company, fw);
+      coLines.slice(0,1).forEach((ln: string) => { pdf.text(ln, x + pad, cy); cy += lg; });
+    }
+
+    // Address lines
+    fnt('normal');
+    const addrParts = [addr1, addr2, addr3].filter(Boolean);
+    addrParts.forEach(ap => {
+      const ls = pdf.splitTextToSize(ap, fw);
+      ls.slice(0,2).forEach((ln: string) => { pdf.text(ln, x + pad, cy); cy += lg; });
+    });
+
+    // City + state + postal
+    const cityLine = [city, state, postal].filter(Boolean).join(', ');
+    if (cityLine) { pdf.text(pdf.splitTextToSize(cityLine, fw)[0], x + pad, cy); cy += lg; }
+    if (state && side === 'to') { /* already in cityLine */ }
+
+    // Country
+    fnt('bold');
+    pdf.text(country, x + pad, cy); cy += lg;
+    fnt('normal');
+
+    // Phone
+    if (phone) { pdf.text(phone, x + pad, cy); cy += lg; }
+
+    // Email
+    if (email) {
+      const eLines = pdf.splitTextToSize(email, fw);
+      eLines.slice(0,1).forEach((ln: string) => { pdf.text(ln, x + pad, cy); cy += lg; });
+    }
+
+    cy += 1;
+    // Trader Type / VAT / EORI / TAX ID
+    pdf.text(`Trader Type:${traderType}`, x + pad, cy); cy += lg;
+    pdf.text('VAT No:', x + pad, cy); cy += lg;
+    pdf.text('EORI:', x + pad, cy); cy += lg;
+    if (side === 'from') { pdf.text('TAX ID:', x + pad, cy); cy += lg; }
+    if (cnic) { pdf.text(`CNIC: ${cnic}`, x + pad, cy); cy += lg; }
+
+    return cy;
+  };
+
+  const fromEndY = renderAddr('from', shipFromX, addrBoxTop);
+  const toEndY   = renderAddr('to',   shipToX,   addrBoxTop);
+  const addrBoxBot = Math.max(fromEndY, toEndY) + 2;
+
+  // Draw column borders
+  drw(0,0,0); lw(0.2);
+  pdf.rect(shipFromX, addrBoxTop - 1, colW, addrBoxBot - addrBoxTop + 1);
+  pdf.rect(shipToX,   addrBoxTop - 1, colW, addrBoxBot - addrBoxTop + 1);
+
+  y = addrBoxBot + 2;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SECTION 3 — REFERENCES & REMARKS
+  // ══════════════════════════════════════════════════════════════════════════
+  hRule(y, 0.2); y += 3;
+  sz(7); col(0,0,0);
+  labelVal('Shipper Reference: ', safeText(parcel.reference_id || parcel.tracking_id, ''), M, y, 30, usable - 30);
+  y += 4;
+  labelVal('Receiver Reference: ', '', M, y, 32, usable - 32);
+  y += 4;
+  labelVal('Remarks: ', safeText(parcel.remarks ?? '', ''), M, y, 18, usable - 18);
+  y += 5;
+  hRule(y, 0.2); y += 3;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SECTION 4 — ITEMS TABLE  (DHL-style columns)
+  // ══════════════════════════════════════════════════════════════════════════
+  // Column layout (mm from left margin):
+  //  #   | Description | Comm.Code | Item Wt | Item Total Wt | COO | QTY | Unit Value | Sub Total
+  //  6   |    52       |    18     |   16    |     16        | 14  |  12 |    22      |    22
+  // Starts at M; total = 178mm < 190mm usable ✓
+  const tblX = M;
+  const cols = [
+    { label: '#',            w: 7  },
+    { label: 'Description',  w: 52 },
+    { label: 'Comm.\nCode',  w: 19 },
+    { label: 'Item Wt\n(kg)',w: 16 },
+    { label: 'Total Wt\n(kg)',w:16 },
+    { label: 'COO',          w: 14 },
+    { label: 'QTY',          w: 13 },
+    { label: 'Unit\nValue',  w: 25 },
+    { label: 'Sub\nTotal',   w: 28 },
+  ];
+  const tblW   = cols.reduce((s, c) => s + c.w, 0); // 190mm exact
+  const hdrH   = 9;   // header row height
+  const rowH   = 10;  // item row height
+
+  // Header row
   pdf.setFillColor(240, 240, 240);
-  pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, 'F');
-  pdf.setDrawColor(200, 200, 200);
-  pdf.rect(margin, yPos, pageWidth - 2 * margin, 6);
-  
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 0, 0);
-  pdf.text('DESCRIPTION', margin + 2, yPos + 4);
-  pdf.text('QTY', margin + 110, yPos + 4);
-  pdf.text('UNIT PRICE', margin + 130, yPos + 4);
-  pdf.text('TOTAL', pageWidth - margin - 20, yPos + 4);
-  
-  yPos += 7;
-  
-  const items = parcel.items || [{ description: 'General Goods', quantity: 1, unit_price: parcel.total_price || 100 }];
-  let grandTotal = 0;
-  
-  // Scale row height and font size based on item count so everything fits
-  const itemCount1 = items.length;
-  const itemRowH = itemCount1 >= 6 ? 7 : 10;
-  const itemFontSize = itemCount1 >= 6 ? 6.5 : 8;
+  pdf.rect(tblX, y, tblW, hdrH, 'F');
+  drw(0,0,0); lw(0.2);
+  pdf.rect(tblX, y, tblW, hdrH);
 
-  items.forEach((item: any, index: number) => {
-    const itemTotal = (item.quantity || 1) * (item.unit_price || 0);
-    grandTotal += itemTotal;
-    
-    pdf.setFillColor(index % 2 === 0 ? 255 : 250, index % 2 === 0 ? 255 : 250, index % 2 === 0 ? 255 : 250);
-    pdf.rect(margin, yPos - 2, pageWidth - 2 * margin, itemRowH, 'F');
-    pdf.setDrawColor(220, 220, 220);
-    pdf.rect(margin, yPos - 2, pageWidth - 2 * margin, itemRowH);
-    
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(itemFontSize);
-    const desc = safeText(item.description, 'Item');
-    const descLines = pdf.splitTextToSize(desc, 95);
-    pdf.text(descLines[0], margin + 3, yPos + (itemRowH / 2));
-    pdf.setFontSize(itemFontSize);
-    pdf.text(String(item.quantity || 1), margin + 113, yPos + (itemRowH / 2));
-    pdf.text(`${(item.unit_price || 0).toFixed(2)}`, margin + 133, yPos + (itemRowH / 2));
-    pdf.text(`${itemTotal.toFixed(2)}`, pageWidth - margin - 17, yPos + (itemRowH / 2));
-    
-    yPos += itemRowH;
+  let cx = tblX;
+  sz(6); fnt('bold'); col(0,0,0);
+  cols.forEach((c, i) => {
+    if (i > 0) { vLine(cx, y, y + hdrH); }
+    const lines = c.label.split('\n');
+    lines.forEach((ln, li) => {
+      pdf.text(ln, cx + c.w / 2, y + 3.5 + li * 3.5, { align: 'center' });
+    });
+    cx += c.w;
   });
-  
-  // Total row
-  pdf.setFillColor(30, 144, 255);
-  pdf.rect(margin, yPos - 2, pageWidth - 2 * margin, 7, 'F');
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(9);
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('TOTAL VALUE:', margin + 3, yPos + 1);
-  pdf.setFontSize(11);
-  const currency = parcel.currency || 'USD';
-  pdf.text(`${currency} ${grandTotal.toFixed(2)}`, pageWidth - margin - 15, yPos + 1, { align: 'right' });
-  
-  yPos += 8;
+  y += hdrH;
 
-  // Shipment details with dimensional calculation
-  pdf.setFillColor(50, 50, 50);
-  pdf.rect(margin, yPos, pageWidth - 2 * margin, 7, 'F');
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('SHIPMENT DETAILS', margin + 2, yPos + 5);
-  
-  yPos += 8;
-  pdf.setFillColor(252, 252, 252);
-  pdf.rect(margin, yPos, pageWidth - 2 * margin, 24, 'F');
-  pdf.setDrawColor(200, 200, 200);
-  pdf.rect(margin, yPos, pageWidth - 2 * margin, 24);
-  
-  const length = parcel.length || 12;
-  const width = parcel.width || 12;
-  const height = parcel.height || 16;
-  const calcDimWeight = parseFloat(((length * width * height) / 5000).toFixed(2));
-  const dimWeight = parcel.dim_weight_override != null ? parcel.dim_weight_override : calcDimWeight;
-  const dimWeightStr = Number(dimWeight).toFixed(2);
-  const pieces = parcel.pieces || 1;
-  const documentType = (parcel.document_type || 'document').toUpperCase();
-  const actualWeight = parcel.weight || 5;
-  const chargeableWeight = Math.max(parseFloat(dimWeightStr), actualWeight);
-  
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(60, 60, 60);
-  
-  // Row 1
-  pdf.text('BOOKING DATE:', margin + 2, yPos + 4);
-  pdf.text('DIMENSIONS:', margin + 95, yPos + 4);
-  pdf.text('PIECES:', margin + 145, yPos + 4);
-  pdf.text('WEIGHT:', pageWidth - margin - 30, yPos + 4);
-  
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(0, 0, 0);
-  const bookingDate = parcel.created_at ? new Date(parcel.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB');
-  pdf.text(bookingDate, margin + 2, yPos + 8);
-  pdf.text(`${length}x${width}x${height}`, margin + 95, yPos + 8);
-  pdf.text(String(pieces), margin + 145, yPos + 8);
-  
-  pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(`${actualWeight} KG`, pageWidth - margin - 30, yPos + 8);
-  
-  // Row 2
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(60, 60, 60);
-  pdf.text('DIM WEIGHT:', margin + 2, yPos + 14);
-  pdf.text('CHARGEABLE:', margin + 95, yPos + 14);
-  pdf.text('TYPE:', margin + 145, yPos + 14);
-  
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(0, 0, 0);
-  const dimLabel = parcel.dim_weight_override != null ? `${dimWeightStr} KG*` : `${dimWeightStr} KG`;
-  pdf.text(dimLabel, margin + 2, yPos + 18);
-  pdf.text(`${chargeableWeight} KG`, margin + 95, yPos + 18);
-  pdf.text(documentType, margin + 145, yPos + 18);
+  // Item rows
+  let grandTotal = 0;
+  let totalQty   = 0;
+  items.forEach((item: any, idx: number) => {
+    const qty      = item.quantity  || 1;
+    const unitVal  = item.unit_price ?? 0;
+    const subTotal = qty * unitVal;
+    grandTotal += subTotal;
+    totalQty   += qty;
 
-  yPos += 24;
+    const itemNetW = (actualWeight / items.length).toFixed(3);
+    const itemTotW = (actualWeight / items.length * qty).toFixed(3);
+    const hsCode   = safeText(item.hs_code ?? '', '');
+    const coo      = safeText(item.country_of_origin ?? countryNameToCode(senderCountry), '');
 
-  // Declaration
-  yPos += 4; 
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'italic');
-  pdf.setTextColor(100, 100, 100);
-  const disclaimer1 = 'DECLARATION: I/WE HEREBY DECLARE THAT THE ABOVE PARTICULARS ARE TRUE AND CORRECT.';
-  pdf.text(disclaimer1, margin, yPos);
-  yPos += 3;
-  const disclaimer2 = 'THESE GOODS ARE SENT AS A GIFT. NO COMMERCIAL VALUE. FOR CUSTOMS PURPOSES ONLY.';
-  pdf.text(disclaimer2, margin, yPos);
+    pdf.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 248);
+    pdf.rect(tblX, y, tblW, rowH, 'F');
+    drw(0,0,0); lw(0.2);
+    pdf.rect(tblX, y, tblW, rowH);
 
-  yPos += 8;
-
-  // Signature section
-  pdf.setFillColor(250, 250, 250);
-  pdf.rect(margin, yPos, pageWidth - 2 * margin, 15, 'F');
-  pdf.setDrawColor(200, 200, 200);
-  pdf.rect(margin, yPos, pageWidth - 2 * margin, 15);
-  
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 0, 0);
-  pdf.text('SHIPPER CNIC:', margin + 2, yPos + 8);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(safeText(parcel.sender_cnic, 'N/A'), margin + 28, yPos + 8);
-  
-  pdf.rect(pageWidth - margin - 40, yPos + 2, 38, 11);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8);
-  pdf.text('SHIPPER SIGNATURE', pageWidth - margin - 38, yPos + 7);
-
-  // Footer on first page
-  let footerY = pageHeight - 10;
-  pdf.setDrawColor(30, 144, 255);
-  pdf.setLineWidth(0.5);
-  pdf.line(margin, footerY, pageWidth - margin, footerY);
-  
-  footerY += 3;
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(80, 80, 80);
-  pdf.text('Email: skyxpress786@gmail.com | Phone: (042) 37255473 | Mobile: 0321 4710522 | WhatsApp: 0326 9422411', pageWidth / 2, footerY, { align: 'center' });
-
-  const itemCount = items.length;
-  
-  if (itemCount >= 8) {
-    pdf.addPage();
-    yPos = 15;
-    
-    pdf.setDrawColor(30, 144, 255);
-    pdf.setLineWidth(0.8);
-    pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
-
-    pdf.setFillColor(250, 250, 250);
-    const conditionsHeight = pageHeight - yPos - 25;
-    pdf.rect(10, yPos, pageWidth - 20, conditionsHeight, 'F');
-    
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(60, 60, 60);
-    pdf.text('STANDARD TRADING CONDITIONS', pageWidth / 2, yPos + 6, { align: 'center' });
-    
-    yPos += 12;
-    
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(60, 60, 60);
-    
-    const conditions = [
-      'By tendering goods for transport by SKY XPRESS WORLDWIDE EXPRESS, the Consignor agrees to the following conditions:',
-      '',
-      '1. DEFINITIONS: "SKY XPRESS" means Sky Xpress Worldwide Express. "Consignor" or "Shipper" means the sender.',
-      '"Consignee" means the person to whom the goods are consigned.',
-      '',
-      '2. CONSIGNMENT NOTE: Each consignment shall be correctly addressed and accompanied by SKY XPRESS form of',
-      'Consignment Note which the Consignor shall properly complete. The Consignor is responsible for correctness of information.',
-      '',
-      '3. SUB-CONTRACTING: SKY XPRESS may sub-contract all or any part and may engage agents or sub-contractors.',
-      '',
-      '4. COMMON CARRIER: The company is not a common carrier and will only carry goods on these conditions.',
-      '',
-      '5. LIABILITY: SKY XPRESS shall not be liable for any loss, damage, or delays except where directly caused by proven',
-      'negligence. Maximum liability is limited to USD 100 per shipment unless additional insurance is purchased.',
-      '',
-      '6. PROHIBITED ITEMS: Consignor warrants goods do not contain dangerous, hazardous, or prohibited items including',
-      'narcotics, weapons, explosives, antiques, liquids, or items prohibited by IATA or local laws. Consignor fully responsible.',
-      '',
-      '7. CUSTOMS & DUTIES: Any customs duties, taxes, or charges levied at destination shall be paid by Consignee.',
-      'If Consignee refuses payment, Consignor shall be liable.',
-      '',
-      '8. GOVERNING LAW: These conditions governed by laws of Pakistan. Disputes subject to exclusive jurisdiction of Pakistani courts.'
+    sz(6.5); fnt('normal'); col(0,0,0);
+    const rowData = [
+      String(idx + 1),
+      safeText(item.description, 'General Goods'),
+      hsCode,
+      itemNetW,
+      itemTotW,
+      coo,
+      String(qty),
+      `${unitVal.toFixed(2)} ${currency}`,
+      `${subTotal.toFixed(2)} ${currency}`,
     ];
-    
-    let conditionsY = yPos;
-    conditions.forEach((line) => {
-      const lines = pdf.splitTextToSize(line, pageWidth - 24);
-      pdf.text(lines, 12, conditionsY);
-      conditionsY += lines.length * 3;
+    cx = tblX;
+    cols.forEach((c, ci) => {
+      if (ci > 0) { vLine(cx, y, y + rowH); }
+      if (ci === 1) {
+        // description wraps
+        const dLines = pdf.splitTextToSize(rowData[ci], c.w - 2);
+        dLines.slice(0, 2).forEach((dl: string, di: number) => {
+          pdf.text(dl, cx + 2, y + 4 + di * 3.5);
+        });
+      } else {
+        pdf.text(rowData[ci], cx + c.w / 2, y + 5.5, { align: 'center' });
+      }
+      cx += c.w;
     });
+    y += rowH;
+  });
 
-    footerY = pageHeight - 10;
-    pdf.setDrawColor(30, 144, 255);
-    pdf.setLineWidth(0.5);
-    pdf.line(10, footerY, pageWidth - 10, footerY);
-    footerY += 3;
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(80, 80, 80);
-    pdf.text('Email: skyxpress786@gmail.com | Phone: (042) 37255473 | Mobile: 0321 4710522 | WhatsApp: 0326 9422411', pageWidth / 2, footerY, { align: 'center' });
-  } else {
-    pdf.setFillColor(250, 250, 250);
-    const availableHeight = pageHeight - yPos - 20;
-    pdf.rect(10, yPos, pageWidth - 20, availableHeight, 'F');
-    
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(60, 60, 60);
-    pdf.text('STANDARD TRADING CONDITIONS', pageWidth / 2, yPos + 4, { align: 'center' });
-    
-    yPos += 8;
-    
-    pdf.setFontSize(5.5);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(60, 60, 60);
-    
-    const conditions = [
-      'By tendering goods for transport by SKY XPRESS WORLDWIDE EXPRESS, the Consignor agrees to the following conditions:',
-      '',
-      '1. DEFINITIONS: "SKY XPRESS" means Sky Xpress Worldwide Express. "Consignor" or "Shipper" means the sender. "Consignee" means the person to whom the goods are consigned.',
-      '',
-      '2. CONSIGNMENT NOTE: Each consignment shall be correctly addressed and accompanied by SKY XPRESS form of Consignment Note which the Consignor shall properly complete. The Consignor is responsible for correctness of information.',
-      '',
-      '3. SUB-CONTRACTING: SKY XPRESS may sub-contract all or any part and may engage agents or sub-contractors.',
-      '',
-      '4. COMMON CARRIER: The company is not a common carrier and will only carry goods on these conditions.',
-      '',
-      '5. LIABILITY: SKY XPRESS shall not be liable for any loss, damage, or delays except where directly caused by proven negligence. Maximum liability is limited to USD 100 per shipment unless additional insurance is purchased.',
-      '',
-      '6. PROHIBITED ITEMS: Consignor warrants goods do not contain dangerous, hazardous, or prohibited items including narcotics, weapons, explosives, antiques, liquids, or items prohibited by IATA or local laws. Consignor fully responsible.',
-      '',
-      '7. CUSTOMS & DUTIES: Any customs duties, taxes, or charges levied at destination shall be paid by Consignee. If Consignee refuses payment, Consignor shall be liable.',
-      '',
-      '8. GOVERNING LAW: These conditions governed by laws of Pakistan. Disputes subject to exclusive jurisdiction of Pakistani courts.'
-    ];
-    
-    let conditionsY = yPos;
-    conditions.forEach((line) => {
-      const lines = pdf.splitTextToSize(line, pageWidth - 24);
-      pdf.text(lines, 12, conditionsY);
-      conditionsY += lines.length * 2.2;
-    });
+  // Totals row
+  drw(0,0,0); lw(0.3);
+  pdf.rect(tblX, y, tblW, 7);
+  sz(7); fnt('bold'); col(0,0,0);
+  pdf.text(`Total Goods Value:`, M + 2, y + 4.5);
+  pdf.text(`${grandTotal.toFixed(2)} ${currency}`, M + 48, y + 4.5);
+  pdf.text(`Total line items: ${items.length}`, M + usable - 55, y + 4.5);
+  pdf.text(`Total units: ${totalQty}`, M + usable - 25, y + 4.5);
+  y += 9;
 
-    footerY = pageHeight - 10;
-    pdf.setDrawColor(30, 144, 255);
-    pdf.setLineWidth(0.5);
-    pdf.line(10, footerY, pageWidth - 10, footerY);
-    footerY += 3;
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(80, 80, 80);
-    pdf.text('Email: skyxpress786@gmail.com | Phone: (042) 37255473 | Mobile: 0321 4710522 | WhatsApp: 0326 9422411', pageWidth / 2, footerY, { align: 'center' });
-  }
+  // ══════════════════════════════════════════════════════════════════════════
+  // SECTION 5 — SUMMARY  (two columns: left = goods/trade | right = logistics)
+  // ══════════════════════════════════════════════════════════════════════════
+  hRule(y, 0.2); y += 2;
+  const sumColW  = usable / 2;
+  const sumLeftX  = M;
+  const sumRightX = M + sumColW;
+  const sumLg     = 4.2;
+
+  const renderSumRow = (label: string, value: string, x: number, yy: number): number => {
+    sz(7); fnt('bold'); col(0,0,0);
+    pdf.text(label, x + 1, yy);
+    fnt('normal');
+    pdf.text(value, x + 1 + 42, yy);
+    return yy + sumLg;
+  };
+
+  let ly = y;
+  let ry = y;
+
+  // Left column
+  ly = renderSumRow('Total Goods Value:', `${grandTotal.toFixed(2)} ${currency}`, sumLeftX, ly);
+  ly = renderSumRow('Total Invoice Amount:', `${grandTotal.toFixed(2)} ${currency}`, sumLeftX, ly);
+  ly = renderSumRow('Currency Code:', currency, sumLeftX, ly);
+  ly = renderSumRow('Terms of Payment:', '', sumLeftX, ly);
+  ly = renderSumRow('Terms of Trade:', 'Delivered at Place', sumLeftX, ly);
+  ly = renderSumRow('Place of Incoterm:', '', sumLeftX, ly);
+  ly = renderSumRow('Reason for Export:', 'Gift', sumLeftX, ly);
+  ly = renderSumRow('Type of Export:', 'Gift', sumLeftX, ly);
+  ly = renderSumRow('Total Net Weight:', `${netWeight.toFixed(3)}kg`, sumLeftX, ly);
+  ly = renderSumRow('Total Gross Weight:', `${grossWeight.toFixed(3)}kg`, sumLeftX, ly);
+
+  // Right column
+  ry = renderSumRow('Number of Pallets:', '', sumRightX, ry);
+  ry = renderSumRow('Package Marks / Other Info:', '', sumRightX, ry);
+  ry = renderSumRow('Payer of GST / VAT:', '', sumRightX, ry);
+  ry = renderSumRow('Duty / taxes acct:', 'Receiver Will Pay', sumRightX, ry);
+  ry = renderSumRow('Requiere Pedimento:', 'No', sumRightX, ry);
+  ry = renderSumRow('Duty / tax billing service:', '', sumRightX, ry);
+  ry = renderSumRow('Carrier:', safeText(parcel.service_type, 'SKY XPRESS'), sumRightX, ry);
+  ry = renderSumRow('Ultimate Consignee:', '', sumRightX, ry);
+  ry = renderSumRow('Exemption Citation:', '', sumRightX, ry);
+
+  y = Math.max(ly, ry) + 3;
+  hRule(y, 0.2); y += 4;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SECTION 6 — CERTIFICATION TEXT
+  // ══════════════════════════════════════════════════════════════════════════
+  sz(7); fnt('italic'); col(40,40,40);
+  const certText = 'I/We hereby certify that the information contained in the invoice is true and correct and that the contents of this shipment are as stated above.';
+  const certLines = pdf.splitTextToSize(certText, usable);
+  pdf.text(certLines, M, y);
+  y += certLines.length * 4 + 3;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SECTION 7 — SIGNATURE BLOCK
+  // ══════════════════════════════════════════════════════════════════════════
+  hRule(y, 0.2); y += 3;
+
+  // Three panels: Name+Position+Date | Signature | Company Stamp
+  const sigColW = usable / 3;
+  drw(0,0,0); lw(0.2);
+  pdf.rect(M, y, usable, 22);
+  vLine(M + sigColW,     y, y + 22);
+  vLine(M + sigColW * 2, y, y + 22);
+
+  sz(7); fnt('bold'); col(0,0,0);
+  // Left panel
+  pdf.text('Name:', M + 2, y + 4);
+  pdf.text('Position:', M + 2, y + 10);
+  pdf.text('Date of Signature:', M + 2, y + 16);
+  fnt('normal');
+  pdf.text(invoiceDate, M + 32, y + 16);
+
+  // Centre panel
+  fnt('bold');
+  pdf.text('Signature:', M + sigColW + 2, y + 4);
+
+  // Right panel
+  pdf.text('Company Stamp', M + sigColW * 2 + sigColW / 2, y + 11, { align: 'center' });
+
+  y += 25;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // FOOTER
+  // ══════════════════════════════════════════════════════════════════════════
+  const footerY = pageHeight - 8;
+  hRule(footerY - 2, 0.3);
+  sz(6.5); fnt('normal'); col(80,80,80);
+  pdf.text(
+    'Email: skyxpresss786@gmail.com  |  Phone: (042) 37255473  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411',
+    pageWidth / 2, footerY, { align: 'center' }
+  );
+  fnt('normal'); col(100,100,100);
+  pdf.text('Page 1 of 1', M + usable, footerY, { align: 'right' });
 
   handlePDFOutput(pdf, `Performa-Invoice-${refNumber}.pdf`, mode);
 };
