@@ -34,6 +34,7 @@ import {
 interface ApprovedParcel {
   id: string;
   tracking_id: string;
+  reference_id?: string;
   sender_name: string;
   receiver_name: string;
   from_country: string;
@@ -311,6 +312,7 @@ export const ApprovedParcelsSection = () => {
   const filteredParcels = parcels.filter(parcel => {
     const query = searchQuery.toLowerCase();
     const matchesSearch = (
+      (parcel.reference_id || parcel.tracking_id).toLowerCase().includes(query) ||
       parcel.tracking_id.toLowerCase().includes(query) ||
       parcel.sender_name.toLowerCase().includes(query) ||
       parcel.receiver_name.toLowerCase().includes(query)
@@ -473,13 +475,16 @@ export const ApprovedParcelsSection = () => {
                     <Checkbox
                       checked={selectedIds.has(parcel.id)}
                       onCheckedChange={(checked) => toggleSelectOne(parcel.id, checked === true)}
-                      aria-label={`Select parcel ${parcel.tracking_id}`}
+                      aria-label={`Select parcel ${parcel.reference_id || parcel.tracking_id}`}
                     />
                   </TableCell>
                   <TableCell>
                     <div className="font-mono font-semibold text-primary">
-                      {parcel.tracking_id}
+                      {parcel.reference_id || parcel.tracking_id}
                     </div>
+                    {parcel.reference_id && (
+                      <div className="font-mono text-xs text-slate-400 mt-0.5">{parcel.tracking_id}</div>
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="font-medium">{parcel.sender_name}</div>
@@ -567,7 +572,7 @@ export const ApprovedParcelsSection = () => {
             <DialogDescription>
               {isBulkMode
                 ? `This will update shipping status for ${selectedIds.size} selected parcel${selectedIds.size === 1 ? "" : "s"}.`
-                : `Update status for tracking ID: ${selectedParcel?.tracking_id}`}
+                : `Update status for tracking ID: ${selectedParcel?.reference_id || selectedParcel?.tracking_id}`}
             </DialogDescription>
           </DialogHeader>
           

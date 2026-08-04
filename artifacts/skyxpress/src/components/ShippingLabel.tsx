@@ -141,7 +141,67 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
       .filter(Boolean).join(", ") || null,
   ].filter(Boolean) as string[];
 
-  const handlePrint = () => { window.print(); };
+  const handlePrint = () => {
+    const labelEl = document.getElementById("shipping-label-print");
+    if (!labelEl) return;
+
+    const printWindow = window.open("", "_blank", "width=700,height=900");
+    if (!printWindow) return;
+
+    // Build the document safely using DOM APIs — no string interpolation of user data
+    const doc = printWindow.document;
+
+    // Collect styles from the current document
+    const styleContent = Array.from(document.querySelectorAll("style"))
+      .map((el) => el.textContent || "")
+      .join("\n");
+
+    doc.write("<!DOCTYPE html><html><head></head><body></body></html>");
+    doc.close();
+
+    // Set title safely via textContent (no XSS risk)
+    doc.title = `Shipping Label — ${parcel.tracking_id}`;
+
+    // Charset meta
+    const meta = doc.createElement("meta");
+    meta.setAttribute("charset", "utf-8");
+    doc.head.appendChild(meta);
+
+    // Inline styles from main document
+    const styleEl = doc.createElement("style");
+    styleEl.textContent = styleContent;
+    doc.head.appendChild(styleEl);
+
+    // Print-specific styles
+    const printStyle = doc.createElement("style");
+    printStyle.textContent = `
+      @page { margin: 10mm; size: A4 portrait; }
+      html, body { margin: 0; padding: 0; background: #fff; }
+      body { display: flex; justify-content: center; padding: 0; }
+      #shipping-label-print {
+        width: 560px !important;
+        max-width: 560px !important;
+        border: 1px solid #000 !important;
+        font-family: Arial, Helvetica, sans-serif !important;
+        font-size: 11px !important;
+        line-height: 1.3 !important;
+        background: #fff !important;
+        color: #000 !important;
+      }
+    `;
+    doc.head.appendChild(printStyle);
+
+    // Clone the label node into the print window (no innerHTML string injection)
+    const clone = doc.importNode(labelEl, true);
+    doc.body.appendChild(clone);
+
+    // Wait for images/barcodes to render before printing
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+      printWindow.close();
+    }, 500);
+  };
 
   const handleSavePDF = async () => {
     const { default: jsPDF } = await import("jspdf");
