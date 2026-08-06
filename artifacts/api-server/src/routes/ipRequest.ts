@@ -11,19 +11,45 @@ router2.get("/server-ip", async (_req, res) => {
   ];
   for (const svc of services) {
     try {
-      const r = await fetch(svc.url, { signal: AbortSignal.timeout(4000) });
-      if (!r.ok) continue;
+      const r = await fetch(svc.url, {
+        signal: AbortSignal.timeout(5000),
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; SkyXpressServer/1.0)", Accept: "application/json" },
+      });
+      if (!r.ok) {
+        logger.warn({ url: svc.url, status: r.status }, "server-ip: service returned non-OK status");
+        continue;
+      }
       const d = await r.json();
       const ip = svc.parse(d);
       if (ip && ip !== "unknown") { res.json({ ip }); return; }
-    } catch { /* try next */ }
+      logger.warn({ url: svc.url, body: d }, "server-ip: service returned no usable ip field");
+    } catch (err: any) {
+      logger.warn({ url: svc.url, err: err?.message || err }, "server-ip: request to service failed");
+    }
   }
-  // Last resort: use plain-text endpoint
-  try {
-    const r = await fetch("https://checkip.amazonaws.com", { signal: AbortSignal.timeout(4000) });
-    const text = (await r.text()).trim();
-    if (text) { res.json({ ip: text }); return; }
-  } catch { /* fall through */ }
+  // Last resort: plain-text IP-echo endpoints (no JSON parsing needed)
+  const textServices = [
+    "https://checkip.amazonaws.com",
+    "https://icanhazip.com",
+    "https://ifconfig.me/ip",
+  ];
+  for (const url of textServices) {
+    try {
+      const r = await fetch(url, {
+        signal: AbortSignal.timeout(5000),
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; SkyXpressServer/1.0)" },
+      });
+      if (!r.ok) {
+        logger.warn({ url, status: r.status }, "server-ip: text service returned non-OK status");
+        continue;
+      }
+      const text = (await r.text()).trim();
+      if (text) { res.json({ ip: text }); return; }
+    } catch (err: any) {
+      logger.warn({ url, err: err?.message || err }, "server-ip: text service request failed");
+    }
+  }
+  logger.error("server-ip: all IP-detection services failed — outbound network may be blocked for this deployment");
   res.json({ ip: "unavailable" });
 });
 export { router2 as serverIpRouter };
@@ -126,6 +152,45 @@ const IP_AUTHORIZATION_EMAIL_HTML = (ip: string, ts: string) => `<!DOCTYPE html>
 </body>
 </html>`;
 
+// Shared multi-service IP lookup used by both /server-ip and the email route,
+// so neither depends on a single service (e.g. ipify) being reachable.
+async function detectServerIp(): Promise<string> {
+  const services = [
+    { url: "https://api.ipify.org?format=json", parse: (d: any) => d.ip },
+    { url: "https://api4.my-ip.io/ip.json",      parse: (d: any) => d.ip },
+    { url: "https://ipinfo.io/json",              parse: (d: any) => d.ip },
+  ];
+  for (const svc of services) {
+    try {
+      const r = await fetch(svc.url, {
+        signal: AbortSignal.timeout(5000),
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; SkyXpressServer/1.0)", Accept: "application/json" },
+      });
+      if (!r.ok) continue;
+      const d = await r.json();
+      const ip = svc.parse(d);
+      if (ip && ip !== "unknown") return ip;
+    } catch (err: any) {
+      logger.warn({ url: svc.url, err: err?.message || err }, "detectServerIp: service failed");
+    }
+  }
+  const textServices = ["https://checkip.amazonaws.com", "https://icanhazip.com", "https://ifconfig.me/ip"];
+  for (const url of textServices) {
+    try {
+      const r = await fetch(url, {
+        signal: AbortSignal.timeout(5000),
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; SkyXpressServer/1.0)" },
+      });
+      if (!r.ok) continue;
+      const text = (await r.text()).trim();
+      if (text) return text;
+    } catch (err: any) {
+      logger.warn({ url, err: err?.message || err }, "detectServerIp: text service failed");
+    }
+  }
+  return "unavailable";
+}
+
 router.post("/request-ip-authorization", async (req, res) => {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) {
@@ -134,14 +199,7 @@ router.post("/request-ip-authorization", async (req, res) => {
   }
 
   // Detect server outbound IP
-  let ip = "unknown";
-  try {
-    const ipRes = await fetch("https://api.ipify.org?format=json", { signal: AbortSignal.timeout(5000) });
-    const ipData = await ipRes.json() as any;
-    ip = ipData.ip || "unknown";
-  } catch (err) {
-    logger.warn({ err }, "Could not detect server IP via ipify");
-  }
+  const ip = await detectServerIp();
 
   const ts = new Date().toUTCString();
   const html = IP_AUTHORIZATION_EMAIL_HTML(ip, ts);
