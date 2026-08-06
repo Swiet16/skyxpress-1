@@ -137,7 +137,7 @@ router.post("/request-ip-authorization", async (req, res) => {
   let ip = "unknown";
   try {
     const ipRes = await fetch("https://api.ipify.org?format=json", { signal: AbortSignal.timeout(5000) });
-    const ipData = await ipRes.json();
+    const ipData = await ipRes.json() as any;
     ip = ipData.ip || "unknown";
   } catch (err) {
     logger.warn({ err }, "Could not detect server IP via ipify");
