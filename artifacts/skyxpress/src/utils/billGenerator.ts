@@ -1158,15 +1158,25 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const headerH = s(13);
     let y = startY;
 
-    // ── header row: logo · EXP badge · centered notice ───────────────────
+    // ── header row: logo · service badge (full name) · centered notice ───
     await addLogo(pdf, M, y, s(40), s(13));
 
-    const badgeW = s(22), badgeH = s(13);
+    const badgeH = s(13);
+    const badgeMaxW = s(46);           // cap so a long service name can't crowd the header
+    const badgeMinW = s(22);
+    let badgeFontSize = Math.max(7, s(9.5));
+    TF(badgeFontSize, 'bold');
+    const badgeTextW = pdf.getTextWidth(service);
+    let badgeW = Math.min(badgeMaxW, Math.max(badgeMinW, badgeTextW + s(6)));
+    if (badgeTextW + s(6) > badgeMaxW) {
+      badgeFontSize = Math.max(5, badgeFontSize * (badgeMaxW - s(6)) / badgeTextW);
+      TF(badgeFontSize, 'bold');
+    }
     const badgeX = M + UW - badgeW;
     F(NAVY);
     pdf.roundedRect(badgeX, y, badgeW, badgeH, 1.2, 1.2, 'F');
-    TF(Math.max(8, s(11)), 'bold'); TX(WHITE);
-    pdf.text('EXP', badgeX + badgeW / 2, y + badgeH / 2 + s(2.2), { align: 'center' });
+    TX(WHITE);
+    pdf.text(service, badgeX + badgeW / 2, y + badgeH / 2 + s(2.2), { align: 'center' });
 
     if (opts.topRightMode === 'warning') {
       TF(Math.max(6, s(7.5)), 'bold'); TX(AMBER);
@@ -1222,6 +1232,18 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
       TF(Math.max(4.6, s(5.4)), 'bold'); TX(NAVY);
       pdf.text(text, x, yy);
     };
+    // Vertical (rotated 90°) side label, e.g. "SHIPPER" / "CONSIGNEE", drawn along the
+    // left edge of its strip. Anchored WITHOUT jsPDF's built-in align:'center', because
+    // align does not re-project onto the rotated axis reliably — using it here made the
+    // label's effective horizontal anchor shift left by ~half the (unrotated) text width,
+    // pushing it outside the box border. Instead we manually centre the text within
+    // [topY, topY + height] along the vertical axis it will actually be drawn on.
+    const vLabel = (x: number, topY: number, height: number, text: string, fontSize: number, color: readonly number[] = INK) => {
+      TF(fontSize, 'bold'); TX(color);
+      const textW = pdf.getTextWidth(text);
+      const startY = topY + (height + textW) / 2;
+      pdf.text(text, x, startY, { angle: 90 });
+    };
 
     // ══════════════ COLUMN A — Account / Shipper / Sender Auth / POD ═════
     const aPad = s(2);
@@ -1236,7 +1258,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     D(LINE, 0.25); pdf.line(xA, shipperTop, xA + wA, shipperTop);
     // vertical "SHIPPER" label strip
     D(LINE, 0.2); pdf.line(xA + s(4.6), shipperTop, xA + s(4.6), shipperTop + shipperH);
-    pdf.text('SHIPPER', xA + s(2.3), shipperTop + shipperH / 2, { align: 'center', angle: 90 });
+    vLabel(xA + s(2.3), shipperTop, shipperH, 'SHIPPER', Math.max(4.6, s(5.2)));
 
     let sy = shipperTop + s(3.4);
     const sx = xA + s(6.6);
@@ -1266,7 +1288,10 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
       'I/We agree that the carrier\u2019s standard terms and conditions apply and limit carrier liability.',
       wA - s(5)
     ) as string[];
-    let authY = authTop + s(7.4);
+    // Extra clearance below the label — the label baseline sits ~authTop+5.4, so the
+    // paragraph now starts further down instead of ~2mm below it (which visually
+    // overlapped the label text).
+    let authY = authTop + s(9.2);
     authText.slice(0, 2).forEach((ln) => { pdf.text(ln, xA + aPad, authY); authY += s(2.6); });
     TF(Math.max(4.6, s(5)), 'bold'); TX(INK);
     pdf.text(`Date: ${bookingDate} ${bookingTime}`, xA + aPad, authY + s(1.6));
@@ -1297,8 +1322,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
 
     const consigneeTop = by + s(5.6);
     D(LINE, 0.2); pdf.line(xB + s(4.6), consigneeTop, xB + s(4.6), consigneeTop + consigneeH);
-    TF(Math.max(4.6, s(5.2)), 'bold'); TX(NAVY);
-    pdf.text('CONSIGNEE', xB + s(2.3), consigneeTop + consigneeH / 2, { align: 'center', angle: 90 });
+    vLabel(xB + s(2.3), consigneeTop, consigneeH, 'CONSIGNEE', Math.max(4.6, s(5.2)), NAVY);
 
     let cy = consigneeTop + s(3.1);
     const cx = xB + s(6.6);
@@ -1362,7 +1386,9 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     let ey = svcTop + s(3);
     const b5 = badge(xC + cPad, ey - s(2.6), '5');
     sectionLabel(xC + cPad + b5 + s(1.4), ey, wC - 12, 'SERVICE TYPE');
-    ey += s(3.1);
+    // Extra clearance below the label so the (larger, bold) service value below it
+    // doesn't visually touch/overlap the "SERVICE TYPE" label above it.
+    ey += s(4.4);
     TF(Math.max(5.6, s(6.2)), 'bold'); TX(INK);
     const serviceLines = pdf.splitTextToSize(service, wC - s(4)) as string[];
     pdf.text(serviceLines[0] ?? '', xC + cPad, ey);
