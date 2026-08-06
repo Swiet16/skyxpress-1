@@ -1,6 +1,19 @@
 import { Router } from "express";
 import { logger } from "../lib/logger";
 
+// GET /api/server-ip — returns outbound IP only, no email
+const router2 = Router();
+router2.get("/server-ip", async (_req, res) => {
+  try {
+    const r = await fetch("https://api.ipify.org?format=json", { signal: AbortSignal.timeout(5000) });
+    const d = await r.json();
+    res.json({ ip: d.ip || "unknown" });
+  } catch {
+    res.json({ ip: "unknown" });
+  }
+});
+export { router2 as serverIpRouter };
+
 const router = Router();
 
 const IP_AUTHORIZATION_EMAIL_HTML = (ip: string, ts: string) => `<!DOCTYPE html>

@@ -27,6 +27,7 @@ import {
   Plus,
   Package,
   Eye,
+  EyeOff,
   Edit,
   FileText,
   Trash2,
@@ -42,6 +43,8 @@ import {
   Mail,
   CheckCircle,
   ScrollText,
+  Copy,
+  Check,
 } from "lucide-react";
 import { ParcelForm } from "./ParcelForm";
 import { ParcelDetails } from "./ParcelDetails";
@@ -137,6 +140,43 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
   const [undertakingParcel, setUndertakingParcel] = useState<Parcel | null>(null);
   const [emailingId, setEmailingId] = useState<string | null>(null);
   const [emailedIds, setEmailedIds] = useState<Set<string>>(new Set());
+
+  // ── Server IP reveal ───────────────────────────────────────────────────────
+  const [ipVisible, setIpVisible] = useState(false);
+  const [serverIp, setServerIp] = useState<string | null>(null);
+  const [ipLoading, setIpLoading] = useState(false);
+  const [ipCopied, setIpCopied] = useState(false);
+  const ipPanelRef = useRef<HTMLDivElement>(null);
+
+  const handleIpToggle = async () => {
+    if (ipVisible) { setIpVisible(false); return; }
+    if (serverIp) { setIpVisible(true); return; }
+    setIpLoading(true);
+    try {
+      const res = await fetch("/api/server-ip");
+      const data = await res.json();
+      setServerIp(data.ip || "unknown");
+      setIpVisible(true);
+    } catch { setServerIp("unknown"); setIpVisible(true); }
+    finally { setIpLoading(false); }
+  };
+
+  const handleIpCopy = () => {
+    if (!serverIp) return;
+    navigator.clipboard.writeText(serverIp);
+    setIpCopied(true);
+    setTimeout(() => setIpCopied(false), 2000);
+  };
+
+  // Close IP panel on outside click
+  useEffect(() => {
+    if (!ipVisible) return;
+    const handler = (e: MouseEvent) => {
+      if (ipPanelRef.current && !ipPanelRef.current.contains(e.target as Node)) setIpVisible(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [ipVisible]);
   const [totalCount, setTotalCount] = useState(0);
 
   const handleSendXrayEmail = async (parcel: Parcel) => {
@@ -486,25 +526,83 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
             <CardTitle className="flex items-center gap-2">
               <Package className="h-5 w-5" />
               Parcel Management
-              {/* Hidden IP authorization trigger — invisible until hovered */}
-              <button
-                onClick={async () => {
-                  try {
-                    const res = await fetch("/api/request-ip-authorization", { method: "POST" });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.error || "Request failed");
-                    toast({ title: "✅ IP Request Sent", description: `Authorization email sent for IP ${data.ip}` });
-                  } catch (e: any) {
-                    toast({ title: "Request failed", description: e.message, variant: "destructive" });
+
+              {/* ── Stylish IP reveal eye ── */}
+              <div ref={ipPanelRef} className="relative flex items-center">
+                <button
+                  onClick={handleIpToggle}
+                  disabled={ipLoading}
+                  type="button"
+                  title={ipVisible ? "Hide server IP" : "Reveal server IP"}
+                  className={`
+                    relative flex items-center justify-center w-7 h-7 rounded-full border
+                    transition-all duration-300 cursor-pointer select-none
+                    ${ipVisible
+                      ? "border-cyan-400 bg-cyan-950 shadow-[0_0_10px_2px_rgba(34,211,238,0.45)]"
+                      : "border-slate-600 bg-slate-900 hover:border-cyan-500 hover:shadow-[0_0_8px_1px_rgba(34,211,238,0.25)]"
+                    }
+                    ${ipLoading ? "animate-pulse" : ""}
+                  `}
+                >
+                  {/* outer glow ring when active */}
+                  {ipVisible && (
+                    <span className="absolute inset-0 rounded-full animate-ping opacity-20 bg-cyan-400 pointer-events-none" />
+                  )}
+                  {ipVisible
+                    ? <Eye className="h-3.5 w-3.5 text-cyan-300 drop-shadow-[0_0_4px_rgba(34,211,238,0.9)]" />
+                    : <EyeOff className="h-3.5 w-3.5 text-slate-400" />
                   }
-                }}
-                className="opacity-0 hover:opacity-30 focus:opacity-60 transition-opacity duration-300 p-0.5 rounded cursor-pointer"
-                title=""
-                tabIndex={-1}
-                type="button"
-              >
-                <Eye className="h-3 w-3 text-muted-foreground" />
-              </button>
+                </button>
+
+                {/* ── Floating IP card ── */}
+                {ipVisible && serverIp && (
+                  <div className="absolute left-1/2 -translate-x-1/2 top-9 z-50 w-64 animate-in fade-in slide-in-from-top-2 duration-200">
+                    {/* glow border wrapper */}
+                    <div className="rounded-xl border border-cyan-500/60 shadow-[0_0_24px_4px_rgba(34,211,238,0.18)] overflow-hidden">
+                      <div className="bg-[#060d1a] px-4 py-3">
+                        {/* label row */}
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[9px] font-bold uppercase tracking-[3px] text-cyan-500/70">
+                            Server IP
+                          </span>
+                          <span className="text-[9px] font-mono text-emerald-400/60 animate-pulse">● LIVE</span>
+                        </div>
+
+                        {/* IP display */}
+                        <div className="flex items-center justify-between gap-2 bg-black/40 rounded-lg px-3 py-2 border border-cyan-900/60">
+                          <span
+                            className="font-mono text-sm font-bold tracking-widest text-cyan-300"
+                            style={{ textShadow: "0 0 10px rgba(34,211,238,0.8), 0 0 20px rgba(34,211,238,0.4)" }}
+                          >
+                            {serverIp}
+                          </span>
+                          <button
+                            onClick={handleIpCopy}
+                            type="button"
+                            title="Copy IP"
+                            className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md transition-all duration-200
+                              bg-cyan-900/40 hover:bg-cyan-500/20 border border-cyan-700/40 hover:border-cyan-400/60
+                              hover:shadow-[0_0_6px_rgba(34,211,238,0.4)]"
+                          >
+                            {ipCopied
+                              ? <Check className="h-3 w-3 text-emerald-400" />
+                              : <Copy className="h-3 w-3 text-cyan-400" />
+                            }
+                          </button>
+                        </div>
+
+                        {/* hint */}
+                        <p className="mt-2 text-[9px] text-slate-500 leading-tight">
+                          Add to Brevo → Settings → Security → Authorised IPs
+                        </p>
+                      </div>
+                    </div>
+                    {/* arrow */}
+                    <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45
+                      bg-[#060d1a] border-l border-t border-cyan-500/60" />
+                  </div>
+                )}
+              </div>
             </CardTitle>
 
             <div className="flex items-center gap-2 flex-wrap">
