@@ -4,13 +4,27 @@ import { logger } from "../lib/logger";
 // GET /api/server-ip — returns outbound IP only, no email
 const router2 = Router();
 router2.get("/server-ip", async (_req, res) => {
-  try {
-    const r = await fetch("https://api.ipify.org?format=json", { signal: AbortSignal.timeout(5000) });
-    const d = await r.json();
-    res.json({ ip: d.ip || "unknown" });
-  } catch {
-    res.json({ ip: "unknown" });
+  const services = [
+    { url: "https://api.ipify.org?format=json", parse: (d: any) => d.ip },
+    { url: "https://api4.my-ip.io/ip.json",      parse: (d: any) => d.ip },
+    { url: "https://ipinfo.io/json",              parse: (d: any) => d.ip },
+  ];
+  for (const svc of services) {
+    try {
+      const r = await fetch(svc.url, { signal: AbortSignal.timeout(4000) });
+      if (!r.ok) continue;
+      const d = await r.json();
+      const ip = svc.parse(d);
+      if (ip && ip !== "unknown") { res.json({ ip }); return; }
+    } catch { /* try next */ }
   }
+  // Last resort: use plain-text endpoint
+  try {
+    const r = await fetch("https://checkip.amazonaws.com", { signal: AbortSignal.timeout(4000) });
+    const text = (await r.text()).trim();
+    if (text) { res.json({ ip: text }); return; }
+  } catch { /* fall through */ }
+  res.json({ ip: "unavailable" });
 });
 export { router2 as serverIpRouter };
 

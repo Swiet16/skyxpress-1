@@ -591,10 +591,6 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
                           </button>
                         </div>
 
-                        {/* hint */}
-                        <p className="mt-2 text-[9px] text-slate-500 leading-tight">
-                          Add to Brevo → Settings → Security → Authorised IPs
-                        </p>
                       </div>
                     </div>
                     {/* arrow */}
