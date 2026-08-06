@@ -1234,8 +1234,6 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
 
     const shipperTop = boxTop + accountH;
     D(LINE, 0.25); pdf.line(xA, shipperTop, xA + wA, shipperTop);
-    TF(Math.max(4.6, s(5.4)), 'bold'); TX(NAVY);
-    pdf.text('SHIPPER', xA + aPad + wA * 0.5 * 0, shipperTop + s(2.6) + wA * 0); // no-op alignment guard
     // vertical "SHIPPER" label strip
     D(LINE, 0.2); pdf.line(xA + s(4.6), shipperTop, xA + s(4.6), shipperTop + shipperH);
     pdf.text('SHIPPER', xA + s(2.3), shipperTop + shipperH / 2, { align: 'center', angle: 90 });
@@ -1388,7 +1386,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const b6 = badge(xC + cPad, swTop + s(2.6), '6');
     sectionLabel(xC + cPad + b6 + s(1.4), swTop + s(2.6) + b6 * 0.72, wC - 12, 'SIZE & WEIGHT');
 
-    let swy = swTop + s(6.8);
+    let swy = swTop + s(8.4);
     const swRow = (label: string, value: string, highlight = false) => {
       const rowH = s(4);
       if (highlight) { F(PALE); pdf.rect(xC, swy - rowH * 0.72, wC, rowH, 'F'); }
