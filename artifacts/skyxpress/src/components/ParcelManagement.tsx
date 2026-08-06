@@ -41,12 +41,14 @@ import {
   Printer,
   Mail,
   CheckCircle,
+  ScrollText,
 } from "lucide-react";
 import { ParcelForm } from "./ParcelForm";
 import { ParcelDetails } from "./ParcelDetails";
 import { ParcelAttachmentsDialog } from "./ParcelAttachments";
 import { SkyXpressAWBInvoice } from "./SkyXpressAWBInvoice";
 import { ShippingLabel } from "./ShippingLabel";
+import { UndertakingLetter } from "./UndertakingLetter";
 import { exportManifestToExcel } from "@/utils/manifestExport";
 import { buildManifestEntry, saveManifestToStockDB, getNextManifestId, type ManifestStockEntry } from "@/utils/manifestStorage";
 import { generateBulkManifestPDF } from "@/utils/bulkManifestPDF";
@@ -131,6 +133,8 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
   const [loadingInvoice, setLoadingInvoice] = useState(false);
   const [showLabel, setShowLabel] = useState(false);
   const [labelParcel, setLabelParcel] = useState<Parcel | null>(null);
+  const [showUndertaking, setShowUndertaking] = useState(false);
+  const [undertakingParcel, setUndertakingParcel] = useState<Parcel | null>(null);
   const [emailingId, setEmailingId] = useState<string | null>(null);
   const [emailedIds, setEmailedIds] = useState<Set<string>>(new Set());
   const [totalCount, setTotalCount] = useState(0);
@@ -671,6 +675,10 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
                               onClick={() => { setLabelParcel(parcel); setShowLabel(true); }} title="Print Shipping Label">
                               <Printer className="h-3.5 w-3.5" />
                             </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-teal-600 hover:bg-teal-50"
+                              onClick={() => { setUndertakingParcel(parcel); setShowUndertaking(true); }} title="Undertaking Letter">
+                              <ScrollText className="h-3.5 w-3.5" />
+                            </Button>
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50"
                               onClick={() => handleDeleteParcel(parcel.id, parcel.tracking_id)} title="Delete">
                               <Trash2 className="h-3.5 w-3.5" />
@@ -819,6 +827,10 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
                         onClick={() => { setLabelParcel(parcel); setShowLabel(true); }} title="Shipping Label">
                         <Printer className="h-4 w-4" />
                       </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-teal-600 hover:bg-teal-50"
+                        onClick={() => { setUndertakingParcel(parcel); setShowUndertaking(true); }} title="Undertaking Letter">
+                        <ScrollText className="h-4 w-4" />
+                      </Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50"
                         onClick={() => handleDeleteParcel(parcel.id, parcel.tracking_id)} title="Delete">
                         <Trash2 className="h-4 w-4" />
@@ -954,6 +966,13 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
         open={showLabel}
         onClose={() => { setShowLabel(false); setLabelParcel(null); }}
         countryMap={countryMap}
+      />
+
+      {/* Undertaking Letter Modal */}
+      <UndertakingLetter
+        parcel={undertakingParcel}
+        open={showUndertaking}
+        onClose={() => { setShowUndertaking(false); setUndertakingParcel(null); }}
       />
 
       {/* ── Step 1: Confirm / Edit Manifest ID ───────────────────────────── */}

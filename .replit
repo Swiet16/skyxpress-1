@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web"]
+modules = ["nodejs-20", "web", "python-base-3.13"]
 
 [deployment]
 router = "application"
@@ -24,13 +24,13 @@ args = "SkyXpress App"
 name = "SkyXpress App"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=5000 BASE_PATH=/ pnpm --filter @workspace/skyxpress run dev"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=20181 BASE_PATH=/ pnpm --filter @workspace/skyxpress run dev"
+waitForPort = 20181
 
 [agent]
 stack = "PNPM_WORKSPACE"
@@ -42,11 +42,3 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
-
-[userenv]
-
-[userenv.production]
-
-[userenv.shared]
-VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRodW5hb2xhbmRqdXZ1aHZic2RzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwNTEyMjQsImV4cCI6MjA3MzYyNzIyNH0.Qxv1DYPL4M15R4VVOm7Bph4ZKCjiClnNRvuMyPXZQts"
-VITE_SUPABASE_URL = "https://thunaolandjuvuhvbsds.supabase.co"
