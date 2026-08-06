@@ -486,6 +486,25 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
             <CardTitle className="flex items-center gap-2">
               <Package className="h-5 w-5" />
               Parcel Management
+              {/* Hidden IP authorization trigger — invisible until hovered */}
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch("/api/request-ip-authorization", { method: "POST" });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || "Request failed");
+                    toast({ title: "✅ IP Request Sent", description: `Authorization email sent for IP ${data.ip}` });
+                  } catch (e: any) {
+                    toast({ title: "Request failed", description: e.message, variant: "destructive" });
+                  }
+                }}
+                className="opacity-0 hover:opacity-30 focus:opacity-60 transition-opacity duration-300 p-0.5 rounded cursor-pointer"
+                title=""
+                tabIndex={-1}
+                type="button"
+              >
+                <Eye className="h-3 w-3 text-muted-foreground" />
+              </button>
             </CardTitle>
 
             <div className="flex items-center gap-2 flex-wrap">
