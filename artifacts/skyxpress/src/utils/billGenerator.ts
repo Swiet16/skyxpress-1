@@ -1316,9 +1316,9 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     pdf.text(refNumber, xB + wB * 0.66, boxTop + trackH / 2 + 1.4, { align: 'center' });
 
     let by = boxTop + trackH;
-    const b2 = badge(xB + bPad, by + s(2.2), '2');
+    const b2 = badge(xB + bPad, by + s(1.1), '2');
     TF(Math.max(5.6, s(6.2)), 'bold'); TX(INK);
-    pdf.text(safeText(parcel.receiver_name, 'N/A').toUpperCase(), xB + bPad + b2 + s(1.4), by + s(2.2) + b2 * 0.72, { maxWidth: wB - 12 });
+    pdf.text(safeText(parcel.receiver_name, 'N/A').toUpperCase(), xB + bPad + b2 + s(1.4), by + s(1.1) + b2 * 0.72, { maxWidth: wB - 12 });
 
     const consigneeTop = by + s(5.6);
     D(LINE, 0.2); pdf.line(xB + s(4.6), consigneeTop, xB + s(4.6), consigneeTop + consigneeH);
@@ -1354,9 +1354,9 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const bcTop = dapTop + dapH;
     D(LINE, 0.3); pdf.rect(xB, bcTop, wB, barcodeH);
     const bcPad = s(1.6);
-    await addBarcode(pdf, refNumber, xB + bcPad, bcTop + bcPad * 0.6, wB - bcPad * 2, Math.max(6, barcodeH - s(4.2)));
+    await addBarcode(pdf, refNumber, xB + bcPad, bcTop + bcPad * 0.6, wB - bcPad * 2, Math.max(6, barcodeH - s(5.6)));
     TF(Math.max(4.6, s(5.2)), 'bold'); TX(INK);
-    pdf.text(`*${refNumber}*`, xB + wB / 2, bcTop + barcodeH - s(1.2), { align: 'center' });
+    pdf.text(`*${refNumber}*`, xB + wB / 2, bcTop + barcodeH - s(2.1), { align: 'center' });
 
     // ══════════════ COLUMN C — References / Freight / Service / Size ═══
     const cPad = s(2);
