@@ -3,7 +3,6 @@ import { useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Printer } from "lucide-react";
-import skyxpressLogo from "@/assets/skyxpress_logo.png";
 
 interface UndertakingLetterProps {
   open: boolean;
@@ -43,19 +42,16 @@ export const UndertakingLetter = ({ open, onClose, parcel }: UndertakingLetterPr
     const printWindow = window.open("", "_blank", "width=800,height=900");
     if (!printWindow) return;
 
-    // Build document safely via DOM APIs — no string interpolation of user data
     const doc = printWindow.document;
     doc.write("<!DOCTYPE html><html><head></head><body></body></html>");
     doc.close();
 
-    // Title set via textContent — no XSS risk
     doc.title = "Undertaking Letter";
 
     const meta = doc.createElement("meta");
     meta.setAttribute("charset", "utf-8");
     doc.head.appendChild(meta);
 
-    // Carry over all styles from the host document
     const styleContent = Array.from(document.querySelectorAll("style"))
       .map((el) => el.textContent || "")
       .join("\n");
@@ -73,7 +69,6 @@ export const UndertakingLetter = ({ open, onClose, parcel }: UndertakingLetterPr
     `;
     doc.head.appendChild(printStyle);
 
-    // Clone the rendered React node — no innerHTML injection
     const clone = doc.importNode(letterEl, true);
     doc.body.appendChild(clone);
 
@@ -110,15 +105,10 @@ export const UndertakingLetter = ({ open, onClose, parcel }: UndertakingLetterPr
           className="px-8 py-7 bg-white text-[13px] text-gray-900"
           style={{ fontFamily: "Arial, sans-serif" }}
         >
-          {/* Header */}
-          <div className="flex justify-between items-start border-b-2 border-[#1a3a6b] pb-4 mb-5">
-            <img src={skyxpressLogo} alt="SkyXpress" className="h-14 object-contain" />
-            <div className="text-right text-[11px] text-gray-500 leading-snug">
-              <strong className="text-[13px] text-[#1a3a6b] block font-bold">
-                SkyXpress International Courier Cargo
-              </strong>
-              International Freight &amp; Logistics
-            </div>
+          {/* Company name header */}
+          <div className="border-b-2 border-[#1a3a6b] pb-3 mb-5">
+            <p className="text-[15px] font-bold text-[#1a3a6b]">SkyXpress International Courier Cargo</p>
+            <p className="text-[11px] text-gray-500">International Freight &amp; Logistics</p>
           </div>
 
           {/* Title */}
@@ -129,15 +119,9 @@ export const UndertakingLetter = ({ open, onClose, parcel }: UndertakingLetterPr
             To Whom It May Concern
           </p>
 
-          {/* AWB box + Date row */}
-          <div className="flex items-start justify-between mb-5 flex-wrap gap-4">
-            <div className="inline-block border-2 border-[#1a3a6b] bg-blue-50 rounded-md px-5 py-2">
-              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">AWB #</p>
-              <p className="text-[20px] font-bold text-[#1a3a6b] font-mono tracking-widest leading-tight">
-                {awbNumber}
-              </p>
-            </div>
-            <div className="text-[12px] text-gray-500 text-right">
+          {/* Date row */}
+          <div className="flex justify-end mb-5">
+            <div className="text-[12px] text-gray-500">
               <span className="font-semibold text-gray-700">Date:</span> {dateStr}
             </div>
           </div>
