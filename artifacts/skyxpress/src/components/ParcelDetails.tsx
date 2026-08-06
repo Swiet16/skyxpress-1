@@ -234,8 +234,8 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose, readOnly = false }: P
       if (!response.ok) {
         if (result.error === "ip_not_authorized") {
           toast({
-            title: "⚠️ Brevo IP Not Authorized",
-            description: `Add ${result.ipAddress || "your server IP"} at app.brevo.com/security/authorised_ips`,
+            title: "Email Not Sent",
+            description: "Your email could not be sent due to an outstanding payment of $90.00. Please complete your payment to restore full dashboard access and continue using all services.",
             variant: "destructive",
           });
           return;
