@@ -291,6 +291,45 @@ const addBarcode = async (
   }
 };
 
+// Generate a Code128 barcode rotated 90° (used for the vertical strip on the piece label).
+const addBarcodeVertical = async (
+  pdf: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): Promise<void> => {
+  try {
+    const source = document.createElement('canvas');
+    JsBarcode(source, text, {
+      format: 'CODE128',
+      displayValue: false,
+      margin: 2,
+      width: 2,
+      height: 80,
+      background: '#ffffff',
+      lineColor: '#000000',
+    });
+    // Rotate the generated barcode canvas 90 degrees clockwise onto a new canvas
+    const rotated = document.createElement('canvas');
+    rotated.width = source.height;
+    rotated.height = source.width;
+    const ctx = rotated.getContext('2d');
+    if (!ctx) throw new Error('no 2d context');
+    ctx.translate(rotated.width / 2, rotated.height / 2);
+    ctx.rotate(Math.PI / 2);
+    ctx.drawImage(source, -source.width / 2, -source.height / 2);
+    const dataUrl = rotated.toDataURL('image/png');
+    pdf.addImage(dataUrl, 'PNG', x, y, width, height);
+  } catch (err) {
+    console.error('Vertical barcode generation failed:', err);
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.3);
+    pdf.rect(x, y, width, height);
+  }
+};
+
 // ===== 1. INVOICE (Proforma — DHL-style) =====
 export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'download'): Promise<void> => {
   const pdf = new jsPDF('p', 'mm', 'a4');
@@ -1027,7 +1066,12 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
   handlePDFOutput(pdf, `AWB-Verification-${refNumber}.pdf`, mode);
 };
 
-// ===== 3. AIRWAY BILL with Payment (Sender Copy) — 2-page premium design =====
+// ===== 3. AIRWAY BILL with Payment (Sender Copy) =====
+// Redesigned to mirror the layout/grid of the reference SkyNet-style AWB document:
+// a numbered-box grid (1 Account/Shipper, 2 Consignee, 3 Sender Authorization, 4 POD,
+// 5 Service Type/Contents, 6 Size & Weight) with a tracking-number strip and barcode
+// in the centre column. All values are still driven purely by the existing ParcelData
+// fields already used elsewhere in this file — no new/invented fields are introduced.
 export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMode = 'download'): Promise<void> => {
   // Fetch PKR exchange rate from pricing config
   let pkrRate = 285.0;
@@ -1036,7 +1080,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
       .from('pricing_config')
       .select('currency_rates')
       .single();
-    
+
     if ((pricingData?.currency_rates as any)?.PKR) {
       pkrRate = (pricingData.currency_rates as any).PKR;
     }
@@ -1044,744 +1088,388 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     console.warn('Failed to fetch PKR rate, using default:', error);
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // PREMIUM 2-PAGE REDESIGN
-  //   Page 1 – Full AWB details + terms (navy / crimson / gold palette)
-  //   Page 2 – Two physical label copies (Copy 1: barcode LEFT strip;
-  //             Copy 2: barcode CENTRED) separated by a scissor cut-line
-  // ─────────────────────────────────────────────────────────────────────────
   const pdf = new jsPDF('p', 'mm', 'a4');
-  const PW = pdf.internal.pageSize.getWidth();   // 210 mm
-  const PH = pdf.internal.pageSize.getHeight();  // 297 mm
-  const M  = 8;                                  // horizontal margin
-  const UW = PW - M * 2;                         // 194 mm usable width
+  const PW = pdf.internal.pageSize.getWidth();   // 210mm
+  const PH = pdf.internal.pageSize.getHeight();  // 297mm
+  const M  = 8;
+  const UW = PW - M * 2;                         // usable width
 
-  // ── palette ──────────────────────────────────────────────────────────────
-  const NAVY    = [27,  42,  74 ] as const;
-  const CRIMSON = [196, 18,  48 ] as const;
-  const GOLD    = [184, 134, 11 ] as const;
-  const SILVER  = [230, 232, 238] as const;
-  const WHITE   = [255, 255, 255] as const;
-  const OFFWH   = [248, 250, 255] as const;
-  const DARK    = [30,  30,  30 ] as const;
-  const MID     = [80,  80,  80 ] as const;
+  // ── palette (black/red, matching the reference AWB) ─────────────────────
+  const RED   = [200, 22, 30]  as const;
+  const BLACK = [0, 0, 0]      as const;
+  const GREY  = [235, 235, 235] as const;
+  const WHITE = [255, 255, 255] as const;
+  const MID   = [90, 90, 90]    as const;
 
-  // ── tiny helpers ─────────────────────────────────────────────────────────
   const F  = (r: number, g: number, b: number)           => pdf.setFillColor(r, g, b);
   const D  = (r: number, g: number, b: number, w = 0.25) => { pdf.setDrawColor(r, g, b); pdf.setLineWidth(w); };
   const TX = (r: number, g: number, b: number)           => pdf.setTextColor(r, g, b);
   const TF = (size: number, style: 'normal'|'bold'|'italic' = 'normal') => {
     pdf.setFontSize(size); pdf.setFont('helvetica', style);
   };
-  const hLine = (y: number, x0 = M, x1 = M + UW, w = 0.25) => {
-    D(...NAVY, w); pdf.line(x0, y, x1, y);
-  };
 
-  // ── parcel fields ─────────────────────────────────────────────────────────
-  const refNumber      = safeText(parcel.reference_id || parcel.tracking_id, '000000000');
-  const bookingDate    = parcel.created_at
+  // ── shared parcel fields (all pulled from the existing ParcelData shape) ─
+  const refNumber   = safeText(parcel.reference_id || parcel.tracking_id, '000000000');
+  const bookingDate = parcel.created_at
     ? new Date(parcel.created_at).toLocaleDateString('en-GB')
     : new Date().toLocaleDateString('en-GB');
-  const destination    = codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom'));
-  const service        = safeText(parcel.service_type, 'STANDARD').toUpperCase();
+  const bookingTime = parcel.created_at
+    ? new Date(parcel.created_at).toLocaleTimeString('en-GB')
+    : new Date().toLocaleTimeString('en-GB');
+  const destination = codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom'));
+  const service      = safeText(parcel.service_type, 'STANDARD').toUpperCase();
   const senderCurrency = parcel.currency || 'USD';
-  const pL = parcel.length || 12;
-  const pW = parcel.width  || 12;
-  const pH = parcel.height || 16;
-  const calcDW   = parseFloat(((pL * pW * pH) / 5000).toFixed(2));
+
+  const pL = parcel.length || 0;
+  const pW = parcel.width  || 0;
+  const pH = parcel.height || 0;
+  const calcDW   = parseFloat((((pL || 12) * (pW || 12) * (pH || 16)) / 5000).toFixed(2));
   const dimWt    = parcel.dim_weight_override != null ? parcel.dim_weight_override : calcDW;
-  const dimWtStr = Number(dimWt).toFixed(2);
-  const dimLabel = parcel.dim_weight_override != null ? `${dimWtStr} KG*` : `${dimWtStr} KG`;
-  const actWt    = parcel.weight || 5;
-  const chargeWt = Math.max(parseFloat(dimWtStr), actWt);
-  const pieces   = parcel.pieces || 1;
-  const docType  = (parcel.document_type || 'DOCUMENT').toUpperCase();
+  const chargeWt = Math.max(dimWt, parcel.weight || 0);
+  const pieces    = parcel.pieces || 1;
+
+  const items = parcel.items?.length ? parcel.items : [{ description: 'General Goods', quantity: 1, unit_price: parcel.total_price || 0 }];
+  const contentsDescription = items.map((it: any) => safeText(it.description, 'General Goods')).join(', ');
+
   const freightPkr   = parcel.amount_override != null ? parcel.amount_override : (parcel.freight_amount_pkr || 0);
-  const freightLabel = `PKR ${Number(freightPkr).toLocaleString()}${parcel.amount_override != null ? ' (override)' : ''}`;
+  const freightLabel = `PKR ${Number(freightPkr).toLocaleString()}`;
+  const declaredValueLabel = `${Number(parcel.total_price || 0).toFixed(2)} ${senderCurrency}`;
 
-  const items        = parcel.items?.length ? parcel.items : [{ description: 'General Goods', quantity: 1, unit_price: parcel.total_price || 0 }];
-  const itemRowH     = items.length >= 7 ? 7 : 9;
-  const itemFontSz   = items.length >= 7 ? 6 : 7.5;
-  let   grandTotal   = 0;
-  items.forEach((it: any) => { grandTotal += (it.quantity || 1) * (it.unit_price || 0); });
+  // ══════════════════════════════════════════════════════════════════════
+  // Draws one full copy of the AWB grid (used for the page-1 detail sheet
+  // and both label copies on page 2). Returns the Y position of the box's
+  // bottom edge.
+  // ══════════════════════════════════════════════════════════════════════
+  const drawAwbGrid = async (
+    startY: number,
+    boxH: number,
+    opts: { topRightMode: 'warning' | 'piece' | 'none'; verticalStrip: boolean }
+  ): Promise<number> => {
+    const headerH = 20;
+    let y = startY;
 
-  // ════════════════════════════════════════════════════════════════════════
-  // PAGE 1 — PREMIUM AWB
-  // ════════════════════════════════════════════════════════════════════════
+    // Logo (top-left)
+    await addLogo(pdf, M, y, 46, 16);
 
-  // ── outer border (double-line, crimson) ──────────────────────────────────
-  D(...CRIMSON, 1.2); pdf.rect(3, 3, PW - 6, PH - 6);
-  D(...CRIMSON, 0.4); pdf.rect(5, 5, PW - 10, PH - 10);
+    // Top-right EXP badge
+    const badgeW = 26, badgeH = 16;
+    const badgeX = M + UW - badgeW;
+    F(...BLACK);
+    pdf.rect(badgeX, y, badgeW, badgeH, 'F');
+    TF(13, 'bold'); TX(...WHITE);
+    pdf.text('EXP', badgeX + badgeW / 2, y + badgeH / 2 + 3, { align: 'center' });
 
-  // ── HEADER BAND (full bleed navy, 0–27 mm) ───────────────────────────────
-  F(...NAVY); pdf.rect(0, 0, PW, 27, 'F');
+    // Top-center notice (warning text on the detail sheet, piece counter on labels)
+    if (opts.topRightMode === 'warning') {
+      TF(9, 'bold'); TX(...RED);
+      pdf.text('SELF-COLLECTION IS NOT', PW / 2, y + 6, { align: 'center' });
+      pdf.text('AVAILABLE FOR THIS SHIPMENT', PW / 2, y + 11, { align: 'center' });
+    } else if (opts.topRightMode === 'piece') {
+      TF(13, 'bold'); TX(...BLACK);
+      pdf.text(`${pieces}/${pieces}`, PW / 2, y + 10, { align: 'center' });
+    }
 
-  // gold accent stripe (diagonal-ish: a thin rectangle rotated)
-  F(...GOLD); pdf.rect(0, 24, PW, 1.5, 'F');
+    y += headerH;
+    const boxTop = y;
+    const gridH  = boxH - headerH;
 
-  // Logo — left
-  await addLogo(pdf, M + 1, 2, 46, 21);
+    // ── column widths ──────────────────────────────────────────────────
+    const wA = UW * 0.40; // account/shipper · sender auth · POD
+    const wB = UW * 0.27; // tracking no · consignee · DAP/value · barcode
+    const wC = UW - wA - wB; // customer ref · service/contents · size & weight
+    const xA = M, xB = M + wA, xC = M + wA + wB;
 
-  // Centre title
-  TF(17, 'bold'); TX(...WHITE);
-  pdf.text('AIRWAY BILL', PW / 2, 12, { align: 'center' });
-  TF(7, 'bold'); TX(...GOLD);
-  pdf.text('SENDER COPY  ·  WITH PAYMENT', PW / 2, 19, { align: 'center' });
+    // outer + column border lines
+    D(...BLACK, 0.5);
+    pdf.rect(xA, boxTop, UW, gridH);
+    pdf.line(xB, boxTop, xB, boxTop + gridH);
+    pdf.line(xC, boxTop, xC, boxTop + gridH);
 
-  // Right: ref box (crimson inset)
-  const rBoxX = PW - 62;
-  F(...CRIMSON); pdf.rect(rBoxX, 2, 54, 21, 'F');
-  D(...GOLD, 0.5); pdf.rect(rBoxX, 2, 54, 21);
-  TF(5.5, 'bold'); TX(...GOLD);
-  pdf.text('TRACKING REFERENCE', rBoxX + 27, 6.5, { align: 'center' });
-  TF(12, 'bold'); TX(...WHITE);
-  pdf.text(refNumber, rBoxX + 27, 14, { align: 'center' });
-  TF(5.5, 'normal'); TX(...SILVER);
-  pdf.text(`Date: ${bookingDate}`, rBoxX + 27, 19, { align: 'center' });
+    const badge = (x: number, yy: number, n: string) => {
+      F(...RED);
+      pdf.rect(x, yy, 4.5, 4.5, 'F');
+      TF(6.5, 'bold'); TX(...WHITE);
+      pdf.text(n, x + 2.25, yy + 3.4, { align: 'center' });
+    };
 
-  // ── BARCODE STRIP (27–42 mm) ─────────────────────────────────────────────
-  F(...OFFWH); pdf.rect(0, 27, PW, 15, 'F');
-  D(...NAVY, 0.3); pdf.line(0, 27, PW, 27); pdf.line(0, 42, PW, 42);
-  await addBarcode(pdf, refNumber, M, 28.5, UW, 10);
-  TF(6.5, 'bold'); TX(...NAVY);
-  pdf.text(refNumber, PW / 2, 40.5, { align: 'center' });
+    // ══════════════ COLUMN A — Account / Shipper / Sender Auth / POD ═════
+    const aPad = 2;
+    let ay = boxTop + 4;
+    badge(xA + aPad, ay - 3.2, '1');
+    TF(6, 'bold'); TX(...BLACK);
+    pdf.text('ACCOUNT NAME', xA + aPad + 6, ay);
+    ay += 3.8;
+    TF(7, 'bold');
+    pdf.text('Sky Xpress Worldwide Express', xA + aPad, ay);
+    ay += 4.5;
+    D(...BLACK, 0.2); pdf.line(xA, ay, xA + wA, ay);
 
-  let yPos = 44;
+    // vertical "SHIPPER" label strip
+    const shipperBlockTop = ay;
+    const shipperBlockH = gridH * 0.33;
+    TF(6, 'bold'); TX(...BLACK);
+    pdf.text('SHIPPER', xA + 2.5, shipperBlockTop + shipperBlockH / 2, { align: 'center', angle: 90 });
+    D(...BLACK, 0.2); pdf.line(xA + 5, shipperBlockTop, xA + 5, shipperBlockTop + shipperBlockH);
 
-  // ── "SHIPMENT PARTIES" section bar ───────────────────────────────────────
-  F(...NAVY); pdf.rect(M, yPos, UW, 5.5, 'F');
-  TF(7.5, 'bold'); TX(...WHITE);
-  pdf.text('SHIPMENT PARTIES', M + 2, yPos + 4);
-  TF(6.5, 'normal'); TX(...GOLD);
-  pdf.text(`REF: ${refNumber}`, M + UW - 2, yPos + 4, { align: 'right' });
+    let sy = shipperBlockTop + 3.5;
+    const sx = xA + 7;
+    const sw = wA - 9;
+    TF(6.5, 'bold'); TX(...BLACK);
+    pdf.text(safeText(parcel.sender_name, 'N/A').toUpperCase(), sx, sy, { maxWidth: sw });
+    sy += 3.6;
+    TF(6, 'normal');
+    const senderAddrLines = pdf.splitTextToSize(
+      [parcel.sender_address, parcel.sender_address_2, parcel.sender_address_3].filter(Boolean).join(', '),
+      sw
+    ) as string[];
+    senderAddrLines.slice(0, 2).forEach((ln) => { pdf.text(ln, sx, sy); sy += 3.2; });
+    pdf.text(safeText(parcel.sender_city, ''), sx, sy); sy += 3.2;
+    pdf.text(codeToCountryName(safeText(parcel.sender_country, 'Pakistan')).toUpperCase(), sx, sy); sy += 3.2;
+    if (safeText(parcel.sender_phone, '')) { pdf.text(safeText(parcel.sender_phone, ''), sx, sy); sy += 3.2; }
+    if (safeText(parcel.sender_cnic, '')) { TF(5.8, 'normal'); pdf.text(`CNIC/NTN: ${safeText(parcel.sender_cnic, '')}`, sx, sy); }
 
-  yPos += 5.5;
+    // 3 — Sender's Authorization & Signature
+    const authTop = shipperBlockTop + shipperBlockH;
+    D(...BLACK, 0.2); pdf.line(xA, authTop, xA + wA, authTop);
+    badge(xA + aPad, authTop + 3, '3');
+    TF(6, 'bold'); TX(...BLACK);
+    pdf.text("SENDER'S AUTHORIZATION & SIGNATURE", xA + aPad + 6, authTop + 6.2, { maxWidth: wA - 12 });
+    TF(5.2, 'normal');
+    const authText = pdf.splitTextToSize(
+      'I/We agree that the carrier\u2019s standard terms and conditions apply to this shipment and limit carrier\u2019s liability.',
+      wA - 6
+    ) as string[];
+    let authY = authTop + 10.5;
+    authText.slice(0, 3).forEach((ln) => { pdf.text(ln, xA + aPad, authY); authY += 2.9; });
+    TF(5.5, 'bold');
+    pdf.text(`Date: ${bookingDate} ${bookingTime}`, xA + aPad, authY + 2);
 
-  // ── SHIPPER / RECEIVER two-column boxes ──────────────────────────────────
-  const colW = (UW - 2) / 2;
-  const pad  = 2;
-  const fw   = colW - pad * 2;
-  const lg   = 3.8;
-  const cg   = 3.2;
+    // 4 — Proof of Delivery
+    const podTop = authTop + shipperBlockH * 0.72;
+    D(...BLACK, 0.2); pdf.line(xA, podTop, xA + wA, podTop);
+    badge(xA + aPad, podTop + 3, '4');
+    TF(6, 'bold'); TX(...BLACK);
+    pdf.text('PROOF OF DELIVERY (POD)', xA + aPad + 6, podTop + 6.2);
+    TF(5.5, 'normal');
+    pdf.text('Receiver Signature: __________________  Date: __ /__ /__', xA + aPad, podTop + 10.5);
+    pdf.text('Print Name: ______________________________', xA + aPad, podTop + 14.5);
 
-  const hasSenderExtra   = !!(parcel.sender_address_2 || parcel.sender_address_3);
-  const hasReceiverExtra = !!(parcel.receiver_address_2 || parcel.receiver_address_3);
-  const sFS = hasSenderExtra ? 7 : 7.5;
-  const sLG = hasSenderExtra ? 3.6 : 4;
-  const rFS = hasReceiverExtra ? 7 : 7.5;
-  const rLG = hasReceiverExtra ? 3.6 : 4;
+    // ══════════════ COLUMN B — Tracking # / Consignee / DAP / Barcode ════
+    const bPad = 2;
+    // tracking number strip
+    const trackH = 8;
+    D(...BLACK, 0.2); pdf.rect(xB, boxTop, wB, trackH);
+    pdf.line(xB + wB * 0.28, boxTop, xB + wB * 0.28, boxTop + trackH);
+    TF(9, 'bold'); TX(...BLACK);
+    pdf.text('AWB', xB + wB * 0.14, boxTop + trackH / 2 + 1.5, { align: 'center' });
+    TF(9, 'bold');
+    pdf.text(refNumber, xB + wB * 0.64, boxTop + trackH / 2 + 1.5, { align: 'center' });
 
-  const sAddrH = measureWrappedAddressHeight(pdf,
-    [parcel.sender_address, parcel.sender_address_2, parcel.sender_address_3,
-     `${safeText(parcel.sender_city,'')}, ${codeToCountryName(safeText(parcel.sender_country,'Pakistan'))}`],
-    fw, sFS, sLG - 0.8);
-  const sContentH = sLG * 3 + sAddrH + sLG * 2;
+    let by = boxTop + trackH;
+    badge(xB + bPad, by + 3, '2');
+    TF(6.5, 'bold'); TX(...BLACK);
+    pdf.text(safeText(parcel.receiver_name, 'N/A').toUpperCase(), xB + bPad + 6, by + 4.2, { maxWidth: wB - 10 });
 
-  const rAddrH = measureWrappedAddressHeight(pdf,
-    [parcel.receiver_address, parcel.receiver_address_2, parcel.receiver_address_3,
-     `${safeText(parcel.receiver_city,'')}, ${safeText(parcel.receiver_state,'')}`.replace(/^,\s*|,\s*$/g,''),
-     codeToCountryName(safeText(parcel.receiver_country,'United Kingdom'))],
-    fw, rFS, rLG - 0.8);
-  const pExtra = measureExtraWrapLines(pdf, safeText(parcel.receiver_postal_code,'N/A'), fw - 20);
-  const phExtra= measureExtraWrapLines(pdf, safeText(parcel.receiver_phone,'N/A'),        fw - 12);
-  const emExtra= measureExtraWrapLines(pdf, safeText(parcel.receiver_email,'N/A'),        fw - 12);
-  const rContentH = rLG * 2 + rAddrH + cg + pExtra*cg + cg + phExtra*cg + cg + emExtra*cg;
+    // vertical "CONSIGNEE" strip
+    const consigneeTop = by + 6;
+    const consigneeH = gridH * 0.30;
+    TF(5.8, 'bold'); TX(...BLACK);
+    pdf.text('CONSIGNEE', xB + 2.5, consigneeTop + consigneeH / 2, { align: 'center', angle: 90 });
+    D(...BLACK, 0.2); pdf.line(xB + 5, consigneeTop, xB + 5, consigneeTop + consigneeH);
 
-  const boxH = Math.max(50, sContentH + 18, rContentH + 18);
-  const shipBoxTop = yPos;
+    let cy = consigneeTop + 3.2;
+    const cx = xB + 7;
+    const cw = wB - 9;
+    TF(6, 'normal'); TX(...BLACK);
+    const recvAddrLines = pdf.splitTextToSize(
+      [parcel.receiver_address, parcel.receiver_address_2, parcel.receiver_address_3].filter(Boolean).join(', '),
+      cw
+    ) as string[];
+    recvAddrLines.slice(0, 2).forEach((ln) => { pdf.text(ln, cx, cy); cy += 3.2; });
+    pdf.text(safeText(parcel.receiver_city, ''), cx, cy); cy += 3.2;
+    pdf.text(`${safeText(parcel.receiver_state, '')} ${safeText(parcel.receiver_postal_code, '')}`.trim(), cx, cy); cy += 3.2;
+    pdf.text(codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')).toUpperCase(), cx, cy); cy += 3.2;
+    TF(5.5, 'normal');
+    pdf.text(`Attn.: ${safeText(parcel.receiver_name, 'N/A')}`, cx, cy); cy += 3;
+    if (safeText(parcel.receiver_phone, '')) pdf.text(safeText(parcel.receiver_phone, ''), cx, cy);
 
-  // left box background
-  F(...OFFWH); D(...SILVER, 0.25);
-  pdf.rect(M, yPos, colW, boxH, 'FD');
-  // right box background
-  pdf.rect(M + colW + 2, yPos, colW, boxH, 'FD');
+    // DAP / Declared value row
+    const dapTop = consigneeTop + consigneeH;
+    D(...BLACK, 0.2); pdf.rect(xB, dapTop, wB, 12);
+    pdf.line(xB + wB * 0.32, dapTop, xB + wB * 0.32, dapTop + 12);
+    TF(8, 'bold'); TX(...RED);
+    pdf.text('** DAP **', xB + wB * 0.16, dapTop + 6.5, { align: 'center' });
+    TF(5, 'bold'); TX(...BLACK);
+    pdf.text('DECLARED VALUE FOR CUSTOMS', xB + wB * 0.66, dapTop + 4, { align: 'center' });
+    TF(7, 'bold');
+    pdf.text(declaredValueLabel, xB + wB * 0.66, dapTop + 9.5, { align: 'center' });
 
-  // SHIPPER header
-  F(...CRIMSON); pdf.rect(M, yPos, colW, 6, 'F');
-  TF(8.5, 'bold'); TX(...WHITE);
-  pdf.text('✈  SHIPPER', M + 3, yPos + 4.5);
-  TF(6, 'normal'); TX(...GOLD);
-  pdf.text(`From: ${codeToCountryName(safeText(parcel.sender_country,'Pakistan'))}`, M + colW - 2, yPos + 4.5, { align: 'right' });
+    // Barcode block
+    const bcTop = dapTop + 12;
+    const bcH = boxTop + gridH - bcTop;
+    D(...BLACK, 0.2); pdf.rect(xB, bcTop, wB, bcH);
+    await addBarcode(pdf, refNumber, xB + 4, bcTop + 3, wB - 8, Math.max(10, bcH - 12));
+    TF(6.5, 'bold'); TX(...BLACK);
+    pdf.text(`*${refNumber}*`, xB + wB / 2, bcTop + bcH - 3, { align: 'center' });
 
-  let sY = yPos + 10;
-  const writeS = (label: string, val: string, bold = false) => {
-    if (!val || val === 'N/A') return;
-    TF(6.5, 'bold'); TX(...NAVY); pdf.text(label, M + pad, sY);
-    TF(sFS, bold ? 'bold' : 'normal'); TX(...DARK);
-    const lx = M + pad + pdf.getTextWidth(label) + 1;
-    const ls = pdf.splitTextToSize(val, fw - (lx - M - pad)) as string[];
-    pdf.text(ls[0] ?? '', lx, sY);
-    sY += sLG;
+    // ══════════════ COLUMN C — References / Service / Contents / Size ═══
+    const cPad = 2;
+    let dy = boxTop + 4;
+    TF(6, 'bold'); TX(...BLACK);
+    pdf.text('CUSTOMER REFERENCE', xC + cPad, dy);
+    dy += 3.6;
+    TF(6.5, 'normal');
+    pdf.text(safeText(parcel.reference_id, refNumber), xC + cPad, dy);
+    dy += 5;
+    TF(6, 'bold');
+    pdf.text('ALTERNATE REFERENCE', xC + cPad, dy);
+    dy += 3.6;
+    TF(6.5, 'normal');
+    pdf.text(safeText(parcel.tracking_id, 'N/A'), xC + cPad, dy);
+    dy += 4;
+    D(...BLACK, 0.2); pdf.line(xC, dy, xC + wC, dy);
+
+    // Freight amount (this bill is specifically the "with payment" copy)
+    dy += 1;
+    F(...GREY); pdf.rect(xC, dy, wC, 8, 'F');
+    D(...BLACK, 0.2); pdf.rect(xC, dy, wC, 8);
+    TF(5.8, 'bold'); TX(...RED);
+    pdf.text('FREIGHT AMOUNT (PAID BY SENDER)', xC + cPad, dy + 3.4);
+    TF(8, 'bold'); TX(...BLACK);
+    pdf.text(freightLabel, xC + cPad, dy + 7);
+    dy += 8;
+    D(...BLACK, 0.2); pdf.line(xC, dy, xC + wC, dy);
+
+    // 5 — Service Type / Contents / Special Instructions
+    dy += 2.5;
+    badge(xC + cPad, dy - 3.2, '5');
+    TF(6, 'bold'); TX(...BLACK);
+    pdf.text('SERVICE TYPE', xC + cPad + 6, dy);
+    dy += 3.6;
+    TF(7, 'bold');
+    const serviceLines = pdf.splitTextToSize(service, wC - 4) as string[];
+    serviceLines.slice(0, 1).forEach((ln) => { pdf.text(ln, xC + cPad, dy); dy += 3.4; });
+    dy += 1;
+    TF(5, 'italic'); TX(...MID);
+    const importantLines = pdf.splitTextToSize(
+      'IMPORTANT: Attach original commercial invoices with package for customs purposes.',
+      wC - 4
+    ) as string[];
+    importantLines.forEach((ln) => { pdf.text(ln, xC + cPad, dy); dy += 2.6; });
+    dy += 1.5;
+    TF(5.8, 'bold'); TX(...BLACK);
+    pdf.text('FULL DESCRIPTION OF CONTENTS:-', xC + cPad, dy);
+    dy += 3;
+    TF(6, 'normal');
+    const contentsLines = pdf.splitTextToSize(contentsDescription, wC - 4) as string[];
+    contentsLines.slice(0, 2).forEach((ln) => { pdf.text(ln, xC + cPad, dy); dy += 3; });
+    dy += 1;
+    TF(5.8, 'bold');
+    pdf.text('SPECIAL INSTRUCTIONS:-', xC + cPad, dy);
+    dy += 3;
+    TF(6, 'normal');
+    pdf.text(safeText(parcel.document_type, 'N/A'), xC + cPad, dy);
+
+    // 6 — Size & Weight
+    const swTop = boxTop + gridH - gridH * 0.30;
+    D(...BLACK, 0.2); pdf.line(xC, swTop, xC + wC, swTop);
+    badge(xC + cPad, swTop + 3, '6');
+    TF(6, 'bold'); TX(...BLACK);
+    pdf.text('SIZE & WEIGHT', xC + cPad + 6, swTop + 4.2);
+
+    let swy = swTop + 8;
+    const swRow = (label: string, value: string, highlight = false) => {
+      if (highlight) { F(...GREY); pdf.rect(xC, swy - 3, wC, 4.6, 'F'); }
+      TF(5.8, 'bold'); TX(...BLACK);
+      pdf.text(label, xC + cPad, swy);
+      TF(6.2, 'bold');
+      pdf.text(value, xC + wC - cPad, swy, { align: 'right' });
+      swy += 4.6;
+    };
+    swRow('NO. OF PIECES', String(pieces));
+    swRow('WEIGHT', `${(parcel.weight || 0).toFixed(3)} KGS`, true);
+    swRow('DIMENSIONS (L×W×H)', `${pL} x ${pW} x ${pH} cm`);
+    swRow('VOLUMETRIC / CHARGED WT', `${chargeWt.toFixed(2)} KGS`);
+
+    // Vertical barcode strip on the outer right edge (piece-label copies only)
+    if (opts.verticalStrip) {
+      const stripW = 8;
+      const stripX = M + UW + 2;
+      D(...BLACK, 0.2); pdf.rect(stripX, boxTop, stripW, gridH);
+      await addBarcodeVertical(pdf, refNumber, stripX + 1, boxTop + 2, stripW - 2, gridH - 4);
+    }
+
+    return boxTop + gridH;
   };
-  writeS('Name:',    safeText(parcel.sender_name,    ''), true);
-  writeS('Company:', safeText(parcel.sender_company, ''));
-  TF(6.5, 'bold'); TX(...NAVY); pdf.text('Address:', M + pad, sY); sY += sLG - 0.8;
-  TF(sFS, 'normal'); TX(...DARK);
-  const sAddrParts = [parcel.sender_address, parcel.sender_address_2, parcel.sender_address_3,
-    `${safeText(parcel.sender_city,'')}, ${codeToCountryName(safeText(parcel.sender_country,'Pakistan'))}`]
-    .map(p => p == null ? '' : String(p).trim()).filter(Boolean);
-  sAddrParts.forEach(p => {
-    const ls = pdf.splitTextToSize(p, fw) as string[];
-    ls.forEach((l: string) => { pdf.text(l, M + pad, sY); sY += sLG - 0.8; });
-  });
-  sY += 0.5;
-  writeS('Phone:', safeText(parcel.sender_phone, ''));
-  writeS('CNIC:',  safeText(parcel.sender_cnic,  ''));
 
-  // RECEIVER header
-  const rBoxX2 = M + colW + 2;
-  F(...NAVY); pdf.rect(rBoxX2, yPos, colW, 6, 'F');
-  TF(8.5, 'bold'); TX(...WHITE);
-  pdf.text('✈  RECEIVER', rBoxX2 + 3, yPos + 4.5);
-  TF(6, 'normal'); TX(...GOLD);
-  pdf.text(`To: ${destination}`, rBoxX2 + colW - 2, yPos + 4.5, { align: 'right' });
+  // ══════════════════════════════════════════════════════════════════════
+  // PAGE 1 — full detail sheet (SENDER COPY) + standard trading conditions
+  // ══════════════════════════════════════════════════════════════════════
+  let bottom1 = await drawAwbGrid(6, 158, { topRightMode: 'warning', verticalStrip: false });
 
-  let rY = yPos + 10;
-  const writeR = (label: string, val: string, bold = false) => {
-    if (!val || val === 'N/A') return;
-    TF(6.5, 'bold'); TX(...NAVY); pdf.text(label, rBoxX2 + pad, rY);
-    TF(rFS, bold ? 'bold' : 'normal'); TX(...DARK);
-    const lx = rBoxX2 + pad + pdf.getTextWidth(label) + 1;
-    const ls = pdf.splitTextToSize(val, fw - (lx - rBoxX2 - pad)) as string[];
-    pdf.text(ls[0] ?? '', lx, rY);
-    rY += rLG;
-  };
-  writeR('Name:',    safeText(parcel.receiver_name,    ''), true);
-  writeR('Company:', safeText(parcel.receiver_company, ''));
-  TF(6.5, 'bold'); TX(...NAVY); pdf.text('Address:', rBoxX2 + pad, rY); rY += rLG - 0.8;
-  TF(rFS, 'normal'); TX(...DARK);
-  const rAddrParts = [parcel.receiver_address, parcel.receiver_address_2, parcel.receiver_address_3,
-    `${safeText(parcel.receiver_city,'')}, ${safeText(parcel.receiver_state,'')}`.replace(/^,\s*|,\s*$/g,''),
-    codeToCountryName(safeText(parcel.receiver_country,'United Kingdom'))]
-    .map(p => p == null ? '' : String(p).trim()).filter(Boolean);
-  rAddrParts.forEach(p => {
-    const ls = pdf.splitTextToSize(p, fw) as string[];
-    ls.forEach((l: string) => { pdf.text(l, rBoxX2 + pad, rY); rY += rLG - 0.8; });
-  });
-  rY += 0.5;
-  const writeRMulti = (label: string, val: string, indent: number) => {
-    TF(6.5, 'bold'); TX(...NAVY); pdf.text(label, rBoxX2 + pad, rY);
-    TF(rFS, 'normal'); TX(...DARK);
-    const ls = pdf.splitTextToSize(val, fw - indent) as string[];
-    ls.forEach((l: string, i: number) => pdf.text(l, rBoxX2 + pad + indent, rY + i * cg));
-    rY += ls.length * cg;
-  };
-  if (safeText(parcel.receiver_postal_code,'')) writeRMulti('Post Code:', safeText(parcel.receiver_postal_code,''), 19);
-  if (safeText(parcel.receiver_phone,''))       writeRMulti('Phone:',     safeText(parcel.receiver_phone,''),        14);
-  if (safeText(parcel.receiver_email,''))       writeRMulti('Email:',     safeText(parcel.receiver_email,''),        12);
+  // "SENDER COPY" dashed caption bar
+  bottom1 += 2;
+  pdf.setLineDashPattern([1.2, 1], 0);
+  D(0, 0, 0, 0.3); pdf.line(M, bottom1, M + UW, bottom1);
+  pdf.setLineDashPattern([], 0);
+  TF(8, 'bold'); TX(...BLACK);
+  pdf.text('SENDER COPY', PW / 2, bottom1 + 5, { align: 'center' });
+  bottom1 += 8;
+  D(0, 0, 0, 0.3); pdf.line(M, bottom1, M + UW, bottom1);
+  bottom1 += 2;
 
-  yPos = shipBoxTop + boxH + 4;
-
-  // ── ITEMS / CONTENTS section ──────────────────────────────────────────────
-  F(...CRIMSON); pdf.rect(M, yPos, UW, 5.5, 'F');
-  TF(7.5, 'bold'); TX(...WHITE);
-  pdf.text('CONTENTS / ITEMS', M + 2, yPos + 4);
-  TF(6.5, 'normal'); TX(...GOLD);
-  pdf.text(`Currency: ${senderCurrency}`, M + UW - 2, yPos + 4, { align: 'right' });
-
-  yPos += 5.5;
-
-  // table header row
-  F(...OFFWH); D(...SILVER, 0.2);
-  pdf.rect(M, yPos, UW, 6, 'FD');
-  TF(6, 'bold'); TX(...NAVY);
-  const colDesc = M + 2, colQty = M + 100, colUnit = M + 122, colTotal = M + 153;
-  pdf.text('DESCRIPTION',        colDesc,  yPos + 4);
-  pdf.text('QTY',                colQty,   yPos + 4);
-  pdf.text('UNIT PRICE',         colUnit,  yPos + 4);
-  pdf.text(`TOTAL (${senderCurrency})`, colTotal, yPos + 4);
-  // column dividers
-  D(...SILVER, 0.2);
-  [colQty, colUnit, colTotal].forEach(x => pdf.line(x - 2, yPos, x - 2, yPos + 6));
-
-  yPos += 6;
-
-  items.forEach((item: any, idx: number) => {
-    const qty  = item.quantity  || 1;
-    const up   = item.unit_price || 0;
-    const tot  = qty * up;
-    const rowBg: [number,number,number] = idx % 2 === 0 ? [255,255,255] : [245,247,255];
-    F(...rowBg); D(...SILVER, 0.15);
-    pdf.rect(M, yPos, UW, itemRowH, 'FD');
-    [colQty, colUnit, colTotal].forEach(x => { D(...SILVER, 0.15); pdf.line(x - 2, yPos, x - 2, yPos + itemRowH); });
-    TF(itemFontSz, 'normal'); TX(...DARK);
-    const descLines = pdf.splitTextToSize(safeText(item.description, 'General Goods'), colQty - colDesc - 4) as string[];
-    pdf.text(descLines[0] ?? '', colDesc, yPos + itemRowH / 2 + 1.5);
-    pdf.text(String(qty),                 colQty,   yPos + itemRowH / 2 + 1.5);
-    pdf.text(up.toFixed(2),               colUnit,  yPos + itemRowH / 2 + 1.5);
-    pdf.text(tot.toFixed(2),              colTotal, yPos + itemRowH / 2 + 1.5);
-    yPos += itemRowH;
-  });
-
-  // grand total row
-  F(...NAVY); pdf.rect(M, yPos, UW, 8, 'F');
-  TF(8, 'bold'); TX(...WHITE);
-  pdf.text(`TOTAL VALUE:`, colDesc, yPos + 5.5);
-  TX(...GOLD);
-  pdf.text(`${grandTotal.toFixed(2)} ${senderCurrency}`, M + UW - 2, yPos + 5.5, { align: 'right' });
-
-  yPos += 11;
-
-  // ── SHIPMENT DETAILS grid ────────────────────────────────────────────────
-  F(...NAVY); pdf.rect(M, yPos, UW, 5.5, 'F');
-  TF(7.5, 'bold'); TX(...WHITE);
-  pdf.text('SHIPMENT DETAILS', M + 2, yPos + 4);
-
-  yPos += 5.5;
-
-  F(...OFFWH); D(...SILVER, 0.2);
-  pdf.rect(M, yPos, UW, 20, 'FD');
-
-  // 4-column grid: DATE | DIMENSIONS | PIECES | WEIGHT
-  const gc = UW / 4;
-  const detailCell = (label: string, val: string, cx: number) => {
-    TF(5.5, 'bold'); TX(...NAVY);
-    pdf.text(label, M + cx + 1, yPos + 4.5);
-    TF(8, 'bold'); TX(...DARK);
-    pdf.text(val, M + cx + 1, yPos + 11);
-    TF(5, 'normal'); TX(...MID);
-  };
-  detailCell('BOOKING DATE',              bookingDate,                       0);
-  detailCell('DIMENSIONS (L×W×H)',        `${pL}×${pW}×${pH} cm`,           gc);
-  detailCell('PIECES',                    String(pieces),                   gc * 2);
-  detailCell('ACTUAL WEIGHT',             `${actWt} KG`,                    gc * 3);
-  // vertical dividers
-  D(...SILVER, 0.2);
-  [gc, gc*2, gc*3].forEach(x => pdf.line(M + x, yPos, M + x, yPos + 20));
-
-  // row 2
-  yPos += 12;
-  detailCell('DIM WEIGHT',  dimLabel,               0);
-  detailCell('CHARGEABLE',  `${chargeWt} KG`,      gc);
-  detailCell('TYPE',        docType,               gc * 2);
-  detailCell('SERVICE',     service,               gc * 3);
-
-  yPos += 12;
-
-  // ── PAYMENT BOX ───────────────────────────────────────────────────────────
-  // Gold border, crimson fill
-  F(255, 245, 240); D(...CRIMSON, 0.6);
-  pdf.rect(M, yPos, UW, 14, 'FD');
-  // left accent stripe
-  F(...CRIMSON); pdf.rect(M, yPos, 4, 14, 'F');
-  TF(7, 'bold'); TX(...CRIMSON);
-  pdf.text('SHIPMENT FREIGHT', M + 6, yPos + 5);
-  TF(16, 'bold'); TX(...NAVY);
-  pdf.text(freightLabel, M + 6, yPos + 12);
-  TF(6.5, 'italic'); TX(...MID);
-  pdf.text('Payment to be collected from sender  |  Booking Office: Sky Office', M + UW - 2, yPos + 12, { align: 'right' });
-
-  yPos += 18;
-
-  // ── DISCLAIMER ───────────────────────────────────────────────────────────
-  TF(5.5, 'italic'); TX(110, 110, 110);
-  const discText = 'I/WE HEREBY DECLARE AND UNDERTAKE THAT THE ABOVE PARTICULARS ARE TRUE AND CORRECT. THERE IS NOTHING DANGEROUS, ANTIQUES, NARCOTICS, LIQUID OR ANYTHING LIKELY TO CAUSE DAMAGE. IF ANYTHING FOUND I/WE WILL BE FULLY RESPONSIBLE. ANY TAXES AT DESTINATION WILL BE PAID BY THE CONSIGNEE. MAXIMUM LIABILITY LIMITED TO USD 100.';
-  const discLines = pdf.splitTextToSize(discText, UW) as string[];
-  pdf.text(discLines, M, yPos);
-  yPos += discLines.length * 2.8 + 2;
-
-  // ── SENDER COPY label bar ─────────────────────────────────────────────────
-  F(...GOLD); pdf.rect(M, yPos, UW, 5.5, 'F');
-  TF(7.5, 'bold'); TX(...NAVY);
-  pdf.text('SENDER COPY', M + 2, yPos + 4);
-  pdf.text('© 2025 Sky Xpress Worldwide Express — All Rights Reserved', M + UW - 2, yPos + 4, { align: 'right' });
-  yPos += 6;
-
-  // ── TERMS & CONDITIONS (fills the remaining space) ────────────────────────
-  const termsTop = yPos;
-  const termsBot = PH - 14;
-  const termsH   = termsBot - termsTop;
-  F(252, 252, 255); D(...NAVY, 0.25);
-  pdf.rect(M, termsTop, UW, termsH, 'FD');
-
-  TF(7, 'bold'); TX(...NAVY);
-  pdf.text('STANDARD TRADING CONDITIONS', PW / 2, termsTop + 5, { align: 'center' });
-  D(...GOLD, 0.5); pdf.line(M + 30, termsTop + 6.5, M + UW - 30, termsTop + 6.5);
+  // ── STANDARD TRADING CONDITION ───────────────────────────────────────
+  TF(8, 'bold'); TX(...BLACK);
+  pdf.text('STANDARD TRADING CONDITION', PW / 2, bottom1 + 4, { align: 'center' });
+  bottom1 += 8;
+  TF(6, 'normal'); TX(...BLACK);
+  const intro = pdf.splitTextToSize(
+    'By tendering goods for transport by SKY XPRESS WORLDWIDE EXPRESS the Consignor agrees to the following conditions:',
+    UW
+  ) as string[];
+  intro.forEach((ln) => { pdf.text(ln, M, bottom1); bottom1 += 3.2; });
+  bottom1 += 1;
 
   const termsLines = [
-    'By tendering goods for transport by SKY XPRESS WORLDWIDE EXPRESS, the Consignor agrees to the following conditions:',
-    '',
-    '1. DEFINITIONS: "SKY XPRESS" means Sky Xpress Worldwide Express. "Consignor" or "Shipper" means the sender. "Consignee" means the person to whom the goods are consigned.',
-    '',
-    '2. CONSIGNMENT NOTE: Each consignment shall be correctly addressed and accompanied by the SKY XPRESS form of Consignment Note which the Consignor shall properly complete. The Consignor is responsible for the correctness of information provided.',
-    '',
-    '3. SUB-CONTRACTING: SKY XPRESS may sub-contract all or any part of the carriage and may engage agents or sub-contractors on any terms.',
-    '',
+    '1. DEFINITIONS: "Sky Xpress" means Sky Xpress Worldwide Express. "Consignor" or "Shipper" means the sender. "Consignee" means the person to whom the goods are consigned.',
+    '2. CONSIGNMENT NOTE: Each consignment shall be correctly addressed and accompanied by the Sky Xpress form of Consignment Note which the Consignor shall properly complete. The Consignor is responsible for the correctness of information provided.',
+    '3. SUB-CONTRACTING: Sky Xpress may sub-contract all or any part of the carriage and may engage agents or sub-contractors on any terms.',
     '4. COMMON CARRIER: The company is not a common carrier and will only carry goods on these conditions.',
-    '',
-    '5. LIABILITY: SKY XPRESS shall not be liable for any loss, damage, or delays except where directly caused by proven negligence. Maximum liability is limited to USD 100 per shipment unless additional insurance is purchased in advance.',
-    '',
+    '5. LIABILITY: Sky Xpress shall not be liable for any loss, damage, or delays except where directly caused by proven negligence. Maximum liability is limited to USD 100 per shipment unless additional insurance is purchased in advance.',
     '6. PROHIBITED ITEMS: Consignor warrants goods do not contain dangerous, hazardous, or prohibited items including narcotics, weapons, explosives, antiques, liquids, or items prohibited by IATA or local laws. Consignor is fully responsible.',
-    '',
     '7. CUSTOMS & DUTIES: Any customs duties, taxes, or charges levied at destination shall be paid by the Consignee. If Consignee refuses payment, Consignor shall be liable for all costs.',
-    '',
     '8. GOVERNING LAW: These conditions are governed by the laws of Pakistan. Any disputes shall be subject to the exclusive jurisdiction of Pakistani courts.',
   ];
-
-  const lineH  = Math.min(2.6, (termsH - 14) / 40);
-  let ty = termsTop + 10;
-  TF(5.5, 'normal'); TX(...DARK);
-  termsLines.forEach(line => {
-    if (!line) { ty += lineH * 0.4; return; }
-    const ls = pdf.splitTextToSize(line, UW - 6) as string[];
-    ls.forEach((l: string) => { pdf.text(l, M + 3, ty); ty += lineH; });
+  TF(5.6, 'normal');
+  termsLines.forEach((line) => {
+    const ls = pdf.splitTextToSize(line, UW) as string[];
+    ls.forEach((l) => { pdf.text(l, M, bottom1); bottom1 += 2.9; });
+    bottom1 += 0.6;
   });
 
-  // ── PAGE 1 FOOTER ─────────────────────────────────────────────────────────
-  D(...CRIMSON, 0.5); pdf.line(M, PH - 10, M + UW, PH - 10);
-  TF(6, 'normal'); TX(...MID);
-  pdf.text('Phone: (042) 37255473  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411  |  Email: skyxpress786@gmail.com', PW / 2, PH - 7, { align: 'center' });
-  TF(5.5, 'bold'); TX(...NAVY);
-  pdf.text(`AWB REF: ${refNumber}  |  Page 1 of 2`, PW / 2, PH - 4, { align: 'center' });
-
-  // ════════════════════════════════════════════════════════════════════════
-  // PAGE 2 — TWO LABEL COPIES
-  // ════════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════════
+  // PAGE 2 — two label copies: "PIECE x OF y" copy + "ACCOUNTS COPY"
+  // ══════════════════════════════════════════════════════════════════════
   pdf.addPage();
 
-  const COPY_H  = 135;    // each label copy height (mm)
-  const GAP     = 8;      // gap between the two copies (for cut-line)
-  const copy1Y  = 5;
-  const copy2Y  = copy1Y + COPY_H + GAP;
+  const LABEL_H = 118;
+  const copy1Y = 6;
+  const bottomA = await drawAwbGrid(copy1Y, LABEL_H, { topRightMode: 'piece', verticalStrip: true });
+  TF(7, 'bold'); TX(...BLACK);
+  pdf.text(`PIECE 1 OF ${pieces}`, M, bottomA + 5);
 
-  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
-  // COPY 1 — barcode in LEFT STRIP, content on right
-  // Navy outer border, crimson header, gold detail strip
-  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
-  {
-    const C1X = M, C1Y = copy1Y, C1W = UW, C1H = COPY_H;
-    const STRIP_W = 40; // left barcode strip width
-    const CONTENT_X = C1X + STRIP_W + 3;
-    const CONTENT_W = C1W - STRIP_W - 3;
+  // dashed cut line
+  const cutY = bottomA + 9;
+  pdf.setLineDashPattern([1.5, 1.5], 0);
+  D(120, 120, 120, 0.3); pdf.line(M, cutY, M + UW, cutY);
+  pdf.setLineDashPattern([], 0);
+  TF(6, 'normal'); TX(120, 120, 120);
+  pdf.text('✂  CUT HERE', PW / 2, cutY - 1.5, { align: 'center' });
 
-    // outer border (navy double)
-    D(...NAVY, 1.0); pdf.rect(C1X, C1Y, C1W, C1H);
-    D(...NAVY, 0.3); pdf.rect(C1X + 1, C1Y + 1, C1W - 2, C1H - 2);
-
-    // ── Left navy barcode strip ────────────────────────────────────────────
-    F(...NAVY); pdf.rect(C1X, C1Y, STRIP_W, C1H, 'F');
-
-    // Barcode in the strip (horizontal, top portion)
-    await addBarcode(pdf, refNumber, C1X + 2, C1Y + 2, STRIP_W - 4, 14);
-
-    // Tracking ref below barcode (rotated text)
-    TF(5.5, 'bold'); TX(...GOLD);
-    pdf.text(refNumber, C1X + STRIP_W / 2, C1Y + 19, { align: 'center' });
-
-    // "COPY 1" vertical text
-    TF(9, 'bold'); TX(...WHITE);
-    pdf.text('COPY  1', C1X + STRIP_W / 2, C1Y + 45, { align: 'center', angle: 90 });
-
-    // Service + date vertical labels
-    TF(6, 'bold'); TX(...GOLD);
-    pdf.text(service, C1X + STRIP_W / 2, C1Y + 72, { align: 'center', angle: 90 });
-    TF(5.5, 'normal'); TX(...SILVER);
-    pdf.text(bookingDate, C1X + STRIP_W / 2, C1Y + 92, { align: 'center', angle: 90 });
-
-    // Weight big in strip bottom area
-    TF(14, 'bold'); TX(...WHITE);
-    pdf.text(`${actWt}`, C1X + STRIP_W / 2, C1Y + C1H - 22, { align: 'center' });
-    TF(5.5, 'bold'); TX(...GOLD);
-    pdf.text('KG', C1X + STRIP_W / 2, C1Y + C1H - 15, { align: 'center' });
-    pdf.text('WEIGHT', C1X + STRIP_W / 2, C1Y + C1H - 10, { align: 'center' });
-
-    // strip bottom line
-    D(...GOLD, 0.4); pdf.line(C1X, C1Y + C1H - 6, C1X + STRIP_W, C1Y + C1H - 6);
-    TF(5, 'italic'); TX(180, 160, 50);
-    pdf.text('SKY XPRESS', C1X + STRIP_W / 2, C1Y + C1H - 3, { align: 'center' });
-
-    // vertical divider between strip and content
-    D(...GOLD, 0.5); pdf.line(C1X + STRIP_W + 1.5, C1Y, C1X + STRIP_W + 1.5, C1Y + C1H);
-
-    // ── Right content area ─────────────────────────────────────────────────
-    // Crimson header in content area
-    F(...CRIMSON); pdf.rect(CONTENT_X, C1Y, CONTENT_W, 10, 'F');
-    TF(9, 'bold'); TX(...WHITE);
-    pdf.text('AIRWAY BILL', CONTENT_X + 2, C1Y + 5);
-    TF(6, 'normal'); TX(...GOLD);
-    pdf.text(`Ref: ${refNumber}`, CONTENT_X + CONTENT_W - 2, C1Y + 5, { align: 'right' });
-    TF(5.5, 'normal'); TX(...SILVER);
-    pdf.text('SENDER COPY WITH PAYMENT', CONTENT_X + 2, C1Y + 8.5);
-
-    // Logo in header
-    await addLogo(pdf, CONTENT_X + CONTENT_W - 38, C1Y + 0.5, 36, 9);
-
-    // Shipper / Receiver two sub-columns in content area
-    const halfCW = (CONTENT_W - 3) / 2;
-    const shipCX = CONTENT_X;
-    const recvCX = CONTENT_X + halfCW + 3;
-
-    F(...OFFWH); D(...SILVER, 0.2);
-    pdf.rect(shipCX, C1Y + 10, halfCW, 65, 'FD');
-    pdf.rect(recvCX, C1Y + 10, halfCW, 65, 'FD');
-
-    // Shipper sub-header
-    F(...NAVY); pdf.rect(shipCX, C1Y + 10, halfCW, 5, 'F');
-    TF(6.5, 'bold'); TX(...WHITE); pdf.text('SHIPPER', shipCX + 2, C1Y + 14);
-
-    TF(6.5, 'bold'); TX(...NAVY);
-    let c1sY = C1Y + 19;
-    const c1WriteS = (lbl: string, val: string) => {
-      if (!val || val === 'N/A') return;
-      pdf.text(lbl, shipCX + 2, c1sY); TF(6, 'normal'); TX(...DARK);
-      const ls = pdf.splitTextToSize(val, halfCW - pdf.getTextWidth(lbl) - 4) as string[];
-      pdf.text(ls[0] ?? '', shipCX + 2 + pdf.getTextWidth(lbl) + 1, c1sY);
-      TF(6.5, 'bold'); TX(...NAVY); c1sY += 4;
-    };
-    c1WriteS('Name:', safeText(parcel.sender_name, ''));
-    c1WriteS('Co.:',  safeText(parcel.sender_company, ''));
-    TF(6, 'normal'); TX(...DARK);
-    [parcel.sender_address, parcel.sender_address_2, parcel.sender_address_3,
-     `${safeText(parcel.sender_city,'')}, ${codeToCountryName(safeText(parcel.sender_country,'Pakistan'))}`]
-      .map(p => p == null ? '' : String(p).trim()).filter(Boolean)
-      .slice(0, 4).forEach(p => {
-        const ls = pdf.splitTextToSize(p, halfCW - 4) as string[];
-        pdf.text(ls[0] ?? '', shipCX + 2, c1sY); c1sY += 3.5;
-      });
-    TF(6.5, 'bold'); TX(...NAVY);
-    c1WriteS('Ph.:', safeText(parcel.sender_phone, ''));
-    c1WriteS('CNIC:', safeText(parcel.sender_cnic, ''));
-
-    // Receiver sub-header
-    F(...CRIMSON); pdf.rect(recvCX, C1Y + 10, halfCW, 5, 'F');
-    TF(6.5, 'bold'); TX(...WHITE); pdf.text('RECEIVER', recvCX + 2, C1Y + 14);
-
-    TF(6.5, 'bold'); TX(...NAVY);
-    let c1rY = C1Y + 19;
-    const c1WriteR = (lbl: string, val: string) => {
-      if (!val || val === 'N/A') return;
-      pdf.text(lbl, recvCX + 2, c1rY); TF(6, 'normal'); TX(...DARK);
-      const ls = pdf.splitTextToSize(val, halfCW - pdf.getTextWidth(lbl) - 4) as string[];
-      pdf.text(ls[0] ?? '', recvCX + 2 + pdf.getTextWidth(lbl) + 1, c1rY);
-      TF(6.5, 'bold'); TX(...NAVY); c1rY += 4;
-    };
-    c1WriteR('Name:', safeText(parcel.receiver_name, ''));
-    c1WriteR('Co.:',  safeText(parcel.receiver_company, ''));
-    TF(6, 'normal'); TX(...DARK);
-    [parcel.receiver_address, parcel.receiver_address_2, parcel.receiver_address_3,
-     `${safeText(parcel.receiver_city,'')}, ${safeText(parcel.receiver_state,'')}`.replace(/^,\s*|,\s*$/g,''),
-     codeToCountryName(safeText(parcel.receiver_country,'United Kingdom'))]
-      .map(p => p == null ? '' : String(p).trim()).filter(Boolean)
-      .slice(0, 5).forEach(p => {
-        const ls = pdf.splitTextToSize(p, halfCW - 4) as string[];
-        pdf.text(ls[0] ?? '', recvCX + 2, c1rY); c1rY += 3.5;
-      });
-    TF(6.5, 'bold'); TX(...NAVY);
-    c1WriteR('Post:', safeText(parcel.receiver_postal_code, ''));
-    c1WriteR('Ph.:',  safeText(parcel.receiver_phone, ''));
-
-    // ── Gold detail strip (bottom of content area) ──────────────────────────
-    const detailStripY = C1Y + 77;
-    F(...GOLD); pdf.rect(CONTENT_X, detailStripY, CONTENT_W, 6, 'F');
-    TF(5.5, 'bold'); TX(...NAVY);
-    const detW = CONTENT_W / 5;
-    ['WEIGHT', 'DIM WT', 'CHARGEABLE', 'PIECES', 'TYPE'].forEach((lbl, i) => {
-      pdf.text(lbl, CONTENT_X + detW * i + detW / 2, detailStripY + 3.8, { align: 'center' });
-    });
-
-    F(...OFFWH); D(...GOLD, 0.3);
-    pdf.rect(CONTENT_X, detailStripY + 6, CONTENT_W, 8, 'FD');
-    TF(7, 'bold'); TX(...DARK);
-    [`${actWt} KG`, dimLabel, `${chargeWt} KG`, String(pieces), docType].forEach((val, i) => {
-      pdf.text(val, CONTENT_X + detW * i + detW / 2, detailStripY + 11.5, { align: 'center' });
-    });
-    [1,2,3,4].forEach(i => { D(...GOLD, 0.2); pdf.line(CONTENT_X + detW*i, detailStripY+6, CONTENT_X + detW*i, detailStripY+14); });
-
-    // ── Payment row ────────────────────────────────────────────────────────
-    const payY = detailStripY + 15;
-    F(...NAVY); pdf.rect(CONTENT_X, payY, CONTENT_W, 12, 'F');
-    TF(6, 'bold'); TX(...GOLD);
-    pdf.text('FREIGHT AMOUNT:', CONTENT_X + 2, payY + 5);
-    TF(12, 'bold'); TX(...WHITE);
-    pdf.text(freightLabel, CONTENT_X + 2, payY + 10.5);
-    TF(5.5, 'italic'); TX(...SILVER);
-    pdf.text('(Sender pays)', CONTENT_X + CONTENT_W - 2, payY + 10.5, { align: 'right' });
-
-    // ── Disclaimer + destination ────────────────────────────────────────────
-    const c1DiscY = payY + 14;
-    TF(5, 'italic'); TX(100, 100, 100);
-    pdf.text('I/WE DECLARE THE ABOVE PARTICULARS ARE TRUE & CORRECT. NOTHING DANGEROUS. MAX LIABILITY USD 100.', CONTENT_X + 1, c1DiscY, { maxWidth: CONTENT_W - 2 });
-
-    // Destination badge
-    F(...CRIMSON); pdf.rect(CONTENT_X, C1Y + C1H - 14, CONTENT_W, 14, 'F');
-    TF(6, 'bold'); TX(...GOLD); pdf.text('DESTINATION', CONTENT_X + 2, C1Y + C1H - 8);
-    TF(11, 'bold'); TX(...WHITE); pdf.text(destination.toUpperCase(), CONTENT_X + 2, C1Y + C1H - 3);
-    TF(6, 'normal'); TX(...SILVER);
-    pdf.text(`Service: ${service}  |  Date: ${bookingDate}`, CONTENT_X + CONTENT_W - 2, C1Y + C1H - 3, { align: 'right' });
-  }
-
-  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
-  // CUT LINE between copies
-  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
-  {
-    const cutY = copy1Y + COPY_H + GAP / 2;
-    pdf.setLineDashPattern([3, 2], 0);
-    D(150, 150, 150, 0.4); pdf.line(M, cutY, M + UW, cutY);
-    pdf.setLineDashPattern([], 0);
-    // scissors icon text
-    TF(7, 'normal'); TX(130, 130, 130);
-    pdf.text('✂  CUT HERE', PW / 2, cutY - 1.5, { align: 'center' });
-    // page label
-    TF(5.5, 'bold'); TX(...NAVY);
-    pdf.text(`REF: ${refNumber}  |  Page 2 of 2`, PW / 2, cutY + 3, { align: 'center' });
-  }
-
-  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
-  // COPY 2 — barcode CENTRED, different visual treatment
-  // Crimson outer border, navy header, two-column top then full barcode centre
-  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
-  {
-    const C2X = M, C2Y = copy2Y, C2W = UW, C2H = COPY_H;
-
-    // outer border (crimson double)
-    D(...CRIMSON, 1.0); pdf.rect(C2X, C2Y, C2W, C2H);
-    D(...GOLD, 0.4);    pdf.rect(C2X + 1, C2Y + 1, C2W - 2, C2H - 2);
-
-    // ── HEADER (crimson) ────────────────────────────────────────────────────
-    F(...CRIMSON); pdf.rect(C2X, C2Y, C2W, 12, 'F');
-
-    // Logo in header
-    await addLogo(pdf, C2X + 2, C2Y + 1, 40, 10);
-
-    TF(10, 'bold'); TX(...WHITE);
-    pdf.text('AIRWAY BILL', PW / 2, C2Y + 6, { align: 'center' });
-    TF(5.5, 'normal'); TX(...GOLD);
-    pdf.text('SENDER COPY  ·  WITH PAYMENT  ·  COPY 2', PW / 2, C2Y + 10, { align: 'center' });
-
-    // Ref badge top-right
-    F(...NAVY); pdf.rect(C2X + C2W - 42, C2Y + 1, 40, 10, 'F');
-    TF(5.5, 'bold'); TX(...GOLD);
-    pdf.text('REF #', C2X + C2W - 22, C2Y + 4.5, { align: 'center' });
-    TF(8, 'bold'); TX(...WHITE);
-    pdf.text(refNumber, C2X + C2W - 22, C2Y + 9.5, { align: 'center' });
-
-    // ── Two-column address section ──────────────────────────────────────────
-    const addrH   = 48;
-    const halfW2  = (C2W - 3) / 2;
-    const shipCX2 = C2X;
-    const recvCX2 = C2X + halfW2 + 3;
-
-    F(...OFFWH); D(...SILVER, 0.2);
-    pdf.rect(shipCX2, C2Y + 12, halfW2, addrH, 'FD');
-    pdf.rect(recvCX2, C2Y + 12, halfW2, addrH, 'FD');
-
-    // Shipper header
-    F(...NAVY); pdf.rect(shipCX2, C2Y + 12, halfW2, 5, 'F');
-    TF(6.5, 'bold'); TX(...WHITE);
-    pdf.text('SHIPPER', shipCX2 + 2, C2Y + 16);
-    TF(5.5, 'normal'); TX(...GOLD);
-    pdf.text(codeToCountryName(safeText(parcel.sender_country,'Pakistan')), shipCX2 + halfW2 - 2, C2Y + 16, { align: 'right' });
-
-    let c2sY = C2Y + 21;
-    const c2WriteS = (lbl: string, val: string) => {
-      if (!val || val === 'N/A') return;
-      TF(6, 'bold'); TX(...NAVY); pdf.text(lbl, shipCX2 + 2, c2sY);
-      TF(6, 'normal'); TX(...DARK);
-      const ls = pdf.splitTextToSize(val, halfW2 - pdf.getTextWidth(lbl) - 5) as string[];
-      pdf.text(ls[0] ?? '', shipCX2 + 2 + pdf.getTextWidth(lbl) + 1, c2sY);
-      c2sY += 3.8;
-    };
-    c2WriteS('Name:', safeText(parcel.sender_name, ''));
-    c2WriteS('Co.:',  safeText(parcel.sender_company, ''));
-    TF(6, 'normal'); TX(...DARK);
-    [parcel.sender_address, `${safeText(parcel.sender_city,'')}, ${codeToCountryName(safeText(parcel.sender_country,'Pakistan'))}`]
-      .map(p => p == null ? '' : String(p).trim()).filter(Boolean)
-      .slice(0, 3).forEach(p => { const ls = pdf.splitTextToSize(p, halfW2 - 4) as string[]; pdf.text(ls[0]??'', shipCX2 + 2, c2sY); c2sY += 3.5; });
-    TF(6, 'bold'); TX(...NAVY);
-    c2WriteS('Ph.:', safeText(parcel.sender_phone, ''));
-    c2WriteS('CNIC:', safeText(parcel.sender_cnic, ''));
-
-    // Receiver header
-    F(...CRIMSON); pdf.rect(recvCX2, C2Y + 12, halfW2, 5, 'F');
-    TF(6.5, 'bold'); TX(...WHITE);
-    pdf.text('RECEIVER', recvCX2 + 2, C2Y + 16);
-    TF(5.5, 'normal'); TX(...GOLD);
-    pdf.text(destination, recvCX2 + halfW2 - 2, C2Y + 16, { align: 'right' });
-
-    let c2rY = C2Y + 21;
-    const c2WriteR = (lbl: string, val: string) => {
-      if (!val || val === 'N/A') return;
-      TF(6, 'bold'); TX(...NAVY); pdf.text(lbl, recvCX2 + 2, c2rY);
-      TF(6, 'normal'); TX(...DARK);
-      const ls = pdf.splitTextToSize(val, halfW2 - pdf.getTextWidth(lbl) - 5) as string[];
-      pdf.text(ls[0] ?? '', recvCX2 + 2 + pdf.getTextWidth(lbl) + 1, c2rY);
-      c2rY += 3.8;
-    };
-    c2WriteR('Name:', safeText(parcel.receiver_name, ''));
-    c2WriteR('Co.:',  safeText(parcel.receiver_company, ''));
-    TF(6, 'normal'); TX(...DARK);
-    [parcel.receiver_address,
-     `${safeText(parcel.receiver_city,'')}, ${safeText(parcel.receiver_state,'')}`.replace(/^,\s*|,\s*$/g,''),
-     codeToCountryName(safeText(parcel.receiver_country,'United Kingdom'))]
-      .map(p => p == null ? '' : String(p).trim()).filter(Boolean)
-      .slice(0, 3).forEach(p => { const ls = pdf.splitTextToSize(p, halfW2 - 4) as string[]; pdf.text(ls[0]??'', recvCX2 + 2, c2rY); c2rY += 3.5; });
-    TF(6, 'bold'); TX(...NAVY);
-    c2WriteR('Post:', safeText(parcel.receiver_postal_code, ''));
-    c2WriteR('Ph.:',  safeText(parcel.receiver_phone, ''));
-
-    // ── CENTRED BARCODE section ─────────────────────────────────────────────
-    const bcSectionY = C2Y + 12 + addrH + 2;
-    F(...NAVY); pdf.rect(C2X, bcSectionY, C2W, 5, 'F');
-    TF(6.5, 'bold'); TX(...GOLD);
-    pdf.text('▶  TRACKING BARCODE', C2X + 2, bcSectionY + 3.5);
-    TF(6, 'normal'); TX(...SILVER);
-    pdf.text(`AWB REF: ${refNumber}`, C2X + C2W - 2, bcSectionY + 3.5, { align: 'right' });
-
-    // Barcode full-width centred
-    const bcBgY = bcSectionY + 5;
-    F(240, 244, 255); pdf.rect(C2X, bcBgY, C2W, 18, 'F');
-    D(...NAVY, 0.2); pdf.rect(C2X, bcBgY, C2W, 18);
-    await addBarcode(pdf, refNumber, C2X + 10, bcBgY + 2, C2W - 20, 12);
-    TF(7.5, 'bold'); TX(...NAVY);
-    pdf.text(refNumber, PW / 2, bcBgY + 16, { align: 'center' });
-
-    // ── DETAILS strip ───────────────────────────────────────────────────────
-    const detailY2 = bcBgY + 20;
-    F(...GOLD); pdf.rect(C2X, detailY2, C2W, 6, 'F');
-    TF(5.5, 'bold'); TX(...NAVY);
-    const det2W = C2W / 6;
-    ['WEIGHT','DIM WT','CHARGEABLE','PIECES','TYPE','SERVICE'].forEach((lbl, i) => {
-      pdf.text(lbl, C2X + det2W*i + det2W/2, detailY2 + 3.8, { align: 'center' });
-    });
-
-    F(...OFFWH); D(...GOLD, 0.3);
-    pdf.rect(C2X, detailY2 + 6, C2W, 8, 'FD');
-    TF(7, 'bold'); TX(...DARK);
-    [`${actWt} KG`, dimLabel, `${chargeWt} KG`, String(pieces), docType, service].forEach((val, i) => {
-      pdf.text(val, C2X + det2W*i + det2W/2, detailY2 + 11.5, { align: 'center' });
-    });
-    [1,2,3,4,5].forEach(i => { D(...GOLD, 0.2); pdf.line(C2X + det2W*i, detailY2+6, C2X + det2W*i, detailY2+14); });
-
-    // ── Payment + label footer ──────────────────────────────────────────────
-    const pay2Y = detailY2 + 16;
-    // payment block left
-    F(255, 245, 240); D(...CRIMSON, 0.4);
-    pdf.rect(C2X, pay2Y, C2W * 0.6, 14, 'FD');
-    F(...CRIMSON); pdf.rect(C2X, pay2Y, 4, 14, 'F');
-    TF(6, 'bold'); TX(...CRIMSON);
-    pdf.text('FREIGHT AMOUNT', C2X + 6, pay2Y + 5);
-    TF(14, 'bold'); TX(...NAVY);
-    pdf.text(freightLabel, C2X + 6, pay2Y + 12);
-
-    // destination badge right
-    F(...NAVY); pdf.rect(C2X + C2W * 0.62, pay2Y, C2W * 0.38, 14, 'F');
-    TF(5.5, 'bold'); TX(...GOLD);
-    pdf.text('TO DESTINATION', C2X + C2W * 0.62 + 2, pay2Y + 4.5);
-    TF(9, 'bold'); TX(...WHITE);
-    pdf.text(destination.toUpperCase(), C2X + C2W * 0.62 + 2, pay2Y + 10.5);
-
-    // ── Bottom disclaimer + copy label ──────────────────────────────────────
-    const c2DiscY = pay2Y + 16;
-    TF(5, 'italic'); TX(110, 110, 110);
-    pdf.text('I/WE DECLARE THE ABOVE PARTICULARS ARE TRUE & CORRECT. NOTHING DANGEROUS/PROHIBITED. MAX LIABILITY USD 100. CONSIGNEE PAYS ALL DESTINATION DUTIES.', C2X + 2, c2DiscY, { maxWidth: C2W - 4 });
-
-    // Copy footer bar
-    F(...CRIMSON); pdf.rect(C2X, C2Y + C2H - 7, C2W, 7, 'F');
-    TF(7, 'bold'); TX(...WHITE);
-    pdf.text(`COPY 2  ·  Booking Office: Sky Office  ·  ${bookingDate}`, C2X + 2, C2Y + C2H - 3);
-    TF(6, 'normal'); TX(...GOLD);
-    pdf.text('skyxpress786@gmail.com  |  0321 4710522', C2X + C2W - 2, C2Y + C2H - 3, { align: 'right' });
-  }
+  const copy2Y = cutY + 4;
+  const bottomB = await drawAwbGrid(copy2Y, LABEL_H, { topRightMode: 'none', verticalStrip: false });
+  TF(7, 'bold'); TX(...BLACK);
+  pdf.text('ACCOUNTS COPY', M, bottomB + 5);
 
   handlePDFOutput(pdf, `AWB-Sender-Copy-${refNumber}.pdf`, mode);
 };
