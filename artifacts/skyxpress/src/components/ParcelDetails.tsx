@@ -16,6 +16,7 @@ interface ParcelDetailsProps {
   parcel: any;
   onUpdate: () => void;
   onClose: () => void;
+  readOnly?: boolean;
 }
 
 const statusOptions = [
@@ -95,7 +96,7 @@ interface InfoForm {
   special_instructions: string;
 }
 
-export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps) => {
+export const ParcelDetails = ({ parcel, onUpdate, onClose, readOnly = false }: ParcelDetailsProps) => {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState(parcel.current_status);
   const [statusLocation, setStatusLocation] = useState(parcel.current_location || "");
@@ -398,7 +399,7 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps)
               <Package className="h-5 w-5" />
               Parcel Information
             </CardTitle>
-            {editingInfo ? (
+            {!readOnly && (editingInfo ? (
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={cancelEditingInfo} disabled={savingInfo}>
                   <X className="h-4 w-4 mr-1" />
@@ -414,7 +415,7 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps)
                 <Pencil className="h-4 w-4 mr-1" />
                 Edit
               </Button>
-            )}
+            ))}
           </div>
         </CardHeader>
         <CardContent>
@@ -766,8 +767,8 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps)
         </Card>
       )}
 
-      {/* X-Ray Email Notification */}
-      <Card className="border-emerald-200 bg-emerald-50/40">
+      {/* X-Ray Email Notification — admin/staff only */}
+      {!readOnly && <Card className="border-emerald-200 bg-emerald-50/40">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-emerald-800">
             <ScanLine className="h-5 w-5" />
@@ -832,29 +833,31 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose }: ParcelDetailsProps)
             </p>
           </div>
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* Actions */}
       <div className="flex items-center justify-between pt-4 border-t gap-3 flex-wrap">
-        <Button
-          onClick={() => sendXrayEmail(parcel)}
-          disabled={emailSending || !parcel.sender_email}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
-        >
-          {emailSending ? (
-            <>
-              <span className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full inline-block" />
-              Sending…
-            </>
-          ) : (
-            <>
-              <Mail className="h-4 w-4" />
-              {emailSentAt ? "Resend X-Ray Email" : "Send X-Ray Email"}
-              {emailSentAt && <CheckCircle className="h-3.5 w-3.5 ml-1 opacity-80" />}
-            </>
-          )}
-        </Button>
-        <Button variant="outline" onClick={onClose}>
+        {!readOnly && (
+          <Button
+            onClick={() => sendXrayEmail(parcel)}
+            disabled={emailSending || !parcel.sender_email}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+          >
+            {emailSending ? (
+              <>
+                <span className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full inline-block" />
+                Sending…
+              </>
+            ) : (
+              <>
+                <Mail className="h-4 w-4" />
+                {emailSentAt ? "Resend X-Ray Email" : "Send X-Ray Email"}
+                {emailSentAt && <CheckCircle className="h-3.5 w-3.5 ml-1 opacity-80" />}
+              </>
+            )}
+          </Button>
+        )}
+        <Button variant="outline" onClick={onClose} className={readOnly ? "ml-auto" : ""}>
           Close
         </Button>
       </div>

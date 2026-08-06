@@ -126,7 +126,7 @@ export const PartnerDashboard = ({ user, profile }: PartnerDashboardProps) => {
 
         {/* My Parcels — filtered to this partner only */}
         <TabsContent value="parcels">
-          <ParcelManagement filterUserId={user?.id} />
+          <ParcelManagement filterUserId={user?.id} isPartnerView={true} />
         </TabsContent>
 
         {/* My Manifests — filtered to this partner's email */}

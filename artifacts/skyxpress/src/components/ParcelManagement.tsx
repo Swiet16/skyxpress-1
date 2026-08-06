@@ -115,7 +115,7 @@ const statusColors: Record<string, string> = {
   cancelled: "bg-red-100 text-red-800",
 };
 
-export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {}) => {
+export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filterUserId?: string; isPartnerView?: boolean } = {}) => {
   const PAGE_SIZE = 10;
   const [parcels, setParcels] = useState<Parcel[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -931,7 +931,7 @@ export const ParcelManagement = ({ filterUserId }: { filterUserId?: string } = {
         <DialogContent className="w-full max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 sm:p-6">
           <DialogHeader><DialogTitle>Parcel Details</DialogTitle></DialogHeader>
           {selectedParcel && (
-            <ParcelDetails parcel={selectedParcel} onUpdate={fetchParcels} onClose={() => setShowDetailsModal(false)} />
+            <ParcelDetails parcel={selectedParcel} onUpdate={fetchParcels} onClose={() => setShowDetailsModal(false)} readOnly={isPartnerView} />
           )}
         </DialogContent>
       </Dialog>
