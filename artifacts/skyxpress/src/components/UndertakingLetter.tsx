@@ -52,13 +52,35 @@ export const UndertakingLetter = ({ open, onClose, parcel }: UndertakingLetterPr
     meta.setAttribute("charset", "utf-8");
     doc.head.appendChild(meta);
 
-    const styleContent = Array.from(document.querySelectorAll("style"))
-      .map((el) => el.textContent || "")
-      .join("\n");
+    // Collect BOTH inline <style> tags AND linked stylesheets. Tailwind's
+    // compiled CSS is usually a <link rel="stylesheet">, not a <style> tag —
+    // the original code only copied <style> tags, which is why the print
+    // layout lost all Tailwind styling and looked different from the dialog.
+    const styleNodes = Array.from(
+      document.querySelectorAll('style, link[rel="stylesheet"]')
+    );
 
-    const styleEl = doc.createElement("style");
-    styleEl.textContent = styleContent;
-    doc.head.appendChild(styleEl);
+    const linkLoadPromises: Promise<void>[] = [];
+
+    styleNodes.forEach((node) => {
+      if (node.tagName === "LINK") {
+        const link = doc.createElement("link");
+        link.rel = "stylesheet";
+        link.href = (node as HTMLLinkElement).href; // absolute URL, safe to reuse
+        doc.head.appendChild(link);
+
+        linkLoadPromises.push(
+          new Promise((resolve) => {
+            link.onload = () => resolve();
+            link.onerror = () => resolve(); // don't block printing if one fails
+          })
+        );
+      } else {
+        const styleEl = doc.createElement("style");
+        styleEl.textContent = node.textContent || "";
+        doc.head.appendChild(styleEl);
+      }
+    });
 
     const printStyle = doc.createElement("style");
     printStyle.textContent = `
@@ -72,11 +94,15 @@ export const UndertakingLetter = ({ open, onClose, parcel }: UndertakingLetterPr
     const clone = doc.importNode(letterEl, true);
     doc.body.appendChild(clone);
 
-    setTimeout(() => {
-      printWindow.focus();
-      printWindow.print();
-      printWindow.close();
-    }, 400);
+    // Wait for all linked stylesheets to actually finish loading before
+    // printing — a fixed setTimeout risks printing before CSS is applied.
+    Promise.all(linkLoadPromises).then(() => {
+      setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+        printWindow.close();
+      }, 150);
+    });
   };
 
   return (
