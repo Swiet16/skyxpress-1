@@ -138,16 +138,10 @@ const BAG_TYPES  = ["Standard Bag", "Heavy Duty Bag", "Cardboard Box", "Wooden C
 const BAG_SIZES  = ["Extra Small (XS)", "Small (S)", "Medium (M)", "Large (L)", "Extra Large (XL)", "XXL", "Custom"];
 const SEAL_TYPES = ["Plastic Seal", "Metal Seal", "Zip Tie", "Tamper Tape", "No Seal"];
 
-const statusColors: Record<string, string> = {
-  delivered:        "bg-green-100 text-green-800 border-green-200",
-  in_transit:       "bg-blue-100 text-blue-800 border-blue-200",
-  created:          "bg-yellow-100 text-yellow-800 border-yellow-200",
-  picked_up:        "bg-blue-100 text-blue-800 border-blue-200",
-  customs:          "bg-orange-100 text-orange-800 border-orange-200",
-  out_for_delivery: "bg-indigo-100 text-indigo-800 border-indigo-200",
-  cancelled:        "bg-red-100 text-red-800 border-red-200",
-  processing:       "bg-purple-100 text-purple-800 border-purple-200",
-};
+// NOTE: parcel-level statuses now render with the SAME full status list as the
+// manifest (MANIFEST_STATUSES below) via <ManifestStatusBadge />, so the old
+// 8-value statusColors map (which didn't know about flight/customs/etc. statuses)
+// has been removed to avoid the two lists drifting out of sync again.
 
 export const MANIFEST_STATUSES = [
   { value: "created",             label: "Created",              icon: "🆕", tw: "bg-amber-400 text-white border-amber-500",       dot: "bg-amber-300"   },
@@ -853,24 +847,70 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
   const toggleSelectAll = () =>
     setSelectedIds((prev) => prev.size === filtered.length ? new Set() : new Set(filtered.map((e) => e.manifestId)));
 
+  // ── Cascade a status change down to every parcel inside a manifest ──────────
+  // Keeps three places in sync whenever a manifest's status is changed:
+  //   1. The manifest record itself (manifestStatus)
+  //   2. Each parcel embedded in that manifest's `parcels` array (current_status)
+  //   3. The standalone `parcels` table in Supabase, which is what the Parcel
+  //      Management screen reads from — so a status set here shows up there too.
+  const cascadeStatusToParcels = async (manifestId: string, status: string, parcels: any[]) => {
+    const hasParcels = parcels && parcels.length > 0;
+    const updatedParcels = hasParcels ? parcels.map((p) => ({ ...p, current_status: status })) : parcels;
+
+    // 1+2. Persist the manifest status, and (if we have them) the parcels with new current_status
+    await updateManifestInStockDB(
+      manifestId,
+      hasParcels ? { manifestStatus: status, parcels: updatedParcels } : { manifestStatus: status }
+    );
+
+    // 3. Push the same status into the shared `parcels` table (Parcel Management backend)
+    if (hasParcels) {
+      const trackingIds = updatedParcels.map((p) => p.tracking_id).filter(Boolean);
+      if (trackingIds.length > 0) {
+        try {
+          const { error } = await supabase
+            .from("parcels")
+            .update({ current_status: status, updated_at: new Date().toISOString() })
+            .in("tracking_id", trackingIds);
+          if (error) {
+            console.warn("[ManifestStock] failed to sync status to parcels table:", error.message);
+          }
+        } catch (err) {
+          console.warn("[ManifestStock] parcels table sync error:", err);
+        }
+      }
+    }
+
+    return updatedParcels;
+  };
+
   const handleBulkStatusApply = async () => {
     if (!bulkStatus || selectedIds.size === 0) return;
-    await Promise.all([...selectedIds].map((id) => updateManifestInStockDB(id, { manifestStatus: bulkStatus })));
+    await Promise.all(
+      [...selectedIds].map((id) => {
+        const entry = entries.find((e) => e.manifestId === id);
+        return cascadeStatusToParcels(id, bulkStatus, entry?.parcels || []);
+      })
+    );
     await reload();
     const label = MANIFEST_STATUSES.find((s) => s.value === bulkStatus)?.label || bulkStatus;
     const count = selectedIds.size;
     setSelectedIds(new Set());
     setShowBulkDialog(false);
-    toast({ title: `Status updated ✓`, description: `${count} manifest(s) → ${label}` });
+    toast({ title: `Status updated ✓`, description: `${count} manifest(s) → ${label} (parcels synced)` });
     setBulkStatus("");
   };
 
   const handleSingleStatus = async (manifestId: string, status: string) => {
-    await updateManifestInStockDB(manifestId, { manifestStatus: status });
+    const entry = entries.find((e) => e.manifestId === manifestId);
+    const sourceParcels = editing?.manifestId === manifestId ? editing.parcels : entry?.parcels || [];
+    const updatedParcels = await cascadeStatusToParcels(manifestId, status, sourceParcels);
     await reload();
-    if (editing?.manifestId === manifestId) setEditing((e) => e ? { ...e, manifestStatus: status } : e);
+    if (editing?.manifestId === manifestId) {
+      setEditing((e) => e ? { ...e, manifestStatus: status, parcels: updatedParcels || e.parcels } : e);
+    }
     const label = MANIFEST_STATUSES.find((s) => s.value === status)?.label || status;
-    toast({ title: "Status updated ✓", description: `${manifestId} → ${label}` });
+    toast({ title: "Status updated ✓", description: `${manifestId} → ${label} (parcels synced)` });
   };
 
   const filtered = entries.filter((e) => {
@@ -1599,9 +1639,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                                   <td className="px-3 py-2 font-semibold">{p.pieces ?? 1}</td>
                                   <td className="px-3 py-2 font-semibold">{p.weight} kg</td>
                                   <td className="px-3 py-2">
-                                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold border ${statusColors[p.current_status] || "bg-slate-100 text-slate-600 border-slate-200"}`}>
-                                      {(p.current_status || "").replace(/_/g, " ")}
-                                    </span>
+                                    <ManifestStatusBadge status={p.current_status} size="xs" />
                                   </td>
                                 </tr>
                               ))}
