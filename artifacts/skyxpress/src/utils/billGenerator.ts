@@ -1252,7 +1252,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     sectionLabel(xA + aPad + b1 + s(1.4), ay, wA, 'ACCOUNT NAME');
     ay += s(3.2);
     TF(Math.max(5.6, s(6.4)), 'bold'); TX(INK);
-    pdf.text('Sky Xpress Worldwide Express', xA + aPad, ay);
+    pdf.text(safeText(parcel.created_by_name, 'www.skyxpress.site'), xA + aPad, ay);
 
     const shipperTop = boxTop + accountH;
     D(LINE, 0.25); pdf.line(xA, shipperTop, xA + wA, shipperTop);
