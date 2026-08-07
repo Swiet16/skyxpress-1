@@ -29,15 +29,17 @@ interface FormData {
   sender_email: string; sender_cnic: string; sender_address: string;
   sender_address_2: string; sender_address_3: string;
   sender_city: string; sender_country: string;
+  sender_vat_no: string; sender_eori: string; sender_tax_id: string;
   receiver_name: string; receiver_company: string; receiver_email: string;
   receiver_phone: string; receiver_address: string; receiver_address_2: string;
   receiver_address_3: string; receiver_city: string; receiver_state: string;
   receiver_postal_code: string; receiver_country: string;
+  receiver_vat_no: string; receiver_eori: string;
   parcel_type: string; weight: string; length: string; width: string; height: string;
   declared_value: string; service_type: string; document_type: string;
   from_country: string; to_country: string; special_instructions: string;
   pieces: number; freight_amount_pkr: string; dim_weight_override: string;
-  amount_override: string;
+  amount_override: string; currency: string;
   items: Array<{ description: string; quantity: number; unit_price: number; hs_code: string; total: number; }>;
 }
 
@@ -61,6 +63,56 @@ const PARCEL_TYPES = [
   { value: "envelope", label: "Envelope", icon: "✉️" },
   { value: "pallet", label: "Pallet", icon: "🏗️" },
   { value: "other", label: "Other", icon: "📫" },
+];
+
+// ─── Currencies (40+ major world currencies) ─────────────────────────────────
+const CURRENCIES = [
+  { code: "USD", label: "USD — US Dollar" },
+  { code: "EUR", label: "EUR — Euro" },
+  { code: "GBP", label: "GBP — British Pound" },
+  { code: "PKR", label: "PKR — Pakistani Rupee" },
+  { code: "AED", label: "AED — UAE Dirham" },
+  { code: "SAR", label: "SAR — Saudi Riyal" },
+  { code: "QAR", label: "QAR — Qatari Riyal" },
+  { code: "KWD", label: "KWD — Kuwaiti Dinar" },
+  { code: "BHD", label: "BHD — Bahraini Dinar" },
+  { code: "OMR", label: "OMR — Omani Rial" },
+  { code: "JOD", label: "JOD — Jordanian Dinar" },
+  { code: "INR", label: "INR — Indian Rupee" },
+  { code: "CNY", label: "CNY — Chinese Yuan" },
+  { code: "JPY", label: "JPY — Japanese Yen" },
+  { code: "KRW", label: "KRW — South Korean Won" },
+  { code: "AUD", label: "AUD — Australian Dollar" },
+  { code: "CAD", label: "CAD — Canadian Dollar" },
+  { code: "CHF", label: "CHF — Swiss Franc" },
+  { code: "SEK", label: "SEK — Swedish Krona" },
+  { code: "NOK", label: "NOK — Norwegian Krone" },
+  { code: "DKK", label: "DKK — Danish Krone" },
+  { code: "NZD", label: "NZD — New Zealand Dollar" },
+  { code: "SGD", label: "SGD — Singapore Dollar" },
+  { code: "HKD", label: "HKD — Hong Kong Dollar" },
+  { code: "ZAR", label: "ZAR — South African Rand" },
+  { code: "TRY", label: "TRY — Turkish Lira" },
+  { code: "RUB", label: "RUB — Russian Ruble" },
+  { code: "BRL", label: "BRL — Brazilian Real" },
+  { code: "MXN", label: "MXN — Mexican Peso" },
+  { code: "MYR", label: "MYR — Malaysian Ringgit" },
+  { code: "THB", label: "THB — Thai Baht" },
+  { code: "IDR", label: "IDR — Indonesian Rupiah" },
+  { code: "PHP", label: "PHP — Philippine Peso" },
+  { code: "VND", label: "VND — Vietnamese Dong" },
+  { code: "EGP", label: "EGP — Egyptian Pound" },
+  { code: "NGN", label: "NGN — Nigerian Naira" },
+  { code: "KES", label: "KES — Kenyan Shilling" },
+  { code: "GHS", label: "GHS — Ghanaian Cedi" },
+  { code: "BDT", label: "BDT — Bangladeshi Taka" },
+  { code: "LKR", label: "LKR — Sri Lankan Rupee" },
+  { code: "NPR", label: "NPR — Nepalese Rupee" },
+  { code: "PLN", label: "PLN — Polish Zloty" },
+  { code: "CZK", label: "CZK — Czech Koruna" },
+  { code: "HUF", label: "HUF — Hungarian Forint" },
+  { code: "RON", label: "RON — Romanian Leu" },
+  { code: "ILS", label: "ILS — Israeli Shekel" },
 ];
 
 // ─── STEP CONFIG ─────────────────────────────────────────────────────────────
@@ -478,6 +530,9 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     sender_address_3: parcel?.sender_address_3 || "",
     sender_city: parcel?.sender_city || "",
     sender_country: parcel?.sender_country || "",
+    sender_vat_no: parcel?.sender_vat_no || "",
+    sender_eori: parcel?.sender_eori || "",
+    sender_tax_id: parcel?.sender_tax_id || "",
     receiver_name: parcel?.receiver_name || "",
     receiver_company: parcel?.receiver_company || "",
     receiver_email: parcel?.receiver_email || "",
@@ -489,6 +544,8 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     receiver_state: parcel?.receiver_state || "",
     receiver_postal_code: parcel?.receiver_postal_code || "",
     receiver_country: parcel?.receiver_country || "",
+    receiver_vat_no: parcel?.receiver_vat_no || "",
+    receiver_eori: parcel?.receiver_eori || "",
     parcel_type: parcel?.parcel_type || "box",
     weight: parcel?.weight?.toString() || "",
     length: parcel?.length?.toString() || "",
@@ -504,6 +561,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     freight_amount_pkr: parcel?.freight_amount_pkr?.toString() || "",
     dim_weight_override: parcel?.dim_weight_override?.toString() || "",
     amount_override: parcel?.amount_override?.toString() || "",
+    currency: parcel?.currency || "USD",
     items: parcel?.items?.length
       ? parcel.items
       : [{ description: "", quantity: 1, unit_price: 0, hs_code: "", total: 0 }],
@@ -573,7 +631,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     const t = setTimeout(async () => {
       setSenderSearching(true);
       const { data } = await supabase.from("parcels")
-        .select("sender_name,sender_company,sender_phone,sender_email,sender_cnic,sender_address,sender_city,sender_country")
+        .select("sender_name,sender_company,sender_phone,sender_email,sender_cnic,sender_address,sender_city,sender_country,sender_vat_no,sender_eori,sender_tax_id")
         .or(`sender_name.ilike.%${senderSearch}%,sender_phone.ilike.%${senderSearch}%`)
         .order("created_at", { ascending: false }).limit(8);
       if (data) {
@@ -593,7 +651,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     const t = setTimeout(async () => {
       setReceiverSearching(true);
       const { data } = await supabase.from("parcels")
-        .select("receiver_name,receiver_company,receiver_phone,receiver_email,receiver_address,receiver_city,receiver_state,receiver_postal_code,receiver_country")
+        .select("receiver_name,receiver_company,receiver_phone,receiver_email,receiver_address,receiver_city,receiver_state,receiver_postal_code,receiver_country,receiver_vat_no,receiver_eori")
         .or(`receiver_name.ilike.%${receiverSearch}%,receiver_phone.ilike.%${receiverSearch}%`)
         .order("created_at", { ascending: false }).limit(8);
       if (data) {
@@ -610,13 +668,13 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
   const set = (field: keyof FormData, value: any) => setFormData((prev) => ({ ...prev, [field]: value }));
 
   const fillSender = (row: any) => {
-    setFormData((prev) => ({ ...prev, sender_name: row.sender_name || "", sender_company: row.sender_company || "", sender_phone: row.sender_phone || "", sender_email: row.sender_email || "", sender_cnic: row.sender_cnic || "", sender_address: row.sender_address || "", sender_city: row.sender_city || "", sender_country: row.sender_country || "" }));
+    setFormData((prev) => ({ ...prev, sender_name: row.sender_name || "", sender_company: row.sender_company || "", sender_phone: row.sender_phone || "", sender_email: row.sender_email || "", sender_cnic: row.sender_cnic || "", sender_address: row.sender_address || "", sender_city: row.sender_city || "", sender_country: row.sender_country || "", sender_vat_no: row.sender_vat_no || "", sender_eori: row.sender_eori || "", sender_tax_id: row.sender_tax_id || "" }));
     setSenderSearch(""); setSenderResults([]);
     toast({ title: "Sender filled", description: "Details copied from a previous parcel." });
   };
 
   const fillReceiver = (row: any) => {
-    setFormData((prev) => ({ ...prev, receiver_name: row.receiver_name || "", receiver_company: row.receiver_company || "", receiver_phone: row.receiver_phone || "", receiver_email: row.receiver_email || "", receiver_address: row.receiver_address || "", receiver_city: row.receiver_city || "", receiver_state: row.receiver_state || "", receiver_postal_code: row.receiver_postal_code || "", receiver_country: row.receiver_country || "" }));
+    setFormData((prev) => ({ ...prev, receiver_name: row.receiver_name || "", receiver_company: row.receiver_company || "", receiver_phone: row.receiver_phone || "", receiver_email: row.receiver_email || "", receiver_address: row.receiver_address || "", receiver_city: row.receiver_city || "", receiver_state: row.receiver_state || "", receiver_postal_code: row.receiver_postal_code || "", receiver_country: row.receiver_country || "", receiver_vat_no: row.receiver_vat_no || "", receiver_eori: row.receiver_eori || "" }));
     setReceiverSearch(""); setReceiverResults([]);
     toast({ title: "Receiver filled", description: "Details copied from a previous parcel." });
   };
@@ -785,6 +843,15 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
       <Field label="Country" required>
         <CountrySelect value={formData.sender_country} onValueChange={(v: string) => set("sender_country", v)} countries={countries} loading={countriesLoading} />
       </Field>
+      <Field label="VAT No.">
+        <StyledInput value={formData.sender_vat_no} onChange={(e: any) => set("sender_vat_no", e.target.value)} placeholder="Optional" />
+      </Field>
+      <Field label="EORI">
+        <StyledInput value={formData.sender_eori} onChange={(e: any) => set("sender_eori", e.target.value)} placeholder="Optional" />
+      </Field>
+      <Field label="Tax ID">
+        <StyledInput value={formData.sender_tax_id} onChange={(e: any) => set("sender_tax_id", e.target.value)} placeholder="Optional" />
+      </Field>
       <div className="col-span-2">
         <Field label="Address" required>
           <textarea
@@ -840,6 +907,12 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
       <Field label="Country" required>
         <CountrySelect value={formData.receiver_country} onValueChange={(v: string) => set("receiver_country", v)} countries={countries} loading={countriesLoading} />
       </Field>
+      <Field label="VAT No.">
+        <StyledInput value={formData.receiver_vat_no} onChange={(e: any) => set("receiver_vat_no", e.target.value)} placeholder="Optional" />
+      </Field>
+      <Field label="EORI">
+        <StyledInput value={formData.receiver_eori} onChange={(e: any) => set("receiver_eori", e.target.value)} placeholder="Optional" />
+      </Field>
       <div className="col-span-2">
         <Field label="Address" required>
           <textarea
@@ -889,7 +962,14 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
         <Field label="Height (cm)">
           <StyledInput type="number" step="0.1" value={formData.height} onChange={(e: any) => set("height", e.target.value)} placeholder="0" />
         </Field>
-        <Field label="Declared Value ($)">
+        <Field label="Currency" hint="Applies to declared value & freight">
+          <StyledSelect value={formData.currency} onValueChange={(v: string) => set("currency", v)} placeholder="Select currency">
+            {CURRENCIES.map((c) => (
+              <SelectItem key={c.code} value={c.code} className="text-white text-sm">{c.label}</SelectItem>
+            ))}
+          </StyledSelect>
+        </Field>
+        <Field label={`Declared Value (${formData.currency})`}>
           <StyledInput type="number" step="0.01" value={formData.declared_value} onChange={(e: any) => set("declared_value", e.target.value)} placeholder="0.00" />
         </Field>
         <Field label="Freight (PKR)">
@@ -898,7 +978,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
         <Field label="Dim Weight Override">
           <StyledInput type="number" step="0.01" value={formData.dim_weight_override} onChange={(e: any) => set("dim_weight_override", e.target.value)} placeholder="Auto" />
         </Field>
-        <Field label="Amount Override ($)">
+        <Field label={`Amount Override (${formData.currency})`}>
           <StyledInput type="number" step="0.01" value={formData.amount_override} onChange={(e: any) => set("amount_override", e.target.value)} placeholder="Auto" />
         </Field>
         <Field label="Origin Country">
