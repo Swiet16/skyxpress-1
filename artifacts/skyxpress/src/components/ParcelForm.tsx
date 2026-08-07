@@ -24,6 +24,7 @@ interface ParcelFormProps {
 interface Country { code: string; name: string; continent?: string; }
 interface FormData {
   reference_id: string; tracking_id: string;
+  created_by_name: string;
   sender_name: string; sender_company: string; sender_phone: string;
   sender_email: string; sender_cnic: string; sender_address: string;
   sender_address_2: string; sender_address_3: string;
@@ -461,10 +462,12 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [trackingIdLoading, setTrackingIdLoading] = useState(false);
   const [referenceIdLoading, setReferenceIdLoading] = useState(false);
+  const [createdByLoading, setCreatedByLoading] = useState(false);
 
   const [formData, setFormData] = useState<FormData>({
     reference_id: parcel?.reference_id || "",
     tracking_id: parcel?.tracking_id || "",
+    created_by_name: parcel?.created_by_name || "",
     sender_name: parcel?.sender_name || "",
     sender_company: parcel?.sender_company || "",
     sender_phone: parcel?.sender_phone || "",
@@ -541,6 +544,26 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     supabase.rpc("peek_sequential_reference").then(({ data, error }) => {
       if (!error && data) setFormData((prev) => prev.reference_id ? prev : { ...prev, reference_id: data });
       setReferenceIdLoading(false);
+    });
+  }, []);
+
+  // Auto-fill "Created By" from the current user's profile. Only runs for
+  // new parcels — when editing, we keep showing the original creator's name
+  // that was stored on the parcel at creation time.
+  useEffect(() => {
+    if (isEdit) return;
+    setCreatedByLoading(true);
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) { setCreatedByLoading(false); return; }
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("user_id", session.user.id)
+        .single();
+      if (profile?.full_name) {
+        setFormData((prev) => prev.created_by_name ? prev : { ...prev, created_by_name: profile.full_name });
+      }
+      setCreatedByLoading(false);
     });
   }, []);
 
@@ -698,6 +721,18 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
             className="font-mono"
           />
           {referenceIdLoading && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-white/30" />
+          )}
+        </div>
+      </Field>
+      <Field label="Created By" hint="Printed as the AWB account name">
+        <div className="relative">
+          <StyledInput
+            value={formData.created_by_name}
+            onChange={(e: any) => set("created_by_name", e.target.value)}
+            placeholder={createdByLoading ? "Loading…" : "Auto-filled from your profile"}
+          />
+          {createdByLoading && (
             <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-white/30" />
           )}
         </div>
