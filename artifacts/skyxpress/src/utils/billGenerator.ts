@@ -1180,19 +1180,13 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     pdf.text(service, badgeX + badgeW / 2, y + badgeH / 2 + s(2.2), { align: 'center' });
 
     if (opts.topRightMode === 'warning') {
-      // Warning line — shifted up slightly to leave room for the website link below it.
+      // Warning line — shifted up slightly to leave room for the website text below it.
       TF(Math.max(6, s(7.5)), 'bold'); TX(AMBER);
       pdf.text('SELF-COLLECTION NOT AVAILABLE FOR THIS SHIPMENT', M + UW / 2, y + headerH / 2 - 1, { align: 'center' });
-      // Website link — centered on its own line directly below the warning text.
-      TF(Math.max(5, s(6)), 'bold'); TX(LINK);
-      const selfCollectUrl = 'www.skyxpress.site';
-      const selfCollectUrlW = pdf.getTextWidth(selfCollectUrl);
-      pdf.textWithLink(
-        selfCollectUrl,
-        M + UW / 2 - selfCollectUrlW / 2,
-        y + headerH / 2 + 4,
-        { url: 'https://www.skyxpress.site' }
-      );
+      // Website — plain printed text, centered on its own line directly below the
+      // warning text. Not a clickable link, just visible text on the printout.
+      TF(Math.max(5, s(6)), 'bold'); TX(INK);
+      pdf.text('www.skyxpress.site', M + UW / 2, y + headerH / 2 + 4, { align: 'center' });
     } else if (opts.topRightMode === 'piece') {
       TF(Math.max(8, s(11)), 'bold'); TX(INK);
       pdf.text(`PIECE ${1}/${pieces}`, M + UW / 2, y + headerH / 2 + 1.5, { align: 'center' });
