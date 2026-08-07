@@ -4,10 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Link } from "react-router-dom";
 import {
   Search,
   PackageCheck,
@@ -130,20 +128,7 @@ export const TrackingSection = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [trackingResult, setTrackingResult] = useState<TrackingResult | null>(null);
   const [countryMap, setCountryMap] = useState<Record<string, string>>({});
-  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   const { toast } = useToast();
-
-  // Check login state once on mount
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsLoggedIn(!!session?.user);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsLoggedIn(!!session?.user);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
 
   // Country code -> full name lookup, so routes read "Pakistan → United Kingdom"
   // instead of raw codes like "PK → GB"
@@ -188,13 +173,6 @@ export const TrackingSection = () => {
         .single();
 
       if (parcelData) {
-        // If not logged in, show login prompt instead of full details
-        if (!isLoggedIn) {
-          setShowLoginPrompt(true);
-          setTrackingResult(null);
-          return;
-        }
-
         setTrackingResult({
           tracking_id: parcelData.tracking_id,
           reference_id: parcelData.reference_id,
@@ -606,33 +584,6 @@ export const TrackingSection = () => {
           )}
         </div>
       </div>
-
-      {/* Login prompt popup */}
-      <Dialog open={showLoginPrompt} onOpenChange={setShowLoginPrompt}>
-        <DialogContent className="max-w-sm text-center">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-bold">Login Required</DialogTitle>
-          </DialogHeader>
-          <div className="py-4 space-y-3">
-            <div className="flex justify-center">
-              <span className="text-5xl">📦</span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              We found your parcel! Please log in to your account to view full tracking details.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Link to="/auth" onClick={() => setShowLoginPrompt(false)}>
-              <Button className="w-full bg-[#FF6A1A] hover:bg-[#FF6A1A]/90 text-white">
-                Log in to my account
-              </Button>
-            </Link>
-            <Button variant="ghost" size="sm" onClick={() => setShowLoginPrompt(false)}>
-              Cancel
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </section>
   );
 };
