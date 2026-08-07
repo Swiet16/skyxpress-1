@@ -1247,13 +1247,16 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
 
     // ══════════════ COLUMN A — Account / Shipper / Sender Auth / POD ═════
     const aPad = s(2);
-    let ay = boxTop + s(3.4);
+    let ay = boxTop + s(3.2);
     const b1 = badge(xA + aPad, ay - s(2.9), '1');
     sectionLabel(xA + aPad + b1 + s(1.4), ay, wA, 'ACCOUNT NAME');
     ay += s(3.2);
     TF(Math.max(5.6, s(6.4)), 'bold'); TX(INK);
-    pdf.text(safeText(parcel.created_by_name, 'www.skyxpress.site'), xA + aPad, ay);
-
+ pdf.text(
+  safeText(parcel.created_by_name, 'www.skyxpress.site'),
+  xA + aPad,
+  ay + 10
+);
     const shipperTop = boxTop + accountH;
     D(LINE, 0.25); pdf.line(xA, shipperTop, xA + wA, shipperTop);
     // vertical "SHIPPER" label strip
