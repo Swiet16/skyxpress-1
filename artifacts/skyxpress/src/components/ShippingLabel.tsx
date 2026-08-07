@@ -8,10 +8,23 @@ import skyxpressLogo from "@/assets/skyxpress_logo.png";
 
 /* ─── helpers ─────────────────────────────────────── */
 
-/** Return "DOX" if parcel is a document, otherwise "NON DOX" */
+/**
+ * Return "DOX" if parcel is a document, otherwise "NON DOX".
+ *
+ * FIX: the old version only matched the exact strings "document" / "doc" / "dox".
+ * If the value coming from the form/select was anything else — "Documents" (plural),
+ * "Non-Document", "non_document", "Non Doc", etc. — the exact match failed and it
+ * silently fell through to "NON DOX" even when "Document" was selected, and vice
+ * versa. This version checks for a "non" prefix/substring FIRST (so any
+ * "non-document"/"non doc"/"non_dox" variant is always NON DOX), then checks for
+ * "doc"/"dox" for the DOX case. This makes it robust to plural/hyphen/underscore/
+ * casing differences.
+ */
 function getDoxLabel(parcelType: string): "DOX" | "NON DOX" {
-  const t = (parcelType || "").toLowerCase();
-  return t === "document" || t === "doc" || t === "dox" ? "DOX" : "NON DOX";
+  const t = (parcelType || "").toLowerCase().trim();
+  if (t.includes("non")) return "NON DOX";
+  if (t.includes("doc") || t.includes("dox")) return "DOX";
+  return "NON DOX";
 }
 
 /** Derive a 3-letter origin code from a city name. Falls back to country code. */
@@ -74,6 +87,7 @@ interface Parcel {
   sender_address_3?: string;
   sender_city?: string;
   sender_country?: string;
+  sender_phone?: string;
   receiver_name: string;
   receiver_company?: string;
   receiver_address?: string;
@@ -82,6 +96,7 @@ interface Parcel {
   receiver_state?: string;
   receiver_postal_code?: string;
   receiver_country?: string;
+  receiver_phone?: string;
   parcel_type: string;
   weight: number;
   pieces?: number;
@@ -98,6 +113,8 @@ interface ShippingLabelProps {
   onClose: () => void;
   countryMap?: Record<string, string>;
 }
+
+const WEBSITE = "www.skyxpress.site";
 
 export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: ShippingLabelProps) {
   if (!parcel) return null;
@@ -228,7 +245,8 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const fromBodyH = Math.max(0, (sndWrapped.slice(0, 6).length) * LINE_H);
     const toBodyH   = Math.max(0, (rcvWrapped.slice(0, 7).length) * LINE_H);
 
-    const hdrH  = 25;
+    // hdrH bumped from 25 -> 29 to make room for the website line under the date
+    const hdrH  = 29;
     const fromH = Math.max(24, 13 + fromBodyH + 3);
     const toH   = Math.max(28, 13 + toBodyH   + 3);
     const barH  = 8;
@@ -252,14 +270,33 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     };
 
     // ── logo ──────────────────────────────────────────────────────────────
+    // FIX: previously the logo was force-fit into a fixed width AND fixed height
+    // box with doc.addImage(), which ignores the source image's real aspect
+    // ratio and stretches/squashes it — this is what produced the warped,
+    // "rotated-looking" logo in the PDF. Now we measure the real image
+    // dimensions and contain-fit it inside the box, centered, so it always
+    // keeps its correct proportions.
     let logoDataUrl: string | null = null;
+    let logoAspect = 1; // width / height
     try {
       const resp = await fetch(skyxpressLogo);
       const blob = await resp.blob();
-      logoDataUrl = await new Promise<string>((res) => {
-        const fr = new FileReader(); fr.onload = () => res(fr.result as string); fr.readAsDataURL(blob);
+      logoDataUrl = await new Promise<string>((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result as string);
+        fr.onerror = () => rej(new Error("logo read failed"));
+        fr.readAsDataURL(blob);
       });
-    } catch { /* ok */ }
+      const img = await new Promise<HTMLImageElement>((res, rej) => {
+        const im = new Image();
+        im.onload = () => res(im);
+        im.onerror = () => rej(new Error("logo decode failed"));
+        im.src = logoDataUrl as string;
+      });
+      if (img.naturalWidth && img.naturalHeight) {
+        logoAspect = img.naturalWidth / img.naturalHeight;
+      }
+    } catch { /* ok — falls back to no logo */ }
 
     // ── barcodes ──────────────────────────────────────────────────────────
     const makeBC = (val: string) => {
@@ -285,7 +322,20 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     sf("bold", dox === "DOX" ? 13 : 9, 255, 255, 255);
     txt(dox, mainW + doxW / 2, hdrH / 2 + 2, { align: "center" });
 
-    if (logoDataUrl) doc.addImage(logoDataUrl, "PNG", mainW + doxW + 1, 2, logoW - 2, hdrH - 4);
+    if (logoDataUrl) {
+      // contain-fit the logo inside its box, preserving aspect ratio
+      const boxW = logoW - 2;
+      const boxH = hdrH - 4;
+      let drawW = boxW;
+      let drawH = boxW / logoAspect;
+      if (drawH > boxH) {
+        drawH = boxH;
+        drawW = boxH * logoAspect;
+      }
+      const offX = mainW + doxW + 1 + (boxW - drawW) / 2;
+      const offY = 2 + (boxH - drawH) / 2;
+      doc.addImage(logoDataUrl, "PNG", offX, offY, drawW, drawH);
+    }
 
     sf("bold", 13, 0, 0, 0);
     txt("EXPRESS WORLDWIDE", pad, 8);
@@ -297,7 +347,11 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     txt(serviceType, pad + 2.5, 15);
 
     sf("normal", 6.5, 90, 90, 90);
-    txt(labelDate(createdDate), pad, hdrH - 2);
+    txt(labelDate(createdDate), pad, hdrH - 6);
+
+    // small website line under EXPRESS WORLDWIDE
+    sf("normal", 6, 0, 51, 160);
+    txt(WEBSITE, pad, hdrH - 2);
 
     hline(hdrH, 0.6);
     let y = hdrH;
@@ -481,7 +535,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
           {/* ── Header row ── */}
           <div style={{ display: "flex", alignItems: "stretch", borderBottom: "2px solid #000" }}>
-            {/* EXPRESS WORLDWIDE + service type + date */}
+            {/* EXPRESS WORLDWIDE + service type + date + website */}
             <div style={{ flex: 1, padding: "8px 10px" }}>
               <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: 0.5, lineHeight: 1.1 }}>
                 EXPRESS WORLDWIDE
@@ -501,7 +555,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
               }}>
                 {serviceType}
               </div>
-              {/* Date — clean, no SKYXPRESS */}
+              {/* Date */}
               <div style={{
                 marginTop: 4,
                 fontSize: 9,
@@ -511,6 +565,16 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
                 textTransform: "uppercase",
               }}>
                 {labelDate(createdDate)}
+              </div>
+              {/* Website — small line under the date */}
+              <div style={{
+                marginTop: 2,
+                fontSize: 8.5,
+                fontWeight: 600,
+                letterSpacing: 0.3,
+                color: "#0033a0",
+              }}>
+                {WEBSITE}
               </div>
             </div>
 
@@ -525,15 +589,24 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
               {dox}
             </div>
 
-            {/* Logo */}
+            {/* Logo — fixed box, image contain-fit so it can never stretch/skew */}
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               borderLeft: "2px solid #000", padding: "4px 10px",
+              width: 110, boxSizing: "border-box", overflow: "hidden",
             }}>
               <img
                 src={skyxpressLogo}
                 alt="SkyXpress"
-                style={{ height: 52, objectFit: "contain", maxWidth: 120 }}
+                style={{
+                  maxHeight: 52,
+                  maxWidth: 100,
+                  width: "auto",
+                  height: "auto",
+                  objectFit: "contain",
+                  display: "block",
+                  transform: "none",
+                }}
               />
             </div>
           </div>
