@@ -16,6 +16,9 @@ interface ParcelData {
   sender_phone: string;
   sender_email?: string;
   sender_cnic?: string;
+  sender_vat_no?: string;
+  sender_eori?: string;
+  sender_tax_id?: string;
   receiver_name: string;
   receiver_company?: string;
   receiver_email?: string;
@@ -27,6 +30,8 @@ interface ParcelData {
   receiver_postal_code: string;
   receiver_country: string;
   receiver_phone: string;
+  receiver_vat_no?: string;
+  receiver_eori?: string;
   weight: number;
   length?: number;
   width?: number;
@@ -445,6 +450,9 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
     const phone   = side === 'from' ? safeText(parcel.sender_phone,  '') : safeText(parcel.receiver_phone,'');
     const email   = side === 'from' ? safeText(parcel.sender_email??'','') : safeText(parcel.receiver_email??'','');
     const cnic    = side === 'from' ? safeText(parcel.sender_cnic??'','') : '';
+    const vatNo   = side === 'from' ? safeText(parcel.sender_vat_no??'','') : safeText(parcel.receiver_vat_no??'','');
+    const eori    = side === 'from' ? safeText(parcel.sender_eori??'','') : safeText(parcel.receiver_eori??'','');
+    const taxId   = side === 'from' ? safeText(parcel.sender_tax_id??'','') : '';
 
     const colX = side === 'from' ? M : M + colW;
     let rowY   = boxTop + 3;  // top padding inside box so text clears the border
@@ -473,9 +481,9 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
     }
     rowY += 1;
     writeLine(`Trader Type: ${side === 'from' ? 'BUSINESS' : 'PRIVATE'}`);
-    writeLine('VAT No:');
-    writeLine('EORI:');
-    if (side === 'from') writeLine('TAX ID:');
+    writeLine(`VAT No: ${vatNo || 'N/A'}`);
+    writeLine(`EORI: ${eori || 'N/A'}`);
+    if (side === 'from') writeLine(`TAX ID: ${taxId || 'N/A'}`);
     if (cnic) writeLine(`CNIC: ${cnic}`);
 
     return rowY;
@@ -1145,15 +1153,18 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   // page 2). When opts.verticalStrip is true, the content width is
   // narrowed up front so the rotated barcode strip sits fully inside the
   // page — it never overhangs the right margin and can't be cropped.
+  // When opts.showFreight is false, the FREIGHT (PAID BY SENDER) block is
+  // left blank — used so the freight amount only prints on page 1.
   // Returns the Y position of the grid's bottom edge.
   // ══════════════════════════════════════════════════════════════════════
   const drawAwbGrid = async (
     startY: number,
     scale: number,
-    opts: { topRightMode: 'warning' | 'piece' | 'none'; verticalStrip: boolean; showWebsite?: boolean }
+    opts: { topRightMode: 'warning' | 'piece' | 'none'; verticalStrip: boolean; showWebsite?: boolean; showFreight?: boolean }
   ): Promise<number> => {
     const STRIP_W = 7, STRIP_GAP = 2;             // reserved on the right when verticalStrip is on
     const UW = opts.verticalStrip ? FULL_UW - (STRIP_W + STRIP_GAP) : FULL_UW;
+    const showFreight = opts.showFreight !== false;
 
     const s = (mm: number) => mm * scale;         // scale a fixed-mm block height
     const headerH = s(13);
@@ -1204,15 +1215,18 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const boxTop = y;
 
     // ── fixed-mm block heights (scaled) — chosen so each column sums to
-    //    the same total gridH, leaving no leftover blank space ───────────
+    //    the same total gridH, leaving no leftover blank space. Shipper and
+    //    consignee blocks were grown (+6mm each) to fit Company / VAT / EORI
+    //    / Tax ID lines; barcode & size-weight blocks absorb the difference
+    //    automatically since they "fill remaining space" in their column ──
     const accountH = s(7);
-    const shipperH = s(24);
+    const shipperH = s(30);
     const authH    = s(17);
     const podH     = s(14);
     const gridH    = accountH + shipperH + authH + podH;   // column A drives the total height
 
     const trackH     = s(6.5);
-    const consigneeH = s(22);
+    const consigneeH = s(28);
     const dapH       = s(9);
     const barcodeH   = gridH - trackH - consigneeH - dapH; // column B fills the rest
 
@@ -1287,6 +1301,13 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     TF(Math.max(5.6, s(6.4)), 'bold'); TX(INK);
     pdf.text(safeText(parcel.sender_name, 'N/A').toUpperCase(), sx, sy, { maxWidth: sw });
     sy += s(3.4);
+    // Company — printed right under the name (previously missing from this bill)
+    const senderCompanyVal = safeText(parcel.sender_company, '');
+    if (senderCompanyVal) {
+      TF(Math.max(4.6, s(5.2)), 'normal'); TX(INK);
+      pdf.text(senderCompanyVal, sx, sy, { maxWidth: sw });
+      sy += s(3);
+    }
     TF(Math.max(5, s(5.6)), 'normal');
     const senderAddrLines = pdf.splitTextToSize(
       [parcel.sender_address, parcel.sender_address_2, parcel.sender_address_3].filter(Boolean).join(', '),
@@ -1296,7 +1317,15 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     pdf.text(safeText(parcel.sender_city, ''), sx, sy); sy += s(3);
     pdf.text(codeToCountryName(safeText(parcel.sender_country, 'Pakistan')).toUpperCase(), sx, sy); sy += s(3);
     if (safeText(parcel.sender_phone, '')) { pdf.text(safeText(parcel.sender_phone, ''), sx, sy); sy += s(3); }
-    if (safeText(parcel.sender_cnic, '')) { TF(Math.max(4.4, s(5)), 'normal'); pdf.text(`CNIC/NTN: ${safeText(parcel.sender_cnic, '')}`, sx, sy); }
+    if (safeText(parcel.sender_cnic, '')) { TF(Math.max(4.4, s(5)), 'normal'); pdf.text(`CNIC/NTN: ${safeText(parcel.sender_cnic, '')}`, sx, sy); sy += s(3); }
+    // VAT No / EORI / Tax ID — only printed when the parcel actually has a value
+    TF(Math.max(4.4, s(5)), 'normal'); TX(INK);
+    const senderVatVal = safeText(parcel.sender_vat_no, '');
+    const senderEoriVal = safeText(parcel.sender_eori, '');
+    const senderTaxIdVal = safeText(parcel.sender_tax_id, '');
+    if (senderVatVal) { pdf.text(`VAT No: ${senderVatVal}`, sx, sy); sy += s(3); }
+    if (senderEoriVal) { pdf.text(`EORI: ${senderEoriVal}`, sx, sy); sy += s(3); }
+    if (senderTaxIdVal) { pdf.text(`Tax ID: ${senderTaxIdVal}`, sx, sy); sy += s(3); }
 
     // 3 — Sender's Authorization & Signature
     const authTop = shipperTop + shipperH;
@@ -1349,6 +1378,12 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const cx = xB + s(6.6);
     const cw = wB - s(8.6);
     TF(Math.max(5, s(5.6)), 'normal'); TX(INK);
+    // Company — printed right under the badge/name (previously missing from this bill)
+    const receiverCompanyVal = safeText(parcel.receiver_company, '');
+    if (receiverCompanyVal) {
+      pdf.text(receiverCompanyVal, cx, cy, { maxWidth: cw });
+      cy += s(2.9);
+    }
     const recvAddrLines = pdf.splitTextToSize(
       [parcel.receiver_address, parcel.receiver_address_2, parcel.receiver_address_3].filter(Boolean).join(', '),
       cw
@@ -1358,7 +1393,13 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     pdf.text(`${safeText(parcel.receiver_state, '')} ${safeText(parcel.receiver_postal_code, '')}`.trim(), cx, cy); cy += s(2.9);
     pdf.text(codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')).toUpperCase(), cx, cy); cy += s(2.9);
     TF(Math.max(4.4, s(4.8)), 'normal');
-    if (safeText(parcel.receiver_phone, '')) pdf.text(safeText(parcel.receiver_phone, ''), cx, cy);
+    if (safeText(parcel.receiver_phone, '')) { pdf.text(safeText(parcel.receiver_phone, ''), cx, cy); cy += s(2.9); }
+    // VAT No / EORI — only printed when the parcel actually has a value
+    const receiverVatVal = safeText(parcel.receiver_vat_no, '');
+    const receiverEoriVal = safeText(parcel.receiver_eori, '');
+    if (receiverVatVal) { pdf.text(`VAT No: ${receiverVatVal}`, cx, cy); cy += s(2.9); }
+    if (receiverEoriVal) { pdf.text(`EORI: ${receiverEoriVal}`, cx, cy); cy += s(2.9); }
+    pdf.setFontSize(receiverFontSize ?? 7);
 
     // DAP / Declared value row
     const dapTop = consigneeTop + consigneeH;
@@ -1387,19 +1428,20 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     dy += s(3);
     TF(Math.max(5.4, s(6)), 'normal'); TX(INK);
     pdf.text(safeText(parcel.reference_id, refNumber), xC + cPad, dy);
-    dy = boxTop + refH - s(1.2);
-    TF(Math.max(4.6, s(5)), 'bold'); TX(NAVY);
-    pdf.text('ALT. REF', xC + cPad, dy);
-    TF(Math.max(5.4, s(6)), 'normal'); TX(INK);
-    pdf.text(safeText(parcel.tracking_id, 'N/A'), xC + cPad + s(15), dy);
+    // (ALT. REF / tracking-id line removed per request — customer reference above is
+    // the only reference shown in this block now.)
 
-    // Freight amount
+    // Freight amount — only drawn when showFreight is true, so it prints on the
+    // sender copy (page 1) but is left blank on the piece / accounts label copies
+    // (page 2).
     const freightTop = boxTop + refH;
-    F(NAVY); pdf.rect(xC, freightTop, wC, freightH, 'F');
-    TF(Math.max(4.6, s(5)), 'bold'); TX(AMBER);
-    pdf.text('FREIGHT (PAID BY SENDER)', xC + cPad, freightTop + freightH * 0.4);
-    TF(Math.max(6.4, s(7.2)), 'bold'); TX(WHITE);
-    pdf.text(freightLabel, xC + cPad, freightTop + freightH * 0.82);
+    if (showFreight) {
+      F(NAVY); pdf.rect(xC, freightTop, wC, freightH, 'F');
+      TF(Math.max(4.6, s(5)), 'bold'); TX(AMBER);
+      pdf.text('FREIGHT (PAID BY SENDER)', xC + cPad, freightTop + freightH * 0.4);
+      TF(Math.max(6.4, s(7.2)), 'bold'); TX(WHITE);
+      pdf.text(freightLabel, xC + cPad, freightTop + freightH * 0.82);
+    }
 
     // 5 — Service Type / Contents / Instructions
     const svcTop = freightTop + freightH;
@@ -1464,14 +1506,15 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   const computeHeaderPlusGridHeight = (scale: number, showWebsite: boolean): number => {
     const s = (mm: number) => mm * scale;
     const headerH = s(13);
-    const gridH = s(7) + s(24) + s(17) + s(14); // accountH + shipperH + authH + podH
+    const gridH = s(7) + s(30) + s(17) + s(14); // accountH + shipperH + authH + podH
     return headerH + s(1.5) + (showWebsite ? s(5.4) : 0) + gridH;
   };
 
   // ══════════════════════════════════════════════════════════════════════
   // PAGE 1 — full detail sheet (SENDER COPY) + standard trading conditions
+  // Freight amount IS printed here.
   // ══════════════════════════════════════════════════════════════════════
-  let bottom1 = await drawAwbGrid(6, 1, { topRightMode: 'warning', verticalStrip: false });
+  let bottom1 = await drawAwbGrid(6, 1, { topRightMode: 'warning', verticalStrip: false, showFreight: true });
 
   // "SENDER COPY" dashed caption bar
   bottom1 += 2.5;
@@ -1518,6 +1561,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   // presented as clean branded cards (drop-shadow, caption pill, styled cut
   // line, footer brand strip) so the page reads as a designed layout that
   // uses the full sheet, rather than two small boxes floating on blank space.
+  // Freight amount is intentionally NOT printed on this page.
   // ══════════════════════════════════════════════════════════════════════
   pdf.addPage();
 
@@ -1555,6 +1599,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
       topRightMode: variant,
       verticalStrip,
       showWebsite: true,
+      showFreight: false,
     });
 
     // caption pill
