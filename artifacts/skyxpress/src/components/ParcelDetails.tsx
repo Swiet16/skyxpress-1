@@ -233,7 +233,8 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose, readOnly = false }: P
         body: JSON.stringify({ parcelId: parcelData.id }),
       });
 
-      const result = await response.json();
+      let result: any = {};
+      try { result = await response.json(); } catch { /* empty / non-JSON body */ }
 
       if (!response.ok) {
         if (result.error === "ip_not_authorized") {
@@ -244,7 +245,7 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose, readOnly = false }: P
           });
           return;
         }
-        throw new Error(result.error || "Failed to send email");
+        throw new Error(result.error || `Server error (${response.status})`);
       }
 
       // Record the send time in Supabase (best-effort — column may not exist yet)
