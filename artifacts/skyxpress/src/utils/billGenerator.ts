@@ -1150,7 +1150,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   const drawAwbGrid = async (
     startY: number,
     scale: number,
-    opts: { topRightMode: 'warning' | 'piece' | 'none'; verticalStrip: boolean }
+    opts: { topRightMode: 'warning' | 'piece' | 'none'; verticalStrip: boolean; showWebsite?: boolean }
   ): Promise<number> => {
     const STRIP_W = 7, STRIP_GAP = 2;             // reserved on the right when verticalStrip is on
     const UW = opts.verticalStrip ? FULL_UW - (STRIP_W + STRIP_GAP) : FULL_UW;
@@ -1192,7 +1192,15 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
       pdf.text(`PIECE ${1}/${pieces}`, M + UW / 2, y + headerH / 2 + 1.5, { align: 'center' });
     }
 
-    y += headerH + s(1.5);
+    // Website — printed centered, directly below the logo/badge header row (its own
+    // clear line, never crammed inside the row) so it can't collide with the piece
+    // label or overlap the grid box that follows.
+    if (opts.showWebsite) {
+      TF(Math.max(5.4, s(6.4)), 'bold'); TX(INK);
+      pdf.text('www.skyxpress.site', M + UW / 2, y + headerH + s(3.8), { align: 'center' });
+    }
+
+    y += headerH + s(1.5) + (opts.showWebsite ? s(5.4) : 0);
     const boxTop = y;
 
     // ── fixed-mm block heights (scaled) — chosen so each column sums to
@@ -1503,22 +1511,22 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   // ══════════════════════════════════════════════════════════════════════
   pdf.addPage();
 
-  const LABEL_SCALE = 0.82;
+  const LABEL_SCALE = 0.85;
   const copy1Y = 6;
-  const bottomA = await drawAwbGrid(copy1Y, LABEL_SCALE, { topRightMode: 'piece', verticalStrip: true });
+  const bottomA = await drawAwbGrid(copy1Y, LABEL_SCALE, { topRightMode: 'piece', verticalStrip: true, showWebsite: true });
   TF(6.5, 'bold'); TX(NAVY);
   pdf.text(`PIECE 1 OF ${pieces}`, M, bottomA + 4.4);
 
   // dashed cut line
-  const cutY = bottomA + 8;
+  const cutY = bottomA + 9;
   pdf.setLineDashPattern([1.5, 1.5], 0);
   D(MID, 0.3); pdf.line(M, cutY, M + FULL_UW, cutY);
   pdf.setLineDashPattern([], 0);
   TF(5.4, 'normal'); TX(MID);
   pdf.text('✂  CUT HERE', PW / 2, cutY - 1.3, { align: 'center' });
 
-  const copy2Y = cutY + 4;
-  const bottomB = await drawAwbGrid(copy2Y, LABEL_SCALE, { topRightMode: 'none', verticalStrip: false });
+  const copy2Y = cutY + 6;
+  const bottomB = await drawAwbGrid(copy2Y, LABEL_SCALE, { topRightMode: 'none', verticalStrip: false, showWebsite: true });
   TF(6.5, 'bold'); TX(NAVY);
   pdf.text('ACCOUNTS COPY', M, bottomB + 4.4);
 
