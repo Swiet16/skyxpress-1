@@ -1104,6 +1104,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   const LINE   = [205, 205, 205] as const; // hairline grey
   const WHITE  = [255, 255, 255] as const;
   const MID    = [110, 110, 110] as const;
+  const LINK   = [30, 90, 200]   as const; // hyperlink blue for the website text
 
   const F  = (c: readonly number[])            => pdf.setFillColor(c[0], c[1], c[2]);
   const D  = (c: readonly number[], w = 0.25)  => { pdf.setDrawColor(c[0], c[1], c[2]); pdf.setLineWidth(w); };
@@ -1179,8 +1180,19 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     pdf.text(service, badgeX + badgeW / 2, y + badgeH / 2 + s(2.2), { align: 'center' });
 
     if (opts.topRightMode === 'warning') {
+      // Warning line — shifted up slightly to leave room for the website link below it.
       TF(Math.max(6, s(7.5)), 'bold'); TX(AMBER);
-      pdf.text('SELF-COLLECTION NOT AVAILABLE FOR THIS SHIPMENT', M + UW / 2, y + headerH / 2 + 1, { align: 'center' });
+      pdf.text('SELF-COLLECTION NOT AVAILABLE FOR THIS SHIPMENT', M + UW / 2, y + headerH / 2 - 1, { align: 'center' });
+      // Website link — centered on its own line directly below the warning text.
+      TF(Math.max(5, s(6)), 'bold'); TX(LINK);
+      const selfCollectUrl = 'www.skyxpress.site';
+      const selfCollectUrlW = pdf.getTextWidth(selfCollectUrl);
+      pdf.textWithLink(
+        selfCollectUrl,
+        M + UW / 2 - selfCollectUrlW / 2,
+        y + headerH / 2 + 4,
+        { url: 'https://www.skyxpress.site' }
+      );
     } else if (opts.topRightMode === 'piece') {
       TF(Math.max(8, s(11)), 'bold'); TX(INK);
       pdf.text(`PIECE ${1}/${pieces}`, M + UW / 2, y + headerH / 2 + 1.5, { align: 'center' });
@@ -1249,12 +1261,18 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const aPad = s(2);
     let ay = boxTop + s(3.2);
     const b1 = badge(xA + aPad, ay - s(2.9), '1');
-    sectionLabel(xA + aPad + b1 + s(1.4), ay, wA, 'ACCOUNT NAME');
-    ay += s(3.2);
-    
+    const labelX1 = xA + aPad + b1 + s(1.4);
+    sectionLabel(labelX1, ay, wA, 'ACCOUNT NAME');
+    // Measure "ACCOUNT NAME" at the exact font sectionLabel used, so the value can be
+    // placed right after it on the SAME line instead of dropping to a line below.
+    TF(Math.max(4.6, s(5.4)), 'bold');
+    const labelW1 = pdf.getTextWidth('ACCOUNT NAME');
     TF(Math.max(5.6, s(6.4)), 'bold'); TX(INK);
-pdf.text(safeText(parcel.created_by_name, 'www.skyxpress.site'), xA + aPad, ay);
-    
+    pdf.text(
+      safeText(parcel.created_by_name, 'www.skyxpress.site'),
+      labelX1 + labelW1 + s(2.2),
+      ay
+    );
     const shipperTop = boxTop + accountH;
     D(LINE, 0.25); pdf.line(xA, shipperTop, xA + wA, shipperTop);
     // vertical "SHIPPER" label strip
