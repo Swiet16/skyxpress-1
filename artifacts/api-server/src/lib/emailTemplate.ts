@@ -50,10 +50,8 @@ export interface ParcelEmailData {
 export function createXrayEmailHtml(parcel: ParcelEmailData): string {
   const ref = parcel.reference_id || parcel.tracking_id || "N/A";
   const tracking = parcel.tracking_id || "N/A";
-  const senderName = parcel.sender_name || "Valued Customer";
+  const receiverName = parcel.receiver_name || "Valued Customer";
   const currency = parcel.currency || "USD";
-  const weight = parcel.weight?.toFixed(2) ?? "—";
-  const chargeableWeight = (parcel.chargeable_weight ?? parcel.weight)?.toFixed(2) ?? "—";
   const dims =
     parcel.length && parcel.width && parcel.height
       ? `${parcel.length} × ${parcel.width} × ${parcel.height} cm`
@@ -186,7 +184,7 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
                 <span style="color:#F59E0B;">X-Ray Security Inspection ✓</span>
               </p>
               <p style="margin:10px 0 0;font-size:14px;color:#93C5FD;">
-                Dear <strong style="color:#E0F2FE;">${senderName}</strong> — your shipment has been successfully screened and is cleared for onward processing.
+                Dear <strong style="color:#E0F2FE;">${receiverName}</strong> — your shipment has been successfully screened and is cleared for onward processing.
               </p>
             </td>
           </tr>
@@ -264,20 +262,8 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
 
               <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E5E7EB;border-radius:10px;overflow:hidden;">
                 <tr>
-                  <!-- Weight (highlighted) -->
-                  <td width="33%" style="padding:16px;border-right:1px solid #E5E7EB;background:#FFFBF0;text-align:center;">
-                    <p style="margin:0 0 2px;font-size:10px;font-weight:700;color:#92400E;letter-spacing:1px;text-transform:uppercase;">⚖ Actual Weight</p>
-                    <p style="margin:0;font-size:26px;font-weight:900;color:#B45309;">${weight}</p>
-                    <p style="margin:0;font-size:13px;font-weight:700;color:#D97706;">kg</p>
-                  </td>
-                  <!-- Chargeable Weight -->
-                  <td width="33%" style="padding:16px;border-right:1px solid #E5E7EB;background:#FFFBF0;text-align:center;">
-                    <p style="margin:0 0 2px;font-size:10px;font-weight:700;color:#92400E;letter-spacing:1px;text-transform:uppercase;">⚖ Chargeable</p>
-                    <p style="margin:0;font-size:26px;font-weight:900;color:#B45309;">${chargeableWeight}</p>
-                    <p style="margin:0;font-size:13px;font-weight:700;color:#D97706;">kg</p>
-                  </td>
                   <!-- Dimensions -->
-                  <td width="34%" style="padding:16px;text-align:center;background:#F8FAFC;">
+                  <td style="padding:16px;text-align:center;background:#F8FAFC;">
                     <p style="margin:0 0 2px;font-size:10px;font-weight:700;color:#374151;letter-spacing:1px;text-transform:uppercase;">📐 Dimensions</p>
                     <p style="margin:0;font-size:14px;font-weight:700;color:#1F2937;">${dims}</p>
                     <p style="margin:2px 0 0;font-size:11px;color:#9CA3AF;">(L × W × H)</p>
