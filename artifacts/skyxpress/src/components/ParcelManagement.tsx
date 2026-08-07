@@ -261,6 +261,10 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
   const [savingCell, setSavingCell] = useState(false);
   const isSavingRef = useRef(false);
 
+  // ── Search debounce / race-condition guards ─────────────────────────────
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchRequestIdRef = useRef(0);
+
   useEffect(() => {
     fetchParcels(1, searchQuery);
     fetchCountries();
@@ -271,15 +275,25 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
     fetchParcels(page, searchQuery);
   }, [page]);
 
-  // Reset to page 1 and re-fetch when search changes
+  // Reset to page 1 and re-fetch when search changes — debounced so fast typing
+  // doesn't fire a query per keystroke.
   useEffect(() => {
-    setPage(1);
-    fetchParcels(1, searchQuery);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
+      setPage(1);
+      fetchParcels(1, searchQuery);
+    }, 350);
+
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    };
   }, [searchQuery]);
 
   const fetchParcels = async (pageNum?: number, search?: string) => {
     pageNum = pageNum ?? page;
     search  = search  ?? searchQuery;
+    // Tag this request so a slower, older request can't overwrite a newer one's results.
+    const requestId = ++searchRequestIdRef.current;
     setLoading(true);
     try {
       const from = (pageNum - 1) * PAGE_SIZE;
@@ -302,13 +316,17 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
 
       const { data, error, count } = await query;
       if (error) throw error;
+
+      // A newer search superseded this one while it was in flight — drop the stale result.
+      if (requestId !== searchRequestIdRef.current) return;
+
       setParcels(data || []);
       setTotalCount(count ?? 0);
       setEmailedIds(new Set((data || []).filter((p: any) => p.xray_email_sent_at).map((p: any) => p.id)));
     } catch (error: any) {
       toast({ title: "Error", description: "Failed to load parcels", variant: "destructive" });
     } finally {
-      setLoading(false);
+      if (requestId === searchRequestIdRef.current) setLoading(false);
     }
   };
 
