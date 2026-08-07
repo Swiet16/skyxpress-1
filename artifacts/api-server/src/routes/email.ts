@@ -22,7 +22,7 @@ async function getUser(token: string): Promise<{ id: string } | null> {
   try {
     const res = await fetch(`${url}/auth/v1/user`, { headers: authHeaders(token) });
     if (!res.ok) return null;
-    return res.json();
+    return res.json() as Promise<{ id: string }>;
   } catch { return null; }
 }
 
@@ -35,7 +35,7 @@ async function getUserRole(token: string): Promise<string | null> {
       body: JSON.stringify({}),
     });
     if (!res.ok) return null;
-    return res.json();
+    return res.json() as Promise<string>;
   } catch { return null; }
 }
 
@@ -58,7 +58,7 @@ async function fetchParcel(token: string, parcelId: string): Promise<any | null>
       { headers: { ...authHeaders(token), Accept: "application/json" } },
     );
     if (!res.ok) return null;
-    const rows: any[] = await res.json();
+    const rows = await res.json() as any[];
     return rows[0] ?? null;
   } catch { return null; }
 }
