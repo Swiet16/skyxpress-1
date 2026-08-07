@@ -44,7 +44,7 @@ const Header = ({ user }: HeaderProps) => {
                 src="https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/Logo1.png"
               
                 alt="SkyXpress Logo"
-                className="h-[350px] w-auto object-contain transition-transform duration-100 group-hover:scale-105"
+                className="h-24 w-auto object-contain transition-transform duration-100 group-hover:scale-105"
               />
             </Link>
           </div>
@@ -99,7 +99,7 @@ const Header = ({ user }: HeaderProps) => {
               <img
                  src="https://thunaolandjuvuhvbsds.supabase.co/storage/v1/object/public/File/Logo1.png"
                 alt="SkyXpress Logo"
-                className="h-[180px] w-auto object-contain transition-transform duration-300 group-hover:scale-105"
+                 className="h-16 w-auto object-contain transition-transform duration-300 group-hover:scale-105"
               />
             </Link>
           </div>
