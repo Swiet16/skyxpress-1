@@ -153,7 +153,10 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
     if (serverIp) { setIpVisible(true); return; }
     setIpLoading(true);
     try {
-      const res = await fetch("/api/server-ip");
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/server-ip", {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
       const data = await res.json();
       setServerIp(data.ip || "unknown");
       setIpVisible(true);
@@ -191,10 +194,14 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
     }
     setEmailingId(parcel.id);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch("/api/send-parcel-email", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parcel }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ parcelId: parcel.id }),
       });
       const result = await response.json();
       if (!response.ok) {

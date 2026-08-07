@@ -223,10 +223,14 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose, readOnly = false }: P
 
     setEmailSending(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch("/api/send-parcel-email", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parcel: parcelData }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ parcelId: parcelData.id }),
       });
 
       const result = await response.json();

@@ -10,9 +10,11 @@
   },
   "private": true,
   "dependencies": {
-    "@replit/connectors-sdk": "^0.4.1"
+    "@replit/connectors-sdk": "^0.4.1",
+    "@supabase/supabase-js": "^2.111.0"
   },
   "devDependencies": {
+    "@vercel/node": "^5.9.5",
     "prettier": "^3.9.5",
     "typescript": "~5.9.3"
   }
