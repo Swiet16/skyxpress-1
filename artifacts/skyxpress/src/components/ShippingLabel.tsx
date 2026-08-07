@@ -98,6 +98,7 @@ interface Parcel {
   receiver_country?: string;
   receiver_phone?: string;
   parcel_type: string;
+  document_type?: string;
   weight: number;
   pieces?: number;
   service_type?: string;
@@ -119,7 +120,12 @@ const WEBSITE = "www.skyxpress.site";
 export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: ShippingLabelProps) {
   if (!parcel) return null;
 
-  const dox = getDoxLabel(parcel.parcel_type);
+  // FIX: DOX/NON DOX must come from `document_type` (the Document / Non-Document
+  // toggle in the Shipment step), NOT `parcel_type` (which is the physical
+  // package type — box/envelope/pallet/other, set in the Package step). The
+  // old code read parcel.parcel_type here, so selecting "Document" never had
+  // any effect on the label — it was checking the wrong field entirely.
+  const dox = getDoxLabel(parcel.document_type ?? parcel.parcel_type);
   const origin = originCode(parcel.sender_city, parcel.from_country);
   const cnicCode = parcel.sender_cnic || "N/A";
   const trackCode = parcel.tracking_id;
