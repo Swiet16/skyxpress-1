@@ -1458,6 +1458,16 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     return boxTop + gridH;
   };
 
+  // Precomputes the total height (header row + grid) that drawAwbGrid will occupy for a
+  // given scale/showWebsite combination, without drawing anything. Used on page 2 to size
+  // the card backgrounds correctly before the actual content is drawn on top of them.
+  const computeHeaderPlusGridHeight = (scale: number, showWebsite: boolean): number => {
+    const s = (mm: number) => mm * scale;
+    const headerH = s(13);
+    const gridH = s(7) + s(24) + s(17) + s(14); // accountH + shipperH + authH + podH
+    return headerH + s(1.5) + (showWebsite ? s(5.4) : 0) + gridH;
+  };
+
   // ══════════════════════════════════════════════════════════════════════
   // PAGE 1 — full detail sheet (SENDER COPY) + standard trading conditions
   // ══════════════════════════════════════════════════════════════════════
@@ -1504,31 +1514,91 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   });
 
   // ══════════════════════════════════════════════════════════════════════
-  // PAGE 2 — two smaller label copies: "PIECE x OF y" copy + "ACCOUNTS COPY"
-  // Drawn at a reduced scale so both fit comfortably on one page with a
-  // clear cut line, and the vertical barcode strip has dedicated, always-
-  // visible space instead of overflowing the page margin.
+  // PAGE 2 — two full-size label copies ("PIECE" copy + "ACCOUNTS COPY"),
+  // presented as clean branded cards (drop-shadow, caption pill, styled cut
+  // line, footer brand strip) so the page reads as a designed layout that
+  // uses the full sheet, rather than two small boxes floating on blank space.
   // ══════════════════════════════════════════════════════════════════════
   pdf.addPage();
 
-  const LABEL_SCALE = 0.85;
-  const copy1Y = 6;
-  const bottomA = await drawAwbGrid(copy1Y, LABEL_SCALE, { topRightMode: 'piece', verticalStrip: true, showWebsite: true });
-  TF(6.5, 'bold'); TX(NAVY);
-  pdf.text(`PIECE 1 OF ${pieces}`, M, bottomA + 4.4);
+  // Page title band
+  const titleH = 12;
+  F(NAVY);
+  pdf.roundedRect(M, 6, FULL_UW, titleH, 2.5, 2.5, 'F');
+  TF(10.5, 'bold'); TX(WHITE);
+  pdf.text('SHIPPING LABELS', PW / 2, 6 + titleH / 2 + 1.6, { align: 'center' });
 
-  // dashed cut line
-  const cutY = bottomA + 9;
+  const LABEL_SCALE = 1; // full-size — matches page 1 so nothing looks cramped
+  const cardPad = 5;
+
+  // Draws one label (header+grid) inside a white "card" with a soft shadow and an
+  // amber caption pill underneath. Returns the Y position of the card's bottom edge.
+  const drawLabelCard = async (
+    cardTop: number,
+    variant: 'piece' | 'none',
+    verticalStrip: boolean,
+    captionText: string
+  ): Promise<number> => {
+    const blockH = computeHeaderPlusGridHeight(LABEL_SCALE, true);
+    const captionH = 9;
+    const cardH = blockH + captionH + cardPad * 2;
+
+    // soft drop-shadow, then the white card face
+    F([222, 219, 212] as any);
+    pdf.roundedRect(M - 2 + 1, cardTop + 1, FULL_UW + 4, cardH, 3, 3, 'F');
+    F(WHITE);
+    D(LINE, 0.4);
+    pdf.roundedRect(M - 2, cardTop, FULL_UW + 4, cardH, 3, 3, 'FD');
+
+    const innerY = cardTop + cardPad;
+    const bottom = await drawAwbGrid(innerY, LABEL_SCALE, {
+      topRightMode: variant,
+      verticalStrip,
+      showWebsite: true,
+    });
+
+    // caption pill
+    const pillH = 6;
+    const pillY = bottom + 3;
+    TF(6.5, 'bold');
+    const pillW = pdf.getTextWidth(captionText) + 8;
+    F(AMBER);
+    pdf.roundedRect(M, pillY, pillW, pillH, 1.5, 1.5, 'F');
+    TX(WHITE);
+    pdf.text(captionText, M + pillW / 2, pillY + pillH / 2 + 1.3, { align: 'center' });
+
+    return cardTop + cardH;
+  };
+
+  const copy1CardTop = 6 + titleH + 8;
+  const copy1CardBottom = await drawLabelCard(copy1CardTop, 'piece', true, `PIECE 1 OF ${pieces}`);
+
+  // Styled cut line between the two labels
+  const cutY = copy1CardBottom + 9;
   pdf.setLineDashPattern([1.5, 1.5], 0);
-  D(MID, 0.3); pdf.line(M, cutY, M + FULL_UW, cutY);
+  D(MID, 0.4); pdf.line(M, cutY, M + FULL_UW, cutY);
   pdf.setLineDashPattern([], 0);
-  TF(5.4, 'normal'); TX(MID);
-  pdf.text('✂  CUT HERE', PW / 2, cutY - 1.3, { align: 'center' });
+  TF(6, 'bold'); TX(MID);
+  const cutLabel = '✂  CUT HERE';
+  const cutLabelW = pdf.getTextWidth(cutLabel) + 6;
+  F(WHITE);
+  pdf.rect(PW / 2 - cutLabelW / 2, cutY - 3, cutLabelW, 6, 'F');
+  pdf.text(cutLabel, PW / 2, cutY + 1, { align: 'center' });
 
-  const copy2Y = cutY + 6;
-  const bottomB = await drawAwbGrid(copy2Y, LABEL_SCALE, { topRightMode: 'none', verticalStrip: false, showWebsite: true });
-  TF(6.5, 'bold'); TX(NAVY);
-  pdf.text('ACCOUNTS COPY', M, bottomB + 4.4);
+  const copy2CardTop = cutY + 7;
+  const copy2CardBottom = await drawLabelCard(copy2CardTop, 'none', false, 'ACCOUNTS COPY');
+
+  // Footer brand strip — fills the remaining space cleanly instead of leaving it blank
+  const footerY = copy2CardBottom + 10;
+  F(NAVY);
+  pdf.roundedRect(M, footerY, FULL_UW, 10, 2, 2, 'F');
+  TF(7, 'bold'); TX(WHITE);
+  pdf.text(
+    'SKY XPRESS INTERNATIONAL  •  Courier & Cargo  •  www.skyxpress.site',
+    PW / 2,
+    footerY + 6.5,
+    { align: 'center' }
+  );
 
   handlePDFOutput(pdf, `AWB-Sender-Copy-${refNumber}.pdf`, mode);
 };
