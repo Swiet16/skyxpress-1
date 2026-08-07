@@ -76,6 +76,7 @@ interface Parcel {
   sender_city?: string;
   sender_country?: string;
   receiver_name: string;
+  receiver_email?: string;
   receiver_company?: string;
   receiver_phone: string;
   receiver_address?: string;
@@ -183,13 +184,13 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
   const [totalCount, setTotalCount] = useState(0);
 
   const handleSendXrayEmail = async (parcel: Parcel) => {
-    if (!parcel.sender_email) {
-      toast({ title: "No sender email", description: "This parcel has no sender email on record.", variant: "destructive" });
+    if (!parcel.receiver_email) {
+      toast({ title: "No receiver email", description: "This parcel has no receiver email on record.", variant: "destructive" });
       return;
     }
     // Block re-send if already emailed
     if (emailedIds.has(parcel.id)) {
-      toast({ title: "Already sent", description: `X-ray email was already sent to ${parcel.sender_email}. Open parcel details to resend.` });
+      toast({ title: "Already sent", description: `X-ray email was already sent to ${parcel.receiver_email}. Open parcel details to resend.` });
       return;
     }
     setEmailingId(parcel.id);
@@ -219,7 +220,7 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
       setEmailedIds((prev) => new Set(prev).add(parcel.id));
       // Persist send timestamp in Supabase (run SQL migration first if column missing)
       await supabase.from("parcels").update({ xray_email_sent_at: new Date().toISOString() }).eq("id", parcel.id);
-      toast({ title: "✉ Email sent!", description: `X-ray notification sent to ${parcel.sender_email}` });
+      toast({ title: "✉ Email sent!", description: `X-ray notification sent to ${parcel.receiver_email}` });
     } catch (err: any) {
       toast({ title: "Email failed", description: err.message, variant: "destructive" });
     } finally {
@@ -808,7 +809,7 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
                               variant="ghost" size="icon"
                               className={`h-7 w-7 ${emailedIds.has(parcel.id) ? "text-emerald-500 hover:bg-emerald-50" : "text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"}`}
                               onClick={() => handleSendXrayEmail(parcel)}
-                              disabled={emailingId === parcel.id || !parcel.sender_email}
+                              disabled={emailingId === parcel.id || !parcel.receiver_email}
                               title={emailedIds.has(parcel.id) ? "Resend X-Ray Email" : "Send X-Ray Email"}
                             >
                               {emailingId === parcel.id
@@ -960,7 +961,7 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
                         variant="ghost" size="icon"
                         className={`h-8 w-8 ${emailedIds.has(parcel.id) ? "text-emerald-500 hover:bg-emerald-50" : "text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"}`}
                         onClick={() => handleSendXrayEmail(parcel)}
-                        disabled={emailingId === parcel.id || !parcel.sender_email}
+                        disabled={emailingId === parcel.id || !parcel.receiver_email}
                         title={emailedIds.has(parcel.id) ? "Resend X-Ray Email" : "Send X-Ray Email"}
                       >
                         {emailingId === parcel.id
