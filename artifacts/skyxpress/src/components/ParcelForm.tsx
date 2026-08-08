@@ -34,7 +34,7 @@ interface FormData {
   receiver_phone: string; receiver_address: string; receiver_address_2: string;
   receiver_address_3: string; receiver_city: string; receiver_state: string;
   receiver_postal_code: string; receiver_country: string;
-  receiver_vat_no: string; receiver_eori: string;
+  receiver_vat_no: string; receiver_eori: string; receiver_tax_id: string;
   parcel_type: string; weight: string; length: string; width: string; height: string;
   declared_value: string; service_type: string; document_type: string;
   from_country: string; to_country: string; special_instructions: string;
@@ -546,6 +546,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     receiver_country: parcel?.receiver_country || "",
     receiver_vat_no: parcel?.receiver_vat_no || "",
     receiver_eori: parcel?.receiver_eori || "",
+    receiver_tax_id: parcel?.receiver_tax_id || "",
     parcel_type: parcel?.parcel_type || "box",
     weight: parcel?.weight?.toString() || "",
     length: parcel?.length?.toString() || "",
@@ -651,7 +652,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
     const t = setTimeout(async () => {
       setReceiverSearching(true);
       const { data } = await supabase.from("parcels")
-        .select("receiver_name,receiver_company,receiver_phone,receiver_email,receiver_address,receiver_city,receiver_state,receiver_postal_code,receiver_country,receiver_vat_no,receiver_eori")
+        .select("receiver_name,receiver_company,receiver_phone,receiver_email,receiver_address,receiver_city,receiver_state,receiver_postal_code,receiver_country,receiver_vat_no,receiver_eori,receiver_tax_id")
         .or(`receiver_name.ilike.%${receiverSearch}%,receiver_phone.ilike.%${receiverSearch}%`)
         .order("created_at", { ascending: false }).limit(8);
       if (data) {
@@ -674,7 +675,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
   };
 
   const fillReceiver = (row: any) => {
-    setFormData((prev) => ({ ...prev, receiver_name: row.receiver_name || "", receiver_company: row.receiver_company || "", receiver_phone: row.receiver_phone || "", receiver_email: row.receiver_email || "", receiver_address: row.receiver_address || "", receiver_city: row.receiver_city || "", receiver_state: row.receiver_state || "", receiver_postal_code: row.receiver_postal_code || "", receiver_country: row.receiver_country || "", receiver_vat_no: row.receiver_vat_no || "", receiver_eori: row.receiver_eori || "" }));
+    setFormData((prev) => ({ ...prev, receiver_name: row.receiver_name || "", receiver_company: row.receiver_company || "", receiver_phone: row.receiver_phone || "", receiver_email: row.receiver_email || "", receiver_address: row.receiver_address || "", receiver_city: row.receiver_city || "", receiver_state: row.receiver_state || "", receiver_postal_code: row.receiver_postal_code || "", receiver_country: row.receiver_country || "", receiver_vat_no: row.receiver_vat_no || "", receiver_eori: row.receiver_eori || "", receiver_tax_id: row.receiver_tax_id || "" }));
     setReceiverSearch(""); setReceiverResults([]);
     toast({ title: "Receiver filled", description: "Details copied from a previous parcel." });
   };
@@ -913,6 +914,9 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
       <Field label="EORI">
         <StyledInput value={formData.receiver_eori} onChange={(e: any) => set("receiver_eori", e.target.value)} placeholder="Optional" />
       </Field>
+      <Field label="Tax ID">
+        <StyledInput value={formData.receiver_tax_id} onChange={(e: any) => set("receiver_tax_id", e.target.value)} placeholder="Optional" />
+      </Field>
       <div className="col-span-2">
         <Field label="Address" required>
           <textarea
@@ -972,7 +976,7 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
         <Field label={`Declared Value (${formData.currency})`}>
           <StyledInput type="number" step="0.01" value={formData.declared_value} onChange={(e: any) => set("declared_value", e.target.value)} placeholder="0.00" />
         </Field>
-        <Field label="Freight (PKR)">
+        <Field label={`Freight (${formData.currency})`} hint={`Amount in ${formData.currency}`}>
           <StyledInput type="number" step="0.01" value={formData.freight_amount_pkr} onChange={(e: any) => set("freight_amount_pkr", e.target.value)} placeholder="0.00" />
         </Field>
         <Field label="Dim Weight Override">
