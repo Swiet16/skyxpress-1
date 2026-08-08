@@ -6,14 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Printer, X, FileDown } from "lucide-react";
 import skyxpressLogo from "@/assets/skyxpress_logo.png";
 
-/* ─── helpers ─────────────────────────────────────── */
+/* â”€â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * Return "DOX" if parcel is a document, otherwise "NON DOX".
  *
  * FIX: the old version only matched the exact strings "document" / "doc" / "dox".
- * If the value coming from the form/select was anything else — "Documents" (plural),
- * "Non-Document", "non_document", "Non Doc", etc. — the exact match failed and it
+ * If the value coming from the form/select was anything else â€” "Documents" (plural),
+ * "Non-Document", "non_document", "Non Doc", etc. â€” the exact match failed and it
  * silently fell through to "NON DOX" even when "Document" was selected, and vice
  * versa. This version checks for a "non" prefix/substring FIRST (so any
  * "non-document"/"non doc"/"non_dox" variant is always NON DOX), then checks for
@@ -54,7 +54,7 @@ function labelDate(d: Date): string {
   }).toUpperCase();
 }
 
-/* ─── Barcode sub-component ──────────────────────── */
+/* â”€â”€â”€ Barcode sub-component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function Barcode({ value, height = 50 }: { value: string; height?: number }) {
   const svgRef = useRef<SVGSVGElement>(null);
   useEffect(() => {
@@ -69,13 +69,13 @@ function Barcode({ value, height = 50 }: { value: string; height?: number }) {
         lineColor: "#000",
       });
     } catch {
-      // silent fallback — barcode renders as empty
+      // silent fallback â€” barcode renders as empty
     }
   }, [value, height]);
   return <svg ref={svgRef} style={{ width: "100%", display: "block" }} />;
 }
 
-/* ─── Label component ────────────────────────────── */
+/* â”€â”€â”€ Label component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 interface Parcel {
   tracking_id: string;
   reference_id?: string;
@@ -122,9 +122,9 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
   // FIX: DOX/NON DOX must come from `document_type` (the Document / Non-Document
   // toggle in the Shipment step), NOT `parcel_type` (which is the physical
-  // package type — box/envelope/pallet/other, set in the Package step). The
+  // package type â€” box/envelope/pallet/other, set in the Package step). The
   // old code read parcel.parcel_type here, so selecting "Document" never had
-  // any effect on the label — it was checking the wrong field entirely.
+  // any effect on the label â€” it was checking the wrong field entirely.
   const dox = getDoxLabel(parcel.document_type ?? parcel.parcel_type);
   const origin = originCode(parcel.sender_city, parcel.from_country);
   const cnicCode = parcel.sender_cnic || "N/A";
@@ -143,7 +143,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
   const getCountry = (code: string) => countryMap[code] || code || "";
 
-  /* ─── Receiver address lines ─── */
+  /* â”€â”€â”€ Receiver address lines â”€â”€â”€ */
   const rcvLines = [
     parcel.receiver_company && parcel.receiver_company !== parcel.receiver_name
       ? parcel.receiver_company : null,
@@ -154,7 +154,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     getCountry(parcel.receiver_country || ""),
   ].filter(Boolean) as string[];
 
-  /* ─── Sender address lines ─── */
+  /* â”€â”€â”€ Sender address lines â”€â”€â”€ */
   const sndLines = [
     parcel.sender_company && parcel.sender_company !== parcel.sender_name
       ? parcel.sender_company : null,
@@ -172,7 +172,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const printWindow = window.open("", "_blank", "width=700,height=900");
     if (!printWindow) return;
 
-    // Build the document safely using DOM APIs — no string interpolation of user data
+    // Build the document safely using DOM APIs â€” no string interpolation of user data
     const doc = printWindow.document;
 
     // Collect styles from the current document
@@ -184,7 +184,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     doc.close();
 
     // Set title safely via textContent (no XSS risk)
-    doc.title = `Shipping Label — ${parcel.tracking_id}`;
+    doc.title = `Shipping Label â€” ${parcel.tracking_id}`;
 
     // Charset meta
     const meta = doc.createElement("meta");
@@ -198,10 +198,13 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
     // Print-specific styles
     const printStyle = doc.createElement("style");
+    // Scale 560px label to fill A4 printable width
+    // A4 = 210mm âˆ’ 2Ã—5mm margin = 200mm usable â‰ˆ 756px at 96dpi
+    // 756 / 560 â‰ˆ 1.35
+    const A4_SCALE = 1.35;
     printStyle.textContent = `
-      @page { margin: 10mm; size: A4 portrait; }
+      @page { margin: 5mm; size: A4 portrait; }
       html, body { margin: 0; padding: 0; background: #fff; }
-      body { display: flex; justify-content: center; padding: 0; }
       #shipping-label-print {
         width: 560px !important;
         max-width: 560px !important;
@@ -211,6 +214,8 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
         line-height: 1.3 !important;
         background: #fff !important;
         color: #000 !important;
+        zoom: ${A4_SCALE} !important;
+        transform-origin: top left !important;
       }
     `;
     doc.head.appendChild(printStyle);
@@ -230,14 +235,14 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
   const handleSavePDF = async () => {
     const { default: jsPDF } = await import("jspdf");
 
-    // ── constants ─────────────────────────────────────────────────────────
+    // â”€â”€ constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const W = 105;
     const pad = 4;
     const CONTACT_W = 34;        // right panel width for contact
     const ORIGIN_W  = 22;        // right panel width for origin
     const addrMaxW  = W - CONTACT_W - pad - 3;  // max width for address lines
 
-    // ── temp doc to measure text before we know final height ─────────────
+    // â”€â”€ temp doc to measure text before we know final height â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const tmp = new jsPDF({ unit: "mm", format: [W, 300] });
     tmp.setFont("helvetica", "normal"); tmp.setFontSize(7.5);
 
@@ -261,7 +266,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const bcH   = 17;   // barcode image height
     const H = hdrH + fromH + toH + barH + refH + wH + 4 + (bcH + 7) * 2 + 6;
 
-    // ── real doc ──────────────────────────────────────────────────────────
+    // â”€â”€ real doc â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [W, H] });
 
     const fillRect = (x: number, y: number, w: number, h: number, r: number, g: number, b: number) => {
@@ -275,10 +280,10 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
       doc.setFont("helvetica", style); doc.setFontSize(size); doc.setTextColor(r, g, b);
     };
 
-    // ── logo ──────────────────────────────────────────────────────────────
+    // â”€â”€ logo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // FIX: previously the logo was force-fit into a fixed width AND fixed height
     // box with doc.addImage(), which ignores the source image's real aspect
-    // ratio and stretches/squashes it — this is what produced the warped,
+    // ratio and stretches/squashes it â€” this is what produced the warped,
     // "rotated-looking" logo in the PDF. Now we measure the real image
     // dimensions and contain-fit it inside the box, centered, so it always
     // keeps its correct proportions.
@@ -302,9 +307,9 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
       if (img.naturalWidth && img.naturalHeight) {
         logoAspect = img.naturalWidth / img.naturalHeight;
       }
-    } catch { /* ok — falls back to no logo */ }
+    } catch { /* ok â€” falls back to no logo */ }
 
-    // ── barcodes ──────────────────────────────────────────────────────────
+    // â”€â”€ barcodes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const makeBC = (val: string) => {
       const c = document.createElement("canvas");
       try { JsBarcode(c, val, { format: "CODE128", height: 80, displayValue: false, margin: 4, background: "#fff", lineColor: "#000" }); } catch { /* */ }
@@ -314,12 +319,12 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const refBC = makeBC(barcodeRef || "000000");
     const trkBC = makeBC(trackCode || "000000");
 
-    // ── outer border ──────────────────────────────────────────────────────
+    // â”€â”€ outer border â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     doc.setDrawColor(0); doc.setLineWidth(0.4); doc.rect(0, 0, W, H);
 
-    // ════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // HEADER
-    // ════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     const doxW  = dox === "DOX" ? 18 : 22;
     const logoW = 26;
     const mainW = W - doxW - logoW;
@@ -362,9 +367,9 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     hline(hdrH, 0.6);
     let y = hdrH;
 
-    // ════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // FROM / ORIGIN
-    // ════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     sf("bold", 7, 60, 60, 60);
     txt("FROM:", pad, y + 5);
     sf("bold", 9.5, 0, 0, 0);
@@ -387,9 +392,9 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     hline(y + fromH, 0.3, 160, 160, 160);
     y += fromH;
 
-    // ════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // TO / CONTACT
-    // ════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     hline(y, 0.6);
     const cxLeft = W - CONTACT_W;
 
@@ -420,17 +425,17 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     hline(y + toH, 0.5);
     y += toH;
 
-    // ════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // SERVICE TYPE BAR
-    // ════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     fillRect(0, y, W, barH, 0, 0, 0);
     sf("bold", 11, 255, 255, 255);
     txt(serviceType, pad, y + barH - 2);
     y += barH;
 
-    // ════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // REF / DAY / TIME
-    // ════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     sf("normal", 8, 0, 0, 0);
     txt(`CNIC Shipper: ${cnicCode}`, pad, y + 7);
 
@@ -449,9 +454,9 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     hline(y + refH, 0.2, 200, 200, 200);
     y += refH;
 
-    // ════════════════════════════════════════════════════════════════════
-    // WEIGHT / PIECES  — labels on top, values below
-    // ════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // WEIGHT / PIECES  â€” labels on top, values below
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     const colW = (W - pad) / 3;
 
     // Pce/Shpt  |  Weight  |  Piece
@@ -467,13 +472,13 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     hline(y + wH, 0.2, 200, 200, 200);
     y += wH + 4;
 
-    // ════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // BARCODES
-    // ════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     const cntX  = pad + 65 + 3;   // contents start x
     const bcW   = 63;             // barcode image width
 
-    // Upper — reference ID
+    // Upper â€” reference ID
     doc.addImage(refBC, "PNG", pad, y, bcW, bcH);
     sf("normal", 7, 0, 0, 0);
     txt(barcodeRef, pad + bcW / 2, y + bcH + 3.5, { align: "center" });
@@ -486,12 +491,12 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
     y += bcH + 8;
 
-    // Lower — tracking ID (full width for prominence)
+    // Lower â€” tracking ID (full width for prominence)
     doc.addImage(trkBC, "PNG", pad, y, W - pad * 2, bcH);
     sf("normal", 7, 0, 0, 0);
     txt(trackCode, W / 2, y + bcH + 3.5, { align: "center" });
 
-    // ── save ─────────────────────────────────────────────────────────────
+    // â”€â”€ save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     doc.save(`SkyXpress_Label_${trackCode}.pdf`);
   };
 
@@ -502,10 +507,10 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
         style={{ fontFamily: "Arial, Helvetica, sans-serif" }}
       >
         <DialogHeader className="sr-only">
-          <DialogTitle>Shipping Label — {parcel.tracking_id}</DialogTitle>
+          <DialogTitle>Shipping Label â€” {parcel.tracking_id}</DialogTitle>
         </DialogHeader>
 
-        {/* Print controls — hidden when printing */}
+        {/* Print controls â€” hidden when printing */}
         <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b print:hidden">
           <span className="text-sm font-semibold text-slate-700">Shipping Label Preview</span>
           <div className="flex gap-2">
@@ -524,7 +529,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
           </div>
         </div>
 
-        {/* ══════════ LABEL BODY ══════════ */}
+        {/* â•â•â•â•â•â•â•â•â•â• LABEL BODY â•â•â•â•â•â•â•â•â•â• */}
         <div
           id="shipping-label-print"
           className="bg-white text-black"
@@ -539,14 +544,14 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
           }}
         >
 
-          {/* ── Header row ── */}
+          {/* â”€â”€ Header row â”€â”€ */}
           <div style={{ display: "flex", alignItems: "stretch", borderBottom: "2px solid #000" }}>
             {/* EXPRESS WORLDWIDE + service type + date + website */}
             <div style={{ flex: 1, padding: "8px 10px" }}>
               <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: 0.5, lineHeight: 1.1 }}>
                 EXPRESS WORLDWIDE
               </div>
-              {/* Service type — styled accent line */}
+              {/* Service type â€” styled accent line */}
               <div style={{
                 display: "inline-block",
                 marginTop: 4,
@@ -572,7 +577,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
               }}>
                 {labelDate(createdDate)}
               </div>
-              {/* Website — small line under the date */}
+              {/* Website â€” small line under the date */}
               <div style={{
                 marginTop: 2,
                 fontSize: 8.5,
@@ -595,7 +600,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
               {dox}
             </div>
 
-            {/* Logo — fixed box, image contain-fit so it can never stretch/skew */}
+            {/* Logo â€” fixed box, image contain-fit so it can never stretch/skew */}
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               borderLeft: "2px solid #000", padding: "4px 10px",
@@ -617,7 +622,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
             </div>
           </div>
 
-          {/* ── From / Origin row ── */}
+          {/* â”€â”€ From / Origin row â”€â”€ */}
           <div style={{ display: "flex", borderBottom: "1px solid #aaa", padding: "6px 10px 6px 10px" }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", color: "#333", marginBottom: 2 }}>
@@ -635,7 +640,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
             </div>
           </div>
 
-          {/* ── To / Contact row ── */}
+          {/* â”€â”€ To / Contact row â”€â”€ */}
           <div style={{
             display: "flex", borderBottom: "1px solid #000",
             padding: "6px 10px",
@@ -661,7 +666,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
             </div>
           </div>
 
-          {/* ── Service type bar (black) ── */}
+          {/* â”€â”€ Service type bar (black) â”€â”€ */}
           <div style={{
             background: "#000", color: "#fff",
             padding: "5px 10px",
@@ -670,7 +675,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
             {serviceType}
           </div>
 
-          {/* ── Ref / Day / Time row ── */}
+          {/* â”€â”€ Ref / Day / Time row â”€â”€ */}
           <div style={{ display: "flex", alignItems: "center", padding: "4px 10px", borderBottom: "1px solid #ccc" }}>
             <div style={{ flex: 1, fontSize: 10 }}>
               CNIC Shipper: {cnicCode}
@@ -687,7 +692,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
             </div>
           </div>
 
-          {/* ── Weight / Pieces row ── */}
+          {/* â”€â”€ Weight / Pieces row â”€â”€ */}
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "flex-end",
             padding: "4px 10px 6px", gap: 24, borderBottom: "1px solid #aaa",
@@ -703,9 +708,9 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
             </div>
           </div>
 
-          {/* ── Barcodes section ── */}
+          {/* â”€â”€ Barcodes section â”€â”€ */}
           <div style={{ padding: "8px 10px 4px" }}>
-            {/* Upper barcode — reference ID */}
+            {/* Upper barcode â€” reference ID */}
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
               <div style={{ flex: 1 }}>
                 <Barcode value={parcel.reference_id || parcel.tracking_id || "000000"} height={48} />
@@ -721,7 +726,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
               </div>
             </div>
 
-            {/* Lower barcode — tracking ID */}
+            {/* Lower barcode â€” tracking ID */}
             <div style={{ marginTop: 8 }}>
               <Barcode value={trackCode || "000000"} height={48} />
               <div style={{ textAlign: "center", fontSize: 9, marginTop: 2, letterSpacing: 0.5 }}>
@@ -731,13 +736,14 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
           </div>
 
         </div>
-        {/* ══════════ END LABEL ══════════ */}
+        {/* â•â•â•â•â•â•â•â•â•â• END LABEL â•â•â•â•â•â•â•â•â•â• */}
 
       </DialogContent>
 
-      {/* ── Print styles ── */}
+      {/* â”€â”€ Print styles â”€â”€ */}
       <style>{`
         @media print {
+          @page { margin: 5mm; size: A4 portrait; }
           body * { visibility: hidden !important; }
           #shipping-label-print,
           #shipping-label-print * { visibility: visible !important; }
@@ -745,11 +751,13 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
             position: fixed !important;
             top: 0 !important;
             left: 0 !important;
-            width: 100% !important;
-            max-width: 100% !important;
+            width: 560px !important;
+            max-width: 560px !important;
             border: none !important;
             padding: 0 !important;
             margin: 0 !important;
+            zoom: 1.35 !important;
+            transform-origin: top left !important;
           }
         }
       `}</style>
