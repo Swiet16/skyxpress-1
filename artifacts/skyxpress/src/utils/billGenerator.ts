@@ -1213,11 +1213,11 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const showServiceBadge = opts.showServiceBadge !== false;
 
     const s = (mm: number) => mm * scale;         // scale a fixed-mm block height
-    const headerH = s(13);
+    const headerH = s(18);
     let y = startY;
 
     // ── header row: logo · (optional service badge) · centered notice ───
-    await addLogo(pdf, M, y, s(40), s(13));
+    await addLogo(pdf, M, y, s(58), s(18));
 
     // Service badge — the dark navy box on the right of the header containing the
     // service name (e.g. "ECONOMIC"). Shown by default, but the page-2 shipping
@@ -1564,7 +1564,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   // the card backgrounds correctly before the actual content is drawn on top of them.
   const computeHeaderPlusGridHeight = (scale: number, showWebsite: boolean): number => {
     const s = (mm: number) => mm * scale;
-    const headerH = s(13);
+    const headerH = s(18);
     const gridH = s(7) + s(37) + s(17) + s(14); // accountH + shipperH + authH + podH (must match drawAwbGrid)
     return headerH + s(1.5) + (showWebsite ? s(5.4) : 0) + gridH;
   };
@@ -1615,24 +1615,40 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     bottom1 += 0.5;
   });
 
+  // ── PAGE 1 FOOTER — contact info line (page 1 only) ─────────────
+  const footerLineY = PH - 7;
+  D(NAVY, 0.4);
+  pdf.line(M, footerLineY - 2, M + FULL_UW, footerLineY - 2);
+  TF(5.8, 'normal'); TX(NAVY);
+  pdf.text(
+    'Phone: 042 999164619  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411  |  Email: skyxpress786@gmail.com',
+    M + FULL_UW / 2,
+    footerLineY + 2,
+    { align: 'center' }
+  );
+
   // ══════════════════════════════════════════════════════════════════════
   // PAGE 2 — two full-size label copies ("PIECE" copy + "ACCOUNTS COPY"),
-  // presented as clean branded cards (drop-shadow, caption pill, styled cut
-  // line, footer brand strip) so the page reads as a designed layout that
-  // uses the full sheet, rather than two small boxes floating on blank space.
+  // scaled to fill the entire page with no wasted space at the bottom.
   // Freight amount is intentionally NOT printed on this page.
   //
-  // Per client request, page 2 no longer shows:
+  // Per client request, page 2 does NOT show:
   //   • the "SHIPPING LABELS" navy banner across the top
-  //   • the "PIECE 1/2" marker in the header (topRightMode is now 'none')
+  //   • the "PIECE 1/2" marker in the header (topRightMode is 'none')
   //   • the dark navy service-type badge box (e.g. "ECONOMIC") in the header
-  // The two cards simply start at the top of the page and use the freed
-  // vertical space to give the labels more breathing room.
+  //   • the footer brand strip (removed — both cards fill the page instead)
   // ══════════════════════════════════════════════════════════════════════
   pdf.addPage();
 
-  const LABEL_SCALE = 1; // full-size — matches page 1 so nothing looks cramped
+  // Calculate scale so both label cards fill the page exactly (no wasted space)
   const cardPad = 5;
+  const captionH = 9;
+  const topMargin = 6;
+  const bottomMargin = 6;
+  const cutAreaH = 16; // gap between cards (9 above cut line + 7 below cut line)
+  // Base block height at scale 1: header(18) + gap(1.5) + website(5.4) + grid(7+37+17+14=75) = 99.9mm
+  const baseBlockH = 99.9;
+  const LABEL_SCALE = (PH - 2 * (captionH + cardPad * 2) - cutAreaH - topMargin - bottomMargin) / (2 * baseBlockH);
 
   // Draws one label (header+grid) inside a white "card" with a soft shadow and an
   // amber caption pill underneath. Returns the Y position of the card's bottom edge.
@@ -1643,7 +1659,6 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     captionText: string
   ): Promise<number> => {
     const blockH = computeHeaderPlusGridHeight(LABEL_SCALE, true);
-    const captionH = 9;
     const cardH = blockH + captionH + cardPad * 2;
 
     // soft drop-shadow, then the white card face
@@ -1675,10 +1690,8 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     return cardTop + cardH;
   };
 
-  // Cards now start at the very top of the page (no SHIPPING LABELS banner),
-  // using the freed ~20mm of vertical space so the labels get more breathing
-  // room and the cut line + footer still fit on the single page.
-  const copy1CardTop = 6;
+  // Cards start at topMargin — scale is calculated so both cards fill the page exactly
+  const copy1CardTop = topMargin;
   const copy1CardBottom = await drawLabelCard(copy1CardTop, 'none', true, `PIECE 1 OF ${pieces}`);
 
   // Styled cut line between the two labels
@@ -1695,18 +1708,6 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
 
   const copy2CardTop = cutY + 7;
   const copy2CardBottom = await drawLabelCard(copy2CardTop, 'none', false, 'ACCOUNTS COPY');
-
-  // Footer brand strip — fills the remaining space cleanly instead of leaving it blank
-  const footerY = copy2CardBottom + 10;
-  F(NAVY);
-  pdf.roundedRect(M, footerY, FULL_UW, 10, 2, 2, 'F');
-  TF(7, 'bold'); TX(WHITE);
-  pdf.text(
-    'SKY XPRESS INTERNATIONAL  •  Courier & Cargo  •  www.skyxpress.site',
-    PW / 2,
-    footerY + 6.5,
-    { align: 'center' }
-  );
 
   handlePDFOutput(pdf, `AWB-Sender-Copy-${refNumber}.pdf`, mode);
 };
