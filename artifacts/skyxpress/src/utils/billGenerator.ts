@@ -32,6 +32,7 @@ interface ParcelData {
   receiver_phone: string;
   receiver_vat_no?: string;
   receiver_eori?: string;
+  receiver_tax_id?: string;
   weight: number;
   length?: number;
   width?: number;
@@ -452,7 +453,7 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
     const cnic    = side === 'from' ? safeText(parcel.sender_cnic??'','') : '';
     const vatNo   = side === 'from' ? safeText(parcel.sender_vat_no??'','') : safeText(parcel.receiver_vat_no??'','');
     const eori    = side === 'from' ? safeText(parcel.sender_eori??'','') : safeText(parcel.receiver_eori??'','');
-    const taxId   = side === 'from' ? safeText(parcel.sender_tax_id??'','') : '';
+    const taxId   = side === 'from' ? safeText(parcel.sender_tax_id??'','') : safeText(parcel.receiver_tax_id??'','');
 
     const colX = side === 'from' ? M : M + colW;
     let rowY   = boxTop + 3;  // top padding inside box so text clears the border
@@ -483,7 +484,7 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
     writeLine(`Trader Type: ${side === 'from' ? 'BUSINESS' : 'PRIVATE'}`);
     writeLine(`VAT No: ${vatNo || 'N/A'}`);
     writeLine(`EORI: ${eori || 'N/A'}`);
-    if (side === 'from') writeLine(`TAX ID: ${taxId || 'N/A'}`);
+    writeLine(`TAX ID: ${taxId || 'N/A'}`);
     if (cnic) writeLine(`CNIC: ${cnic}`);
 
     return rowY;
@@ -1144,7 +1145,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   const contentsDescription = items.map((it: any) => safeText(it.description, 'General Goods')).join(', ');
 
   const freightPkr   = parcel.amount_override != null ? parcel.amount_override : (parcel.freight_amount_pkr || 0);
-  const freightLabel = `PKR ${Number(freightPkr).toLocaleString()}`;
+  const freightLabel = `${senderCurrency} ${Number(freightPkr).toLocaleString()}`;
   const declaredValueLabel = `${Number(parcel.total_price || 0).toFixed(2)} ${senderCurrency}`;
 
   // ══════════════════════════════════════════════════════════════════════
@@ -1394,12 +1395,13 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     pdf.text(codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')).toUpperCase(), cx, cy); cy += s(2.9);
     TF(Math.max(4.4, s(4.8)), 'normal');
     if (safeText(parcel.receiver_phone, '')) { pdf.text(safeText(parcel.receiver_phone, ''), cx, cy); cy += s(2.9); }
-    // VAT No / EORI — only printed when the parcel actually has a value
+    // VAT No / EORI / Tax ID — only printed when the parcel actually has a value
     const receiverVatVal = safeText(parcel.receiver_vat_no, '');
     const receiverEoriVal = safeText(parcel.receiver_eori, '');
+    const receiverTaxIdVal = safeText(parcel.receiver_tax_id, '');
     if (receiverVatVal) { pdf.text(`VAT No: ${receiverVatVal}`, cx, cy); cy += s(2.9); }
     if (receiverEoriVal) { pdf.text(`EORI: ${receiverEoriVal}`, cx, cy); cy += s(2.9); }
-    pdf.setFontSize(receiverFontSize ?? 7);
+    if (receiverTaxIdVal) { pdf.text(`Tax ID: ${receiverTaxIdVal}`, cx, cy); cy += s(2.9); }
 
     // DAP / Declared value row
     const dapTop = consigneeTop + consigneeH;
