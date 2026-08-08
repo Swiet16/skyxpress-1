@@ -1586,33 +1586,81 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   D(LINE, 0.3); pdf.line(M, bottom1, M + FULL_UW, bottom1);
   bottom1 += 3;
 
-  // ── STANDARD TRADING CONDITION ───────────────────────────────────────
-  TF(7.5, 'bold'); TX(NAVY);
-  pdf.text('STANDARD TRADING CONDITION', PW / 2, bottom1 + 3.6, { align: 'center' });
-  bottom1 += 7.5;
-  TF(5.6, 'normal'); TX(INK);
-  const intro = pdf.splitTextToSize(
-    'By tendering goods for transport by SKY XPRESS WORLDWIDE EXPRESS the Consignor agrees to the following conditions:',
-    FULL_UW
-  ) as string[];
-  intro.forEach((ln) => { pdf.text(ln, M, bottom1); bottom1 += 3; });
-  bottom1 += 1;
+  // ── STANDARD TRADING CONDITIONS ──────────────────────────────────────
+  // Styled box that fills remaining page 1 space before the contact footer.
+  // Uses a navy header bar + light background + expanded terms (12 clauses)
+  // with dynamic line spacing to fill the available height.
 
-  const termsLines = [
-    '1. DEFINITIONS: "Sky Xpress" means Sky Xpress Worldwide Express. "Consignor" or "Shipper" means the sender. "Consignee" means the person to whom the goods are consigned.',
-    '2. CONSIGNMENT NOTE: Each consignment shall be correctly addressed and accompanied by the Sky Xpress form of Consignment Note which the Consignor shall properly complete. The Consignor is responsible for the correctness of information provided.',
-    '3. SUB-CONTRACTING: Sky Xpress may sub-contract all or any part of the carriage and may engage agents or sub-contractors on any terms.',
-    '4. COMMON CARRIER: The company is not a common carrier and will only carry goods on these conditions.',
-    '5. LIABILITY: Sky Xpress shall not be liable for any loss, damage, or delays except where directly caused by proven negligence. Maximum liability is limited to USD 100 per shipment unless additional insurance is purchased in advance.',
-    '6. PROHIBITED ITEMS: Consignor warrants goods do not contain dangerous, hazardous, or prohibited items including narcotics, weapons, explosives, antiques, liquids, or items prohibited by IATA or local laws. Consignor is fully responsible.',
-    '7. CUSTOMS & DUTIES: Any customs duties, taxes, or charges levied at destination shall be paid by the Consignee. If Consignee refuses payment, Consignor shall be liable for all costs.',
-    '8. GOVERNING LAW: These conditions are governed by the laws of Pakistan. Any disputes shall be subject to the exclusive jurisdiction of Pakistani courts.',
+  const tcBoxTop = bottom1;
+  const tcBoxBottom = PH - 16; // leave room for contact footer
+  const tcBoxH = tcBoxBottom - tcBoxTop;
+  const tcPad = 4;
+
+  // Navy header bar
+  const tcHeaderH = 8;
+  F(NAVY);
+  pdf.roundedRect(M, tcBoxTop, FULL_UW, tcHeaderH, 1.5, 1.5, 'F');
+  TF(7.5, 'bold'); TX(WHITE);
+  pdf.text('STANDARD TRADING CONDITIONS', PW / 2, tcBoxTop + 5.3, { align: 'center' });
+
+  // Light warm-grey background for terms body
+  const tcBodyTop = tcBoxTop + tcHeaderH;
+  const tcBodyH = tcBoxH - tcHeaderH;
+  F([248, 247, 243]);
+  pdf.rect(M, tcBodyTop, FULL_UW, tcBodyH, 'F');
+  D(INK, 0.4);
+  pdf.rect(M, tcBoxTop, FULL_UW, tcBoxH, 'S');
+
+  // Intro paragraph
+  let ty = tcBodyTop + 5;
+  TF(6, 'italic'); TX(MID);
+  const tcIntro = pdf.splitTextToSize(
+    'By tendering goods for transport by SKY XPRESS WORLDWIDE EXPRESS, the Consignor agrees to the following Standard Trading Conditions. Please read carefully before shipping.',
+    FULL_UW - tcPad * 2
+  ) as string[];
+  tcIntro.forEach((ln) => { pdf.text(ln, M + tcPad, ty); ty += 3.2; });
+  ty += 2;
+
+  // Expanded 12-clause terms
+  const tcLines = [
+    '1.  DEFINITIONS: "Sky Xpress" means Sky Xpress Worldwide Express. "Consignor" or "Shipper" means the person or entity sending the goods. "Consignee" means the person or entity to whom the goods are consigned for delivery. "Goods" means the cargo accepted for carriage under these conditions.',
+    '2.  CONSIGNMENT NOTE: Each consignment shall be correctly addressed, marked, and accompanied by a Sky Xpress Consignment Note duly completed and signed by the Consignor. The Consignor is solely responsible for the accuracy and completeness of all information provided, including weight, dimensions, contents, declared value, and recipient details.',
+    '3.  SUB-CONTRACTING: Sky Xpress reserves the right to sub-contract all or any part of the carriage to any third-party carrier, agent, or sub-contractor on any terms. Such sub-contracting shall not relieve Sky Xpress of its obligations under these conditions.',
+    '4.  COMMON CARRIER: Sky Xpress is not a common carrier and accepts no liability as such. The company reserves the right to refuse any consignment without assigning any reason, and carriage is provided solely on these terms and conditions.',
+    '5.  LIABILITY & LIMITATION: Sky Xpress shall not be liable for any loss, damage, misdelivery, or delay except where directly caused by the proven negligence of Sky Xpress. In no event shall total liability exceed USD 100 per shipment or the declared value, whichever is less, unless additional insurance is purchased in writing prior to dispatch.',
+    '6.  PROHIBITED & RESTRICTED ITEMS: The Consignor warrants that goods do not contain dangerous, hazardous, illegal, or prohibited items including narcotics, weapons, explosives, flammable materials, radioactive substances, antiques, precious metals, counterfeit goods, perishables, or any items prohibited by IATA, ICAO, or applicable local and international laws. The Consignor shall be fully liable for all costs, penalties, and legal consequences arising from breach of this warranty.',
+    '7.  CUSTOMS, DUTIES & TAXES: All customs duties, import taxes, VAT, GST, storage charges, demurrage fees, and any other charges levied at the destination country shall be borne by the Consignee. If the Consignee refuses or fails to pay, the Consignor shall be held liable for all costs incurred, including return shipping charges if applicable.',
+    '8.  INSURANCE: Unless specifically requested and confirmed in writing by Sky Xpress prior to shipment, no insurance coverage is provided. The Consignor may arrange separate cargo insurance at their own cost. Sky Xpress accepts no liability for any insurance claims.',
+    '9.  PACKAGING & LABELING: The Consignor is responsible for ensuring all goods are properly packed, secured, and labeled in compliance with IATA and applicable carrier regulations. Sky Xpress reserves the right to open and inspect any package for safety, security, or customs compliance without liability for damage caused during such inspection.',
+    '10. DELIVERY: Delivery shall be deemed completed when goods are delivered to the address on the Consignment Note or to a person authorized to receive them. If delivery cannot be effected, Sky Xpress shall attempt to contact the Consignee. Goods may be held for a maximum of 30 days at destination, after which they may be returned, disposed of, or sold at the Consignor\'s expense.',
+    '11. CLAIMS & NOTIFICATION: Any claim for loss, damage, or delay must be notified in writing to Sky Xpress within 7 days of scheduled delivery for domestic shipments and 14 days for international shipments. No claim shall be entertained unless received within these timeframes with all supporting documentation.',
+    '12. GOVERNING LAW & JURISDICTION: These conditions shall be governed by and construed in accordance with the laws of the Islamic Republic of Pakistan. Any disputes arising out of or in connection with these conditions shall be subject to the exclusive jurisdiction of the competent courts in Lahore, Pakistan.',
   ];
-  TF(5.4, 'normal');
-  termsLines.forEach((line) => {
-    const ls = pdf.splitTextToSize(line, FULL_UW) as string[];
-    ls.forEach((l) => { pdf.text(l, M, bottom1); bottom1 += 2.8; });
-    bottom1 += 0.5;
+
+  // Dynamically calculate line spacing so terms fill the available body area
+  const tcTextTop = ty;
+  const tcTextBottom = tcBodyTop + tcBodyH - 4; // 4mm bottom padding
+  const tcAvailH = tcTextBottom - tcTextTop;
+
+  // Count total wrapped lines at reference spacing
+  let totalLines = 0;
+  const refSpacing = 3.2;
+  tcLines.forEach((line) => {
+    const ls = pdf.splitTextToSize(line, FULL_UW - tcPad * 2) as string[];
+    totalLines += ls.length;
+  });
+  const gapLines = tcLines.length; // one gap per term
+  // spacing * (totalLines + gapLines * (gap / spacing)) = tcAvailH
+  // approximate: spacing * (totalLines + gapLines * 0.3) = tcAvailH
+  const effectiveLines = totalLines + gapLines * 0.3;
+  const tcLineSpacing = Math.min(3.8, Math.max(2.8, tcAvailH / effectiveLines));
+  const tcTermGap = tcLineSpacing * 0.35;
+
+  TF(5.8, 'normal'); TX(INK);
+  tcLines.forEach((line) => {
+    const ls = pdf.splitTextToSize(line, FULL_UW - tcPad * 2) as string[];
+    ls.forEach((l) => { pdf.text(l, M + tcPad, ty); ty += tcLineSpacing; });
+    ty += tcTermGap;
   });
 
   // ── PAGE 1 FOOTER — contact info line (page 1 only) ─────────────
