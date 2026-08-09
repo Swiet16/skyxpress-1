@@ -1393,17 +1393,30 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
       TF(Math.max(4.6, s(5.4)), 'bold'); TX(NAVY);
       pdf.text(text, x, yy);
     };
-    // Vertical (rotated 90°) side label, e.g. "SHIPPER" / "CONSIGNEE", drawn along the
-    // left edge of its strip. Anchored WITHOUT jsPDF's built-in align:'center', because
-    // align does not re-project onto the rotated axis reliably — using it here made the
-    // label's effective horizontal anchor shift left by ~half the (unrotated) text width,
-    // pushing it outside the box border. Instead we manually centre the text within
-    // [topY, topY + height] along the vertical axis it will actually be drawn on.
-    const vLabel = (x: number, topY: number, height: number, text: string, fontSize: number, color: readonly number[] = INK) => {
-      TF(fontSize, 'bold'); TX(color);
-      const textW = pdf.getTextWidth(text);
+    // Vertical (rotated 90°) side TAB — filled colored strip with bold white/navy
+    // text, e.g. "SHIPPER" / "CONSIGNEE". Replaces the old thin-hairline-plus-text
+    // version: this fills a real background block so it reads as a proper ribbon
+    // tab rather than a sliver of rotated text. Font size auto-shrinks until the
+    // (rotated) text height fits inside `height` with padding, so it can NEVER
+    // overlap into the section above/below it regardless of scale.
+    const vTab = (
+      x: number, topY: number, tabWidth: number, height: number,
+      text: string, bg: readonly number[], textColor: readonly number[], maxFontSize: number
+    ) => {
+      F(bg);
+      pdf.rect(x, topY, tabWidth, height, 'F');
+      let fs = maxFontSize;
+      TF(fs, 'bold');
+      let textW = pdf.getTextWidth(text);
+      const maxTextW = height - s(4); // top/bottom padding — keeps text clear of the dividers above/below
+      while (textW > maxTextW && fs > 5) {
+        fs -= 0.4;
+        TF(fs, 'bold');
+        textW = pdf.getTextWidth(text);
+      }
+      TX(textColor);
       const startY = topY + (height + textW) / 2;
-      pdf.text(text, x, startY, { angle: 90 });
+      pdf.text(text, x + tabWidth / 2 + fs * 0.14, startY, { angle: 90 });
     };
 
     // ══════════════ COLUMN A — Account / Shipper / Sender Auth / POD ═════
@@ -1424,15 +1437,14 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     );
     const shipperTop = boxTop + accountH;
     D(LINE, 0.25); pdf.line(xA, shipperTop, xA + wA, shipperTop);
-    // vertical "SHIPPER" label strip — widened from 4.6→6.5mm and bumped up to a
-    // much bigger font (was capped at ~5.2pt, unreadably small) so the label
-    // reads clearly at a glance instead of looking like a stray hairline of text.
-    D(LINE, 0.2); pdf.line(xA + s(6.5), shipperTop, xA + s(6.5), shipperTop + shipperH);
-    vLabel(xA + s(3.4), shipperTop, shipperH, 'SHIPPER', Math.max(7, s(8)));
+    // Filled navy "SHIPPER" tab — sized generously (bigger + bolder than before)
+    // since vTab's auto-shrink guarantees it still fits cleanly within shipperH.
+    const shipperTabW = s(7.5);
+    vTab(xA, shipperTop, shipperTabW, shipperH, 'SHIPPER', NAVY, WHITE, Math.max(9, s(10.5)));
 
     let sy = shipperTop + s(3.4);
-    const sx = xA + s(8.6);
-    const sw = wA - s(10.6);
+    const sx = xA + s(9.6);
+    const sw = wA - s(11.6);
     TF(Math.max(5.6, s(6.4)), 'bold'); TX(INK);
     pdf.text(safeText(parcel.sender_name, 'N/A').toUpperCase(), sx, sy, { maxWidth: sw });
     sy += s(3.4);
