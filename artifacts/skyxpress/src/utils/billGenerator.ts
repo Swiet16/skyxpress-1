@@ -1,7 +1,6 @@
 // @ts-nocheck
 import jsPDF from 'jspdf';
 import JsBarcode from 'jsbarcode';
-import { supabase } from '@/integrations/supabase/client';
 
 interface ParcelData {
   tracking_id: string;
@@ -1133,21 +1132,6 @@ export const generateAirwayBillVerification = async (parcel: any, mode: OutputMo
 // never be cropped off the page edge. All values are still driven purely by the existing
 // ParcelData fields already used elsewhere in this file — no new/invented fields.
 export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMode = 'download'): Promise<void> => {
-  // Fetch PKR exchange rate from pricing config
-  let pkrRate = 285.0;
-  try {
-    const { data: pricingData } = await supabase
-      .from('pricing_config')
-      .select('currency_rates')
-      .single();
-
-    if ((pricingData?.currency_rates as any)?.PKR) {
-      pkrRate = (pricingData.currency_rates as any).PKR;
-    }
-  } catch (error) {
-    console.warn('Failed to fetch PKR rate, using default:', error);
-  }
-
   const pdf = new jsPDF('p', 'mm', 'a4');
   const PW = pdf.internal.pageSize.getWidth();   // 210mm
   const PH = pdf.internal.pageSize.getHeight();  // 297mm
@@ -1203,20 +1187,13 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   );
   const declaredValueLabel = `${itemsSubtotal.toFixed(2)} ${senderCurrency}`;
 
-  // FIX: freight_amount_pkr is always stored in PKR, but the label was just
-  // slapping whatever currency the sender picked onto that raw PKR number
-  // without converting it — so switching currency changed the letters (GBP,
-  // USD, ...) but never the number, which stayed the PKR amount. pkrRate
-  // (fetched above) is PKR per 1 unit of the selected currency, so we now
-  // actually divide by it to get a real converted amount. amount_override is
-  // assumed to already be entered in the sender's chosen currency (a manual
-  // override), so it's used as-is, with no conversion applied.
-  const freightInPkr = parcel.freight_amount_pkr || 0;
-  const freightConverted = (senderCurrency === 'PKR' || !pkrRate)
-    ? freightInPkr
-    : freightInPkr / pkrRate;
-  const freightAmount = parcel.amount_override != null ? parcel.amount_override : freightConverted;
-  const freightLabel = `${senderCurrency} ${Number(freightAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // Freight is always a PKR-denominated cost paid by the sender, regardless of
+  // what currency the rest of the invoice (declared value, items, etc.) is
+  // shown in — so it always prints as "PKR ..." rather than being converted
+  // into senderCurrency. amount_override, when present, is a manual PKR
+  // override entered by staff and is used as-is.
+  const freightInPkr = parcel.amount_override != null ? parcel.amount_override : (parcel.freight_amount_pkr || 0);
+  const freightLabel = `PKR ${Number(freightInPkr).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   // ══════════════════════════════════════════════════════════════════════
   // Draws one compact copy of the AWB grid. `scale` shrinks every fixed
@@ -1748,7 +1725,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.line(M, footerLineY - 2, M + FULL_UW, footerLineY - 2);
   TF(5.8, 'normal'); TX(NAVY);
   pdf.text(
-   'Phone: 0342 37255473  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411  |  Email: skyxpress786@gmail.com',
+    'Phone: 0342 37255473  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411  |  Email: skyxpress786@gmail.com',
     M + FULL_UW / 2,
     footerLineY + 2,
     { align: 'center' }
