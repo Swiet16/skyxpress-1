@@ -1213,18 +1213,21 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const showServiceBadge = opts.showServiceBadge !== false;
 
     const s = (mm: number) => mm * scale;         // scale a fixed-mm block height
-    const headerH = s(18);
+    const headerH = s(24);                         // was s(18) — taller header to fit bigger logo
     let y = startY;
 
     // ── header row: logo · (optional service badge) · centered notice ───
-    await addLogo(pdf, M, y, s(58), s(18));
+    // Logo bounding box widened 58→75mm and tallened 18→24mm so the SkyXpress
+    // logo prints visibly larger. addLogo() preserves the image's natural aspect
+    // ratio, so the actual logo scales up to fill the bigger box.
+    await addLogo(pdf, M, y, s(75), s(24));
 
     // Service badge — the dark navy box on the right of the header containing the
     // service name (e.g. "ECONOMIC"). Shown by default, but the page-2 shipping
     // labels pass showServiceBadge:false because the user doesn't want the box
     // there.
     if (showServiceBadge) {
-      const badgeH = s(13);
+      const badgeH = s(17);                       // was s(13) — proportional bump to match taller header
       const badgeMaxW = s(46);           // cap so a long service name can't crowd the header
       const badgeMinW = s(22);
       let badgeFontSize = Math.max(7, s(9.5));
@@ -1244,12 +1247,15 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
 
     if (opts.topRightMode === 'warning') {
       // Warning line — shifted up slightly to leave room for the website text below it.
+      // Center shifted from UW/2 to UW*0.62 so the warning text sits in the gap
+      // between the bigger logo (now 75mm wide) and the service badge on the right,
+      // instead of overlapping the logo.
       TF(Math.max(6, s(7.5)), 'bold'); TX(AMBER);
-      pdf.text('SELF-COLLECTION NOT AVAILABLE FOR THIS SHIPMENT', M + UW / 2, y + headerH / 2 - 1, { align: 'center' });
+      pdf.text('SELF-COLLECTION NOT AVAILABLE FOR THIS SHIPMENT', M + UW * 0.62, y + headerH / 2 - 1, { align: 'center' });
       // Website — plain printed text, centered on its own line directly below the
       // warning text. Not a clickable link, just visible text on the printout.
       TF(Math.max(5, s(6)), 'bold'); TX(INK);
-      pdf.text('www.skyxpress.site', M + UW / 2, y + headerH / 2 + 4, { align: 'center' });
+      pdf.text('www.skyxpress.site', M + UW * 0.62, y + headerH / 2 + 4, { align: 'center' });
     } else if (opts.topRightMode === 'piece') {
       TF(Math.max(8, s(11)), 'bold'); TX(INK);
       pdf.text(`PIECE ${1}/${pieces}`, M + UW / 2, y + headerH / 2 + 1.5, { align: 'center' });
@@ -1585,7 +1591,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   // the card backgrounds correctly before the actual content is drawn on top of them.
   const computeHeaderPlusGridHeight = (scale: number, showWebsite: boolean): number => {
     const s = (mm: number) => mm * scale;
-    const headerH = s(18);
+    const headerH = s(24);                        // was s(18) — keep in sync with drawAwbGrid
     const gridH = s(7) + s(37) + s(17) + s(14); // accountH + shipperH + authH + podH (must match drawAwbGrid)
     return headerH + s(1.5) + (showWebsite ? s(5.4) : 0) + gridH;
   };
@@ -1715,8 +1721,10 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   const topMargin = 6;
   const bottomMargin = 6;
   const cutAreaH = 16; // gap between cards (9 above cut line + 7 below cut line)
-  // Base block height at scale 1: header(18) + gap(1.5) + website(5.4) + grid(7+37+17+14=75) = 99.9mm
-  const baseBlockH = 99.9;
+  // Base block height at scale 1: header(24) + gap(1.5) + website(5.4) + grid(7+37+17+14=75) = 105.9mm
+  // (header grew from 18→24 to accommodate the bigger logo, so this must grow too
+  // or the page-2 LABEL_SCALE calculation would size the cards incorrectly.)
+  const baseBlockH = 105.9;
   const LABEL_SCALE = (PH - 2 * (captionH + cardPad * 2) - cutAreaH - topMargin - bottomMargin) / (2 * baseBlockH);
 
   // Draws one label (header+grid) inside a white "card" with a soft shadow and an
