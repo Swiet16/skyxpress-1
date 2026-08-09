@@ -202,6 +202,11 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const LABEL_W = 560;
     const A4_SCALE = 1.35;
 
+    // Usable A4 print area at 96dpi (210x297mm page, 5mm margin each side).
+    const PX_PER_MM = 96 / 25.4;
+    const USABLE_W_PX = (210 - 10) * PX_PER_MM; // â‰ˆ 756px
+    const USABLE_H_PX = (297 - 10) * PX_PER_MM; // â‰ˆ 1085px
+
     // FIX: CSS `zoom` re-runs layout at the scaled factor, and Chromium's
     // print pipeline computes flex-basis for un-sized flex children (like the
     // DOX / NON DOX badge, which has no explicit width) BEFORE applying zoom
@@ -216,12 +221,28 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     // gets an explicit height (measured from the real, unscaled label) so
     // the scaled content reserves its correct space in normal document flow
     // instead of being clipped.
+    //
+    // FIX: the label's natural content is shorter than a full A4 sheet, so
+    // scaling it to fill the full WIDTH left a large blank gap below it
+    // (the "half page" look). Stretching it non-uniformly to also fill the
+    // full height would distort the barcode (breaking scannability) and the
+    // logo. Instead, we measure the natural content height and pad the
+    // BOTTOM of the label's own bordered box (blank space, nothing scaled
+    // or stretched) so the box itself grows to reach the bottom of the
+    // usable A4 area â€” the printed page ends up fully covered by the label
+    // card edge-to-edge, with no distortion of any element inside it.
+    const naturalHeight = labelEl.getBoundingClientRect().height || labelEl.scrollHeight;
+    const targetUnscaledHeight = USABLE_H_PX / A4_SCALE;
+    const extraBottomPadding = Math.max(0, targetUnscaledHeight - naturalHeight);
+    const finalUnscaledHeight = naturalHeight + extraBottomPadding;
+
     const printStyle = doc.createElement("style");
     printStyle.textContent = `
       @page { margin: 5mm; size: A4 portrait; }
       html, body { margin: 0; padding: 0; background: #fff; }
       #print-wrapper {
         width: ${LABEL_W * A4_SCALE}px;
+        height: ${finalUnscaledHeight * A4_SCALE}px;
         margin: 0 auto;
         position: relative;
       }
@@ -235,6 +256,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
         background: #fff !important;
         color: #000 !important;
         box-sizing: border-box !important;
+        padding-bottom: ${extraBottomPadding}px !important;
         transform: scale(${A4_SCALE}) !important;
         transform-origin: top left !important;
         position: absolute !important;
@@ -246,7 +268,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
     // Wrapper reserves the real (scaled) space in the page flow so the
     // absolutely-positioned, scaled label doesn't get clipped or overlap
-    // anything after it.
+    // anything after it â€” sized to fill the full usable A4 height.
     const wrapper = doc.createElement("div");
     wrapper.id = "print-wrapper";
 
@@ -254,13 +276,6 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const clone = doc.importNode(labelEl, true);
     wrapper.appendChild(clone);
     doc.body.appendChild(wrapper);
-
-    // Measure the clone's natural (unscaled) height straight from the
-    // source element, then size the wrapper to the scaled height so the
-    // page reserves exactly the right amount of space â€” no cropping, no
-    // stray blank page.
-    const naturalHeight = labelEl.getBoundingClientRect().height || labelEl.scrollHeight;
-    wrapper.style.height = `${naturalHeight * A4_SCALE}px`;
 
     // Wait for images/barcodes to render before printing
     setTimeout(() => {
