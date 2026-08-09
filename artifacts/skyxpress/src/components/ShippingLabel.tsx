@@ -196,33 +196,71 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     styleEl.textContent = styleContent;
     doc.head.appendChild(styleEl);
 
-    // Print-specific styles
-    const printStyle = doc.createElement("style");
     // Scale 560px label to fill A4 printable width
     // A4 = 210mm âˆ’ 2Ã—5mm margin = 200mm usable â‰ˆ 756px at 96dpi
     // 756 / 560 â‰ˆ 1.35
+    const LABEL_W = 560;
     const A4_SCALE = 1.35;
+
+    // FIX: CSS `zoom` re-runs layout at the scaled factor, and Chromium's
+    // print pipeline computes flex-basis for un-sized flex children (like the
+    // DOX / NON DOX badge, which has no explicit width) BEFORE applying zoom
+    // correctly in some builds â€” this is what made that column balloon to a
+    // disproportionate size only when printing. `transform: scale()` instead
+    // scales the already-correct layout as a bitmap-like operation, so every
+    // column keeps the exact same proportions you see on screen.
+    //
+    // FIX: `position: fixed` pinned the label to the print window's viewport,
+    // which is what caused the "half page" / cropped output â€” anything below
+    // one viewport height never made it onto the page. The wrapper below
+    // gets an explicit height (measured from the real, unscaled label) so
+    // the scaled content reserves its correct space in normal document flow
+    // instead of being clipped.
+    const printStyle = doc.createElement("style");
     printStyle.textContent = `
       @page { margin: 5mm; size: A4 portrait; }
       html, body { margin: 0; padding: 0; background: #fff; }
+      #print-wrapper {
+        width: ${LABEL_W * A4_SCALE}px;
+        margin: 0 auto;
+        position: relative;
+      }
       #shipping-label-print {
-        width: 560px !important;
-        max-width: 560px !important;
+        width: ${LABEL_W}px !important;
+        max-width: ${LABEL_W}px !important;
         border: 1px solid #000 !important;
         font-family: Arial, Helvetica, sans-serif !important;
         font-size: 11px !important;
         line-height: 1.3 !important;
         background: #fff !important;
         color: #000 !important;
-        zoom: ${A4_SCALE} !important;
+        box-sizing: border-box !important;
+        transform: scale(${A4_SCALE}) !important;
         transform-origin: top left !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
       }
     `;
     doc.head.appendChild(printStyle);
 
+    // Wrapper reserves the real (scaled) space in the page flow so the
+    // absolutely-positioned, scaled label doesn't get clipped or overlap
+    // anything after it.
+    const wrapper = doc.createElement("div");
+    wrapper.id = "print-wrapper";
+
     // Clone the label node into the print window (no innerHTML string injection)
     const clone = doc.importNode(labelEl, true);
-    doc.body.appendChild(clone);
+    wrapper.appendChild(clone);
+    doc.body.appendChild(wrapper);
+
+    // Measure the clone's natural (unscaled) height straight from the
+    // source element, then size the wrapper to the scaled height so the
+    // page reserves exactly the right amount of space â€” no cropping, no
+    // stray blank page.
+    const naturalHeight = labelEl.getBoundingClientRect().height || labelEl.scrollHeight;
+    wrapper.style.height = `${naturalHeight * A4_SCALE}px`;
 
     // Wait for images/barcodes to render before printing
     setTimeout(() => {
@@ -747,16 +785,23 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
           body * { visibility: hidden !important; }
           #shipping-label-print,
           #shipping-label-print * { visibility: visible !important; }
+          /* Reserve the real, scaled footprint in normal flow (via the
+             DialogContent wrapper) instead of position:fixed, which pinned
+             the label to the viewport and cropped anything past one
+             viewport height ("half page" bug). transform:scale (not zoom)
+             keeps every column's proportions identical to the on-screen
+             preview instead of letting un-sized flex children (like the
+             DOX / NON DOX badge) balloon. */
           #shipping-label-print {
-            position: fixed !important;
+            position: relative !important;
             top: 0 !important;
             left: 0 !important;
             width: 560px !important;
             max-width: 560px !important;
             border: none !important;
             padding: 0 !important;
-            margin: 0 !important;
-            zoom: 1.35 !important;
+            margin: 0 auto !important;
+            transform: scale(1.35) !important;
             transform-origin: top left !important;
           }
         }
