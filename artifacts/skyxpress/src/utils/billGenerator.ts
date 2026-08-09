@@ -230,7 +230,7 @@ const handlePDFOutput = (pdf: jsPDF, filename: string, mode: OutputMode = 'downl
 // The logo is fitted inside the requested bounding box (width × height),
 // centred horizontally and pinned to the top so it always sits cleanly in the
 // header row regardless of the box dimensions callers pass in.
-const addLogo = async (pdf: jsPDF, x: number, y: number, width: number, height: number) => {
+const addLogo = async (pdf: jsPDF, x: number, y: number, width: number, height: number): Promise<{ drawW: number; drawH: number }> => {
   const logoUrl = 'https://slelguoygbfzlpylpxfs.supabase.co/storage/v1/object/public/document-uploads/skyxpress-logo-1760347926331.jpg';
 
   try {
@@ -240,7 +240,7 @@ const addLogo = async (pdf: jsPDF, x: number, y: number, width: number, height: 
     }
     const blob = await response.blob();
 
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<{ drawW: number; drawH: number }>((resolve, reject) => {
       // First, load the image into an <img> element to read its natural
       // dimensions. jsPDF's addImage stretches to whatever width/height you
       // pass, so without this step a wide-short bounding box (40×13mm) crops
@@ -276,13 +276,13 @@ const addLogo = async (pdf: jsPDF, x: number, y: number, width: number, height: 
           try {
             const base64 = reader.result as string;
             pdf.addImage(base64, 'JPEG', drawX, drawY, drawW, drawH);
-            resolve();
+            resolve({ drawW, drawH });
           } catch (err) {
             console.error('Error adding logo to PDF:', err);
-            resolve();
+            resolve({ drawW, drawH });
           }
         };
-        reader.onerror = () => { resolve(); };
+        reader.onerror = () => { resolve({ drawW, drawH }); };
         reader.readAsDataURL(blob);
       };
       probe.onerror = () => {
@@ -294,16 +294,16 @@ const addLogo = async (pdf: jsPDF, x: number, y: number, width: number, height: 
             const base64 = reader.result as string;
             pdf.addImage(base64, 'JPEG', x, y, width, height);
           } catch (err) { /* ignore */ }
-          resolve();
+          resolve({ drawW: width, drawH: height });
         };
-        reader.onerror = () => { resolve(); };
+        reader.onerror = () => { resolve({ drawW: width, drawH: height }); };
         reader.readAsDataURL(blob);
       };
       probe.src = objectUrl;
     });
   } catch (error) {
     console.error('Error loading logo:', error);
-    return Promise.resolve();
+    return Promise.resolve({ drawW: width, drawH: height });
   }
 };
 
@@ -1220,15 +1220,19 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     // ── header row: logo · (optional service badge) · centered notice ───
     // Logo bounding box widened 75→90mm and tallened 24→30mm so the SkyXpress
     // logo prints noticeably larger still. addLogo() preserves the image's
-    // natural aspect ratio, so the actual logo scales up to fill the bigger box.
-    await addLogo(pdf, M, y, s(90), s(30));
+    // natural aspect ratio, so the actual logo scales up to fill the bigger box —
+    // but that means the logo rarely fills the FULL 90mm box width (its natural
+    // ratio is wider than tall, so it's usually height-limited and draws
+    // narrower). We now capture the actual drawn width it returns and use THAT
+    // for centering, instead of assuming the full 90mm box was used — that
+    // assumption was what pushed "SELF-COLLECTION NOT AVAILABLE..." too far
+    // right, since the real empty gap started well before the box's right edge.
+    const logoDims = await addLogo(pdf, M, y, s(90), s(30));
 
-    // Right edge of the logo and left edge of the service badge — used below to
-    // center the warning/website text in the real gap between them, rather than
-    // a fixed fraction of the header width (which only looked right for a wide
-    // badge; a short one like "DPD_UK" leaves a much wider gap and a fixed
-    // fraction then sits noticeably too far right).
-    const logoRightEdge = M + s(90);
+    // Right edge of the ACTUAL logo artwork (not its bounding box) and left edge
+    // of the service badge — used below to center the warning/website text in
+    // the real visual gap between them.
+    const logoRightEdge = M + logoDims.drawW;
     let badgeLeftEdge = M + UW; // default: no badge, gap extends to the header's right edge
 
     // Service badge — the dark navy box on the right of the header containing the
@@ -1289,18 +1293,18 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     //    the same total gridH, leaving no leftover blank space. Shipper and
     //    consignee blocks are sized to fit the WORST CASE where every optional
     //    field is filled: Name + Company + 2 addr lines + City + Country +
-    //    Phone + (CNIC / VAT / EORI / Tax ID). Barcode & size-weight blocks
+    //    Phone + Email + (CNIC / VAT / EORI / Tax ID). Barcode & size-weight blocks
     //    absorb the difference automatically since they "fill remaining space"
     //    in their column. Growing these blocks prevents text from spilling into
     //    the Sender's Authorization / POD sections below.
     const accountH   = s(7);
-    const shipperH   = s(37);   // fits 3.4 top-pad + name(3.4) + 10 lines × 3mm = 36.8mm
+    const shipperH   = s(40);   // fits 3.4 top-pad + name(3.4) + 11 lines × 3mm = 39.8mm (added Email line)
     const authH      = s(17);
     const podH       = s(14);
     const gridH      = accountH + shipperH + authH + podH;   // column A drives the total height
 
     const trackH     = s(6.5);
-    const consigneeH = s(33);   // fits 3.1 top-pad + 10 lines × 2.9mm = 32.1mm
+    const consigneeH = s(36);   // fits 3.1 top-pad + 11 lines × 2.9mm = 35mm (added Email line)
     const dapH       = s(9);
     const barcodeH   = gridH - trackH - consigneeH - dapH; // column B fills the rest
 
@@ -1381,13 +1385,15 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     );
     const shipperTop = boxTop + accountH;
     D(LINE, 0.25); pdf.line(xA, shipperTop, xA + wA, shipperTop);
-    // vertical "SHIPPER" label strip
-    D(LINE, 0.2); pdf.line(xA + s(4.6), shipperTop, xA + s(4.6), shipperTop + shipperH);
-    vLabel(xA + s(2.3), shipperTop, shipperH, 'SHIPPER', Math.max(4.6, s(5.2)));
+    // vertical "SHIPPER" label strip — widened from 4.6→6.5mm and bumped up to a
+    // much bigger font (was capped at ~5.2pt, unreadably small) so the label
+    // reads clearly at a glance instead of looking like a stray hairline of text.
+    D(LINE, 0.2); pdf.line(xA + s(6.5), shipperTop, xA + s(6.5), shipperTop + shipperH);
+    vLabel(xA + s(3.4), shipperTop, shipperH, 'SHIPPER', Math.max(7, s(8)));
 
     let sy = shipperTop + s(3.4);
-    const sx = xA + s(6.6);
-    const sw = wA - s(8.6);
+    const sx = xA + s(8.6);
+    const sw = wA - s(10.6);
     TF(Math.max(5.6, s(6.4)), 'bold'); TX(INK);
     pdf.text(safeText(parcel.sender_name, 'N/A').toUpperCase(), sx, sy, { maxWidth: sw });
     sy += s(3.4);
@@ -1407,6 +1413,9 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     pdf.text(safeText(parcel.sender_city, ''), sx, sy, { maxWidth: sw }); sy += s(3);
     pdf.text(codeToCountryName(safeText(parcel.sender_country, 'Pakistan')).toUpperCase(), sx, sy, { maxWidth: sw }); sy += s(3);
     if (safeText(parcel.sender_phone, '')) { pdf.text(safeText(parcel.sender_phone, ''), sx, sy, { maxWidth: sw }); sy += s(3); }
+    // Email — was missing from this bill entirely; now printed right after phone.
+    const senderEmailVal = safeText(parcel.sender_email, '');
+    if (senderEmailVal) { pdf.text(senderEmailVal, sx, sy, { maxWidth: sw }); sy += s(3); }
     if (safeText(parcel.sender_cnic, '')) { TF(Math.max(4.4, s(5)), 'normal'); pdf.text(`CNIC/NTN: ${safeText(parcel.sender_cnic, '')}`, sx, sy, { maxWidth: sw }); sy += s(3); }
     // VAT No / EORI / Tax ID — only printed when the parcel actually has a value
     TF(Math.max(4.4, s(5)), 'normal'); TX(INK);
@@ -1471,12 +1480,14 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     pdf.text(safeText(parcel.receiver_name, 'N/A').toUpperCase(), xB + bPad + b2 + s(1.4), by + s(1.1) + b2 * 0.72, { maxWidth: wB - 12 });
 
     const consigneeTop = by + s(5.6);
-    D(LINE, 0.2); pdf.line(xB + s(4.6), consigneeTop, xB + s(4.6), consigneeTop + consigneeH);
-    vLabel(xB + s(2.3), consigneeTop, consigneeH, 'CONSIGNEE', Math.max(4.6, s(5.2)), NAVY);
+    // Widened from 4.6→6.5mm and bumped to a much bigger font (was capped at
+    // ~5.2pt) to match the SHIPPER label and read clearly.
+    D(LINE, 0.2); pdf.line(xB + s(6.5), consigneeTop, xB + s(6.5), consigneeTop + consigneeH);
+    vLabel(xB + s(3.4), consigneeTop, consigneeH, 'CONSIGNEE', Math.max(7, s(8)), NAVY);
 
     let cy = consigneeTop + s(3.1);
-    const cx = xB + s(6.6);
-    const cw = wB - s(8.6);
+    const cx = xB + s(8.6);
+    const cw = wB - s(10.6);
     TF(Math.max(5, s(5.6)), 'normal'); TX(INK);
     // Company — printed right under the badge/name (previously missing from this bill)
     const receiverCompanyVal = safeText(parcel.receiver_company, '');
@@ -1494,6 +1505,9 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     pdf.text(codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')).toUpperCase(), cx, cy, { maxWidth: cw }); cy += s(2.9);
     TF(Math.max(4.4, s(4.8)), 'normal');
     if (safeText(parcel.receiver_phone, '')) { pdf.text(safeText(parcel.receiver_phone, ''), cx, cy, { maxWidth: cw }); cy += s(2.9); }
+    // Email — was missing from this bill entirely; now printed right after phone.
+    const receiverEmailVal = safeText(parcel.receiver_email, '');
+    if (receiverEmailVal) { pdf.text(receiverEmailVal, cx, cy, { maxWidth: cw }); cy += s(2.9); }
     // VAT No / EORI / Tax ID — only printed when the parcel actually has a value
     const receiverVatVal = safeText(parcel.receiver_vat_no, '');
     const receiverEoriVal = safeText(parcel.receiver_eori, '');
@@ -1629,7 +1643,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   const computeHeaderPlusGridHeight = (scale: number, showWebsite: boolean): number => {
     const s = (mm: number) => mm * scale;
     const headerH = s(30);                        // was s(24) — keep in sync with drawAwbGrid
-    const gridH = s(7) + s(37) + s(17) + s(14); // accountH + shipperH + authH + podH (must match drawAwbGrid)
+    const gridH = s(7) + s(40) + s(17) + s(14); // accountH + shipperH + authH + podH (must match drawAwbGrid)
     return headerH + s(1.5) + (showWebsite ? s(5.4) : 0) + gridH;
   };
 
@@ -1760,10 +1774,11 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   const topMargin = 6;
   const bottomMargin = 6;
   const cutAreaH = 16; // gap between cards (9 above cut line + 7 below cut line)
-  // Base block height at scale 1: header(30) + gap(1.5) + website(5.4) + grid(7+37+17+14=75) = 111.9mm
-  // (header grew from 24→30 to accommodate the bigger logo, so this must grow too
+  // Base block height at scale 1: header(30) + gap(1.5) + website(5.4) + grid(7+40+17+14=78) = 114.9mm
+  // (header grew from 24→30 to accommodate the bigger logo, and shipperH grew from
+  // 37→40 to fit the Email line, so this must stay in sync with computeHeaderPlusGridHeight
   // or the page-2 LABEL_SCALE calculation would size the cards incorrectly.)
-  const baseBlockH = 111.9;
+  const baseBlockH = 114.9;
   const LABEL_SCALE = (PH - 2 * (captionH + cardPad * 2) - cutAreaH - topMargin - bottomMargin) / (2 * baseBlockH);
 
   // Draws one label (header+grid) inside a white "card" with a soft shadow and an
