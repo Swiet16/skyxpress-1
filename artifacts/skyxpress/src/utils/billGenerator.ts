@@ -1246,17 +1246,56 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
       let badgeFontSize = Math.max(7, s(9.5));
       TF(badgeFontSize, 'bold');
       const badgeTextW = pdf.getTextWidth(service);
-      let badgeW = Math.min(badgeMaxW, Math.max(badgeMinW, badgeTextW + s(6)));
-      if (badgeTextW + s(6) > badgeMaxW) {
-        badgeFontSize = Math.max(5, badgeFontSize * (badgeMaxW - s(6)) / badgeTextW);
+      // A touch more side padding than before (s(6)→s(9)) since the ribbon's
+      // slanted notches eat into the usable text width more than a square edge did.
+      let badgeW = Math.min(badgeMaxW, Math.max(badgeMinW, badgeTextW + s(9)));
+      if (badgeTextW + s(9) > badgeMaxW) {
+        badgeFontSize = Math.max(5, badgeFontSize * (badgeMaxW - s(9)) / badgeTextW);
         TF(badgeFontSize, 'bold');
       }
       const badgeX = M + UW - badgeW;
       badgeLeftEdge = badgeX;
+
+      // ── Stylish ribbon-banner badge (replaces the old plain rounded rect) ──
+      // A slanted parallelogram body + amber accent stripe along the top edge +
+      // a folded-corner shadow triangle at the bottom-right point, echoing a
+      // torn-ribbon banner look. It's drawn inside the SAME bounding box
+      // (badgeX/y/badgeW/badgeH) the old rounded rect used, so every other
+      // layout calculation that depends on badgeLeftEdge / badgeW is unaffected.
+      // This whole header block runs through drawAwbGrid() for both page 1's
+      // header AND page 2's label cards (via showServiceBadge), so the ribbon
+      // renders at identical size and position on both pages automatically.
+      const notch = badgeH * 0.38;
       F(NAVY);
-      pdf.roundedRect(badgeX, y, badgeW, badgeH, 1.2, 1.2, 'F');
+      pdf.lines(
+        [[badgeW - notch, 0], [-notch, badgeH], [-(badgeW - notch), 0]],
+        badgeX + notch, y,
+        [1, 1],
+        'F',
+        true
+      );
+      // amber accent stripe along the top slanted edge, following the same slant
+      const stripeH = Math.max(1.3, badgeH * 0.16);
+      F(AMBER);
+      pdf.lines(
+        [[badgeW - notch, 0], [-notch * (stripeH / badgeH), stripeH], [-(badgeW - notch), 0]],
+        badgeX + notch, y,
+        [1, 1],
+        'F',
+        true
+      );
+      // folded-corner shadow at the bottom-right point, for a bit of paper-fold depth
+      const foldSize = Math.min(badgeW, badgeH) * 0.24;
+      F([9, 18, 36]);
+      pdf.triangle(
+        badgeX + badgeW - notch, y + badgeH,
+        badgeX + badgeW - notch - foldSize, y + badgeH,
+        badgeX + badgeW - notch, y + badgeH - foldSize,
+        'F'
+      );
       TX(WHITE);
-      pdf.text(service, badgeX + badgeW / 2, y + badgeH / 2 + s(2.2), { align: 'center' });
+      TF(badgeFontSize, 'bold');
+      pdf.text(service, badgeX + badgeW / 2 + notch * 0.15, y + badgeH / 2 + s(2.2), { align: 'center' });
     }
 
     // Midpoint of the actual free space between the logo and the badge (or the
