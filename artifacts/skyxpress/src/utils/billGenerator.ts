@@ -1216,14 +1216,14 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const showServiceBadge = opts.showServiceBadge !== false;
 
     const s = (mm: number) => mm * scale;         // scale a fixed-mm block height
-    const headerH = s(24);                         // was s(18) — taller header to fit bigger logo
+    const headerH = s(30);                         // was s(24) — grown again for an even bigger logo
     let y = startY;
 
     // ── header row: logo · (optional service badge) · centered notice ───
-    // Logo bounding box widened 58→75mm and tallened 18→24mm so the SkyXpress
-    // logo prints visibly larger. addLogo() preserves the image's natural aspect
-    // ratio, so the actual logo scales up to fill the bigger box.
-    await addLogo(pdf, M, y, s(75), s(24));
+    // Logo bounding box widened 75→90mm and tallened 24→30mm so the SkyXpress
+    // logo prints noticeably larger still. addLogo() preserves the image's
+    // natural aspect ratio, so the actual logo scales up to fill the bigger box.
+    await addLogo(pdf, M, y, s(90), s(30));
 
     // Service badge — the dark navy box on the right of the header containing the
     // service name (e.g. "ECONOMIC"). Shown by default, but the page-2 shipping
@@ -1618,7 +1618,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   // the card backgrounds correctly before the actual content is drawn on top of them.
   const computeHeaderPlusGridHeight = (scale: number, showWebsite: boolean): number => {
     const s = (mm: number) => mm * scale;
-    const headerH = s(24);                        // was s(18) — keep in sync with drawAwbGrid
+    const headerH = s(30);                        // was s(24) — keep in sync with drawAwbGrid
     const gridH = s(7) + s(37) + s(17) + s(14); // accountH + shipperH + authH + podH (must match drawAwbGrid)
     return headerH + s(1.5) + (showWebsite ? s(5.4) : 0) + gridH;
   };
@@ -1748,10 +1748,10 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   const topMargin = 6;
   const bottomMargin = 6;
   const cutAreaH = 16; // gap between cards (9 above cut line + 7 below cut line)
-  // Base block height at scale 1: header(24) + gap(1.5) + website(5.4) + grid(7+37+17+14=75) = 105.9mm
-  // (header grew from 18→24 to accommodate the bigger logo, so this must grow too
+  // Base block height at scale 1: header(30) + gap(1.5) + website(5.4) + grid(7+37+17+14=75) = 111.9mm
+  // (header grew from 24→30 to accommodate the bigger logo, so this must grow too
   // or the page-2 LABEL_SCALE calculation would size the cards incorrectly.)
-  const baseBlockH = 105.9;
+  const baseBlockH = 111.9;
   const LABEL_SCALE = (PH - 2 * (captionH + cardPad * 2) - cutAreaH - topMargin - bottomMargin) / (2 * baseBlockH);
 
   // Draws one label (header+grid) inside a white "card" with a soft shadow and an
