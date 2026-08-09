@@ -1444,7 +1444,7 @@ const sw = wA - s(12);
       pdf.text(senderCompanyVal, sx, sy, { maxWidth: sw });
       sy += s(3);
     }
-    TF(Math.max(5, s(5.6)), 'normal');
+    TF(Math.max(5, s(5.6)), 'bold');
     const senderAddrLines = pdf.splitTextToSize(
       [parcel.sender_address, parcel.sender_address_2, parcel.sender_address_3].filter(Boolean).join(', '),
       sw
@@ -1525,7 +1525,8 @@ const sw = wA - s(12);
     // after
 D(LINE, 0.2); pdf.line(xB + s(8), consigneeTop, xB + s(8), consigneeTop + consigneeH);
 vLabel(xB + s(4), consigneeTop, consigneeH, 'CONSIGNEE', Math.max(9, s(10.5)), NAVY);
-
+pdf.text(safeText(parcel.sender_city, ''), sx, sy, { maxWidth: sw }); sy += s(3);
+pdf.text(codeToCountryName(safeText(parcel.sender_country, 'Pakistan')).toUpperCase(), sx, sy, { maxWidth: sw }); sy += s(3);
 let cy = consigneeTop + s(3.1);
 const cx = xB + s(10);
 const cw = wB - s(12);
