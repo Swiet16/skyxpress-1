@@ -1345,7 +1345,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const trackH     = s(6.5);
     const consigneeH = s(36);   // fits 3.1 top-pad + 11 lines × 2.9mm = 35mm (added Email line)
     const dapH       = s(9);
-    const barcodeH   = gridH - trackH - consigneeH - dapH; // column B fills the rest
+    const barcodeH   = gridH - trackH - s(5.6) - consigneeH - dapH; // column B fills the rest (s(5.6) accounts for badge-2 gap above consignee)
 
     const refH       = s(10);
     const freightH   = s(7);
@@ -1450,13 +1450,14 @@ const sw = wA - s(12);
       sw
     ) as string[];
     senderAddrLines.slice(0, 2).forEach((ln) => { pdf.text(ln, sx, sy, { maxWidth: sw }); sy += s(3); });
+    // Phone, Email, CNIC — normal weight (only name & address are bold)
+    TF(Math.max(4.4, s(5)), 'normal'); TX(INK);
     if (safeText(parcel.sender_phone, '')) { pdf.text(safeText(parcel.sender_phone, ''), sx, sy, { maxWidth: sw }); sy += s(3); }
     // Email — was missing from this bill entirely; now printed right after phone.
     const senderEmailVal = safeText(parcel.sender_email, '');
     if (senderEmailVal) { pdf.text(senderEmailVal, sx, sy, { maxWidth: sw }); sy += s(3); }
-    if (safeText(parcel.sender_cnic, '')) { TF(Math.max(4.4, s(5)), 'normal'); pdf.text(`CNIC/NTN: ${safeText(parcel.sender_cnic, '')}`, sx, sy, { maxWidth: sw }); sy += s(3); }
+    if (safeText(parcel.sender_cnic, '')) { pdf.text(`CNIC/NTN: ${safeText(parcel.sender_cnic, '')}`, sx, sy, { maxWidth: sw }); sy += s(3); }
     // VAT No / EORI / Tax ID — only printed when the parcel actually has a value
-    TF(Math.max(4.4, s(5)), 'normal'); TX(INK);
     const senderVatVal = safeText(parcel.sender_vat_no, '');
     const senderEoriVal = safeText(parcel.sender_eori, '');
     const senderTaxIdVal = safeText(parcel.sender_tax_id, '');
@@ -1527,12 +1528,15 @@ let cy = consigneeTop + s(3.1);
 const cx = xB + s(10);
 const cw = wB - s(12);
     TF(Math.max(5, s(5.6)), 'bold'); TX(INK);
-    // Company — printed right under the badge/name (previously missing from this bill)
+    // Company — normal weight (only name & address are bold)
     const receiverCompanyVal = safeText(parcel.receiver_company, '');
     if (receiverCompanyVal) {
+      TF(Math.max(4.4, s(5)), 'normal'); TX(INK);
       pdf.text(receiverCompanyVal, cx, cy, { maxWidth: cw });
       cy += s(2.9);
     }
+    // Address — bold
+    TF(Math.max(5, s(5.6)), 'bold'); TX(INK);
     const recvAddrLines = pdf.splitTextToSize(
       [parcel.receiver_address, parcel.receiver_address_2, parcel.receiver_address_3].filter(Boolean).join(', '),
       cw
