@@ -1404,10 +1404,10 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
       'I/We agree that the carrier\u2019s standard terms and conditions apply and limit carrier liability.',
       wA - s(5)
     ) as string[];
-    // Extra clearance below the label — the label baseline sits ~authTop+5.4, so the
-    // paragraph now starts further down instead of ~2mm below it (which visually
-    // overlapped the label text).
-    let authY = authTop + s(9.2);
+    // Reduced clearance so the paragraph text appears in the NEXT ROW immediately
+    // below the "SENDER'S AUTHORIZATION" label, not pushed down with a big gap.
+    // Label baseline sits ~authTop+4.2; text now starts ~3mm below it.
+    let authY = authTop + s(5.6);
     authText.slice(0, 2).forEach((ln) => { pdf.text(ln, xA + aPad, authY); authY += s(2.6); });
     TF(Math.max(4.6, s(5)), 'bold'); TX(INK);
     pdf.text(`Date: ${bookingDate} ${bookingTime}`, xA + aPad, authY + s(1.6));
@@ -1418,8 +1418,10 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const b4 = badge(xA + aPad, podTop + s(2.4), '4');
     sectionLabel(xA + aPad + b4 + s(1.4), podTop + s(2.4) + b4 * 0.72, wA - 12, 'PROOF OF DELIVERY (POD)');
     TF(Math.max(4.6, s(5)), 'normal'); TX(INK);
-    pdf.text('Signature: ________________  Date: __ /__ /__', xA + aPad, podTop + s(8));
-    pdf.text('Print Name: ______________________________', xA + aPad, podTop + s(11.5));
+    // Reduced gap so Signature line appears in the NEXT ROW immediately below the
+    // "PROOF OF DELIVERY (POD)" label, not pushed down with a big gap.
+    pdf.text('Signature: ________________  Date: __ /__ /__', xA + aPad, podTop + s(5.6));
+    pdf.text('Print Name: ______________________________', xA + aPad, podTop + s(9.4));
 
     // ══════════════ COLUMN B — Tracking # / Consignee / DAP / Barcode ════
     const bPad = s(2);
@@ -1516,20 +1518,23 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     let ey = svcTop + s(3);
     const b5 = badge(xC + cPad, ey - s(2.6), '5');
     sectionLabel(xC + cPad + b5 + s(1.4), ey, wC - 12, 'SERVICE TYPE');
-    // Extra clearance below the label so the (larger, bold) service value below it
-    // doesn't visually touch/overlap the "SERVICE TYPE" label above it.
-    ey += s(4.4);
+    // Reduced clearance so the service value appears in the NEXT ROW immediately
+    // below the "SERVICE TYPE" label, not pushed down with a big gap. The bold
+    // value font is small enough that ~2.6mm spacing keeps it visually separated.
+    ey += s(2.6);
     TF(Math.max(5.6, s(6.2)), 'bold'); TX(INK);
     const serviceLines = pdf.splitTextToSize(service, wC - s(4)) as string[];
     pdf.text(serviceLines[0] ?? '', xC + cPad, ey);
-    ey += s(3.4);
+    // Reduced gap so CONTENTS label appears immediately below the service value.
+    ey += s(2.6);
     TF(Math.max(4.2, s(4.5)), 'bold'); TX(NAVY);
     pdf.text('CONTENTS:', xC + cPad, ey);
-    ey += s(2.8);
+    // Reduced gap so the contents lines start in the NEXT ROW after CONTENTS label.
+    ey += s(2.0);
     TF(Math.max(4.6, s(5)), 'normal'); TX(INK);
     const contentsLines = pdf.splitTextToSize(contentsDescription, wC - s(4)) as string[];
     // Auto-adjust line spacing if many lines so they fit within svcH without overlapping
-    const contentsAvailH = (svcTop + svcH) - ey - s(0.6) - s(2.8) - s(2.7); // space for contents lines only
+    const contentsAvailH = (svcTop + svcH) - ey - s(0.6) - s(2.0) - s(2.0); // space for contents lines only
     const contentsLineSpacing = contentsLineCount > 2
       ? Math.min(s(2.7), contentsAvailH / contentsLineCount)
       : s(2.7);
@@ -1537,7 +1542,8 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     ey += s(0.6);
     TF(Math.max(4.2, s(4.5)), 'bold'); TX(NAVY);
     pdf.text('SPECIAL INSTRUCTIONS:', xC + cPad, ey);
-    ey += s(2.7);
+    // Reduced gap so the value appears in the NEXT ROW immediately below the label.
+    ey += s(2.0);
     TF(Math.max(4.6, s(5)), 'normal'); TX(INK);
     pdf.text(safeText(parcel.document_type, 'N/A'), xC + cPad, ey);
 
@@ -1547,7 +1553,9 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const b6 = badge(xC + cPad, swTop + s(2.6), '6');
     sectionLabel(xC + cPad + b6 + s(1.4), swTop + s(2.6) + b6 * 0.72, wC - 12, 'SIZE & WEIGHT');
 
-    let swy = swTop + s(8.4);
+    // Reduced gap so the first row (PIECES) appears in the NEXT ROW immediately
+    // below the "SIZE & WEIGHT" label, not pushed down with a big gap.
+    let swy = swTop + s(5.6);
     const swRow = (label: string, value: string, highlight = false) => {
       const rowH = s(4);
       if (highlight) { F(PALE); pdf.rect(xC, swy - rowH * 0.72, wC, rowH, 'F'); }
