@@ -442,14 +442,12 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   setFont(16, 'bold'); setText(0,0,0);
   pdf.text('Proforma Invoice', M, y + 10);
 
-  // Barcode box (thin border, no fill)
-  setDraw(0,0,0,0.3);
-  pdf.rect(bcX, y, bcW, bcH);
+  // AWB reference number + barcode — no border box around it (removed per request)
   setFont(6.5, 'bold'); setText(0,0,0);
   pdf.text('AWB / REFERENCE NO', bcX + bcW/2, y + 5, { align: 'center' });
   setFont(8.5, 'bold');
   pdf.text(ref, bcX + bcW/2, y + 10.5, { align: 'center' });
-  // barcode image fills the interior
+  // barcode image
   await addBarcode(pdf, ref, bcX + 2, y + 12, bcW - 4, 14);
   setFont(6, 'normal'); setText(50,50,50);
   pdf.text(ref, bcX + bcW/2, y + 28.5, { align: 'center' });
@@ -1225,6 +1223,14 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     // natural aspect ratio, so the actual logo scales up to fill the bigger box.
     await addLogo(pdf, M, y, s(90), s(30));
 
+    // Right edge of the logo and left edge of the service badge — used below to
+    // center the warning/website text in the real gap between them, rather than
+    // a fixed fraction of the header width (which only looked right for a wide
+    // badge; a short one like "DPD_UK" leaves a much wider gap and a fixed
+    // fraction then sits noticeably too far right).
+    const logoRightEdge = M + s(90);
+    let badgeLeftEdge = M + UW; // default: no badge, gap extends to the header's right edge
+
     // Service badge — the dark navy box on the right of the header containing the
     // service name (e.g. "ECONOMIC"). Shown by default, but the page-2 shipping
     // labels pass showServiceBadge:false because the user doesn't want the box
@@ -1242,23 +1248,27 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
         TF(badgeFontSize, 'bold');
       }
       const badgeX = M + UW - badgeW;
+      badgeLeftEdge = badgeX;
       F(NAVY);
       pdf.roundedRect(badgeX, y, badgeW, badgeH, 1.2, 1.2, 'F');
       TX(WHITE);
       pdf.text(service, badgeX + badgeW / 2, y + badgeH / 2 + s(2.2), { align: 'center' });
     }
 
+    // Midpoint of the actual free space between the logo and the badge (or the
+    // header's right edge, if there's no badge) — always visually centered in
+    // whatever room is really available, instead of drifting right when the
+    // badge happens to be narrow.
+    const warningCenterX = (logoRightEdge + badgeLeftEdge) / 2;
+
     if (opts.topRightMode === 'warning') {
       // Warning line — shifted up slightly to leave room for the website text below it.
-      // Center shifted from UW/2 to UW*0.62 so the warning text sits in the gap
-      // between the bigger logo (now 75mm wide) and the service badge on the right,
-      // instead of overlapping the logo.
       TF(Math.max(6, s(7.5)), 'bold'); TX(AMBER);
-      pdf.text('SELF-COLLECTION NOT AVAILABLE FOR THIS SHIPMENT', M + UW * 0.62, y + headerH / 2 - 1, { align: 'center' });
+      pdf.text('SELF-COLLECTION NOT AVAILABLE FOR THIS SHIPMENT', warningCenterX, y + headerH / 2 - 1, { align: 'center' });
       // Website — plain printed text, centered on its own line directly below the
       // warning text. Not a clickable link, just visible text on the printout.
       TF(Math.max(5, s(6)), 'bold'); TX(INK);
-      pdf.text('www.skyxpress.site', M + UW * 0.62, y + headerH / 2 + 4, { align: 'center' });
+      pdf.text('www.skyxpress.site', warningCenterX, y + headerH / 2 + 4, { align: 'center' });
     } else if (opts.topRightMode === 'piece') {
       TF(Math.max(8, s(11)), 'bold'); TX(INK);
       pdf.text(`PIECE ${1}/${pieces}`, M + UW / 2, y + headerH / 2 + 1.5, { align: 'center' });
