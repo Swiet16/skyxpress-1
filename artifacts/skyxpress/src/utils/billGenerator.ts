@@ -1427,12 +1427,13 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     // vertical "SHIPPER" label strip — widened from 4.6→6.5mm and bumped up to a
     // much bigger font (was capped at ~5.2pt, unreadably small) so the label
     // reads clearly at a glance instead of looking like a stray hairline of text.
-    D(LINE, 0.2); pdf.line(xA + s(6.5), shipperTop, xA + s(6.5), shipperTop + shipperH);
-    vLabel(xA + s(3.4), shipperTop, shipperH, 'SHIPPER', Math.max(7, s(8)));
+   // after
+D(LINE, 0.2); pdf.line(xA + s(8), shipperTop, xA + s(8), shipperTop + shipperH);
+vLabel(xA + s(4), shipperTop, shipperH, 'SHIPPER', Math.max(9, s(10.5)));
 
-    let sy = shipperTop + s(3.4);
-    const sx = xA + s(8.6);
-    const sw = wA - s(10.6);
+let sy = shipperTop + s(3.4);
+const sx = xA + s(10);
+const sw = wA - s(12);
     TF(Math.max(5.6, s(6.4)), 'bold'); TX(INK);
     pdf.text(safeText(parcel.sender_name, 'N/A').toUpperCase(), sx, sy, { maxWidth: sw });
     sy += s(3.4);
@@ -1521,12 +1522,13 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const consigneeTop = by + s(5.6);
     // Widened from 4.6→6.5mm and bumped to a much bigger font (was capped at
     // ~5.2pt) to match the SHIPPER label and read clearly.
-    D(LINE, 0.2); pdf.line(xB + s(6.5), consigneeTop, xB + s(6.5), consigneeTop + consigneeH);
-    vLabel(xB + s(3.4), consigneeTop, consigneeH, 'CONSIGNEE', Math.max(7, s(8)), NAVY);
+    // after
+D(LINE, 0.2); pdf.line(xB + s(8), consigneeTop, xB + s(8), consigneeTop + consigneeH);
+vLabel(xB + s(4), consigneeTop, consigneeH, 'CONSIGNEE', Math.max(9, s(10.5)), NAVY);
 
-    let cy = consigneeTop + s(3.1);
-    const cx = xB + s(8.6);
-    const cw = wB - s(10.6);
+let cy = consigneeTop + s(3.1);
+const cx = xB + s(10);
+const cw = wB - s(12);
     TF(Math.max(5, s(5.6)), 'normal'); TX(INK);
     // Company — printed right under the badge/name (previously missing from this bill)
     const receiverCompanyVal = safeText(parcel.receiver_company, '');
