@@ -1725,7 +1725,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.line(M, footerLineY - 2, M + FULL_UW, footerLineY - 2);
   TF(5.8, 'normal'); TX(NAVY);
   pdf.text(
-    'Phone: 042 999164619  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411  |  Email: skyxpress786@gmail.com',
+    'Phone: 0342 37255473  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411  |  Email: skyxpress786@gmail.com',
     M + FULL_UW / 2,
     footerLineY + 2,
     { align: 'center' }
