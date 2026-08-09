@@ -1450,8 +1450,6 @@ const sw = wA - s(12);
       sw
     ) as string[];
     senderAddrLines.slice(0, 2).forEach((ln) => { pdf.text(ln, sx, sy, { maxWidth: sw }); sy += s(3); });
-    pdf.text(safeText(parcel.sender_city, ''), sx, sy, { maxWidth: sw }); sy += s(3);
-    pdf.text(codeToCountryName(safeText(parcel.sender_country, 'Pakistan')).toUpperCase(), sx, sy, { maxWidth: sw }); sy += s(3);
     if (safeText(parcel.sender_phone, '')) { pdf.text(safeText(parcel.sender_phone, ''), sx, sy, { maxWidth: sw }); sy += s(3); }
     // Email — was missing from this bill entirely; now printed right after phone.
     const senderEmailVal = safeText(parcel.sender_email, '');
@@ -1530,7 +1528,7 @@ pdf.text(codeToCountryName(safeText(parcel.sender_country, 'Pakistan')).toUpperC
 let cy = consigneeTop + s(3.1);
 const cx = xB + s(10);
 const cw = wB - s(12);
-    TF(Math.max(5, s(5.6)), 'normal'); TX(INK);
+    TF(Math.max(5, s(5.6)), 'bold'); TX(INK);
     // Company — printed right under the badge/name (previously missing from this bill)
     const receiverCompanyVal = safeText(parcel.receiver_company, '');
     if (receiverCompanyVal) {
