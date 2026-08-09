@@ -1193,9 +1193,30 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   const items = parcel.items?.length ? parcel.items : [{ description: 'General Goods', quantity: 1, unit_price: parcel.total_price || 0 }];
   const contentsDescription = items.map((it: any) => safeText(it.description, 'General Goods')).join(', ');
 
-  const freightPkr   = parcel.amount_override != null ? parcel.amount_override : (parcel.freight_amount_pkr || 0);
-  const freightLabel = `${senderCurrency} ${Number(freightPkr).toLocaleString()}`;
-  const declaredValueLabel = `${Number(parcel.total_price || 0).toFixed(2)} ${senderCurrency}`;
+  // FIX: declared value was reading parcel.total_price, which was 0/stale and
+  // didn't match the "Items Subtotal" shown in the app. It's now computed the
+  // same way the app's Items Subtotal is — summing quantity × unit price across
+  // the actual line items — so the two always agree.
+  const itemsSubtotal = items.reduce(
+    (sum: number, it: any) => sum + (Number(it.quantity) || 1) * (Number(it.unit_price) || 0),
+    0
+  );
+  const declaredValueLabel = `${itemsSubtotal.toFixed(2)} ${senderCurrency}`;
+
+  // FIX: freight_amount_pkr is always stored in PKR, but the label was just
+  // slapping whatever currency the sender picked onto that raw PKR number
+  // without converting it — so switching currency changed the letters (GBP,
+  // USD, ...) but never the number, which stayed the PKR amount. pkrRate
+  // (fetched above) is PKR per 1 unit of the selected currency, so we now
+  // actually divide by it to get a real converted amount. amount_override is
+  // assumed to already be entered in the sender's chosen currency (a manual
+  // override), so it's used as-is, with no conversion applied.
+  const freightInPkr = parcel.freight_amount_pkr || 0;
+  const freightConverted = (senderCurrency === 'PKR' || !pkrRate)
+    ? freightInPkr
+    : freightInPkr / pkrRate;
+  const freightAmount = parcel.amount_override != null ? parcel.amount_override : freightConverted;
+  const freightLabel = `${senderCurrency} ${Number(freightAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   // ══════════════════════════════════════════════════════════════════════
   // Draws one compact copy of the AWB grid. `scale` shrinks every fixed
@@ -1631,8 +1652,10 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   // ══════════════════════════════════════════════════════════════════════
   let bottom1 = await drawAwbGrid(6, 1, { topRightMode: 'warning', verticalStrip: false, showFreight: true });
 
-  // "SENDER COPY" dashed caption bar
-  bottom1 += 2.5;
+  // "SENDER COPY" caption bar — extra clearance above and below so it reads as
+  // a clean divider between the AWB grid and the Standard Trading Conditions
+  // box, instead of crowding either one.
+  bottom1 += 5;
   pdf.setLineDashPattern([1.2, 1], 0);
   D(LINE, 0.3); pdf.line(M, bottom1, M + FULL_UW, bottom1);
   pdf.setLineDashPattern([], 0);
@@ -1640,7 +1663,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.text('SENDER COPY', PW / 2, bottom1 + 4.6, { align: 'center' });
   bottom1 += 7.5;
   D(LINE, 0.3); pdf.line(M, bottom1, M + FULL_UW, bottom1);
-  bottom1 += 3;
+  bottom1 += 5;
 
   // ── STANDARD TRADING CONDITIONS ──────────────────────────────────────
   // Styled box that fills remaining page 1 space before the contact footer.
@@ -1725,7 +1748,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
   pdf.line(M, footerLineY - 2, M + FULL_UW, footerLineY - 2);
   TF(5.8, 'normal'); TX(NAVY);
   pdf.text(
-    'Phone: 0342 37255473  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411  |  Email: skyxpress786@gmail.com',
+   'Phone: 0342 37255473  |  Mobile: 0321 4710522  |  WhatsApp: 0326 9422411  |  Email: skyxpress786@gmail.com',
     M + FULL_UW / 2,
     footerLineY + 2,
     { align: 'center' }
