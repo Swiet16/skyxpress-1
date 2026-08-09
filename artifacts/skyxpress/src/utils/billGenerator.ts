@@ -265,9 +265,11 @@ const addLogo = async (pdf: jsPDF, x: number, y: number, width: number, height: 
           drawH = height;
           drawW = height * naturalRatio;
         }
-        // Centre horizontally inside the bounding box; pin to top so the
-        // logo's baseline stays aligned with the header row.
-        const drawX = x + (width - drawW) / 2;
+        // Pin to the LEFT edge and TOP of the bounding box (not centered) so the
+        // logo sits flush in the top-left corner of the header regardless of the
+        // box's aspect ratio or size — centering it here was what made the logo
+        // drift toward the middle once the bounding box was made bigger.
+        const drawX = x;
         const drawY = y;
 
         const reader = new FileReader();
