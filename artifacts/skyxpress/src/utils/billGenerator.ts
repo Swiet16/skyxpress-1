@@ -1293,11 +1293,16 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
 
     const refH       = s(10);
     const freightH   = s(7);
-    // Dynamic svcH — measure CONTENTS lines first, then allocate space
+    // Dynamic svcH — measure CONTENTS lines first, then allocate space.
+    // Mirrors the actual indented wrap width used later (column width minus the
+    // badge + gap the CONTENTS text is now aligned past), so this early estimate
+    // stays accurate and svcH doesn't undersize the block.
     TF(Math.max(4.6, s(5)), 'normal');
+    const badgeApprox = Math.max(3.2, s(4.2));
+    const contentsWrapWApprox = UW * 0.31 - (s(2) + badgeApprox + s(1.4) + s(2));
     const contentsLineCount = Math.min(
       10,
-      (pdf.splitTextToSize(contentsDescription, UW * 0.31 - s(4)) as string[]).length
+      (pdf.splitTextToSize(contentsDescription, contentsWrapWApprox) as string[]).length
     );
     // Base svcH = 22mm. Each content line beyond 2 adds ~2.7mm. Steal from swH.
     const extraContentLines = Math.max(0, contentsLineCount - 2);
@@ -1547,24 +1552,25 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     // Reduced gap so CONTENTS label appears immediately below the service value.
     ey += s(2.6);
     TF(Math.max(4.2, s(4.5)), 'bold'); TX(NAVY);
-    pdf.text('CONTENTS:', xC + cPad, ey);
+    pdf.text('CONTENTS:', svcIndentX, ey);
     // Reduced gap so the contents lines start in the NEXT ROW after CONTENTS label.
     ey += s(2.0);
     TF(Math.max(4.6, s(5)), 'normal'); TX(INK);
-    const contentsLines = pdf.splitTextToSize(contentsDescription, wC - s(4)) as string[];
+    const contentsWrapW = wC - (cPad + b5 + s(1.4)) - s(2);
+    const contentsLines = pdf.splitTextToSize(contentsDescription, contentsWrapW) as string[];
     // Auto-adjust line spacing if many lines so they fit within svcH without overlapping
     const contentsAvailH = (svcTop + svcH) - ey - s(0.6) - s(2.0) - s(2.0); // space for contents lines only
     const contentsLineSpacing = contentsLineCount > 2
       ? Math.min(s(2.7), contentsAvailH / contentsLineCount)
       : s(2.7);
-    contentsLines.forEach((ln) => { pdf.text(ln, xC + cPad, ey); ey += contentsLineSpacing; });
+    contentsLines.forEach((ln) => { pdf.text(ln, svcIndentX, ey); ey += contentsLineSpacing; });
     ey += s(0.6);
     TF(Math.max(4.2, s(4.5)), 'bold'); TX(NAVY);
-    pdf.text('SPECIAL INSTRUCTIONS:', xC + cPad, ey);
+    pdf.text('SPECIAL INSTRUCTIONS:', svcIndentX, ey);
     // Reduced gap so the value appears in the NEXT ROW immediately below the label.
     ey += s(2.0);
     TF(Math.max(4.6, s(5)), 'normal'); TX(INK);
-    pdf.text(safeText(parcel.document_type, 'N/A'), xC + cPad, ey);
+    pdf.text(safeText(parcel.document_type, 'N/A'), svcIndentX, ey);
 
     // 6 — Size & Weight
     const swTop = svcTop + svcH;
