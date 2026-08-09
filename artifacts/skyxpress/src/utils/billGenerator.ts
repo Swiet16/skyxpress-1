@@ -573,17 +573,22 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
   // 4 — ITEMS TABLE
   //
   // Columns and widths (total = 190mm = usable):
-  //  #(8) | Description(55) | HS Code(18) | Item Wt(16) | Total Wt(16) |
+  //  #(8) | Description(71) | HS Code(18) | Item Wt(16) |
   //  COO(12) | QTY(11) | Unit Value(27) | Sub Total(27)
+  //
+  // FIX: "Total Wt (kg)" column removed — it was computed as
+  // (parcel weight ÷ item count) × quantity, which produced meaningless,
+  // wildly-inflated numbers (e.g. 3630.000 kg for a 22kg parcel) since it had
+  // no real per-item weight data to work from. Its 16mm has been added to
+  // Description instead.
   // ══════════════════════════════════════════════════════════════════════════
   interface TCol { label: string; w: number; x: number; }
   const tCols: TCol[] = (() => {
     const defs = [
       { label: '#',             w: 8  },
-      { label: 'Description',   w: 55 },
+      { label: 'Description',   w: 71 },
       { label: 'HS Code',       w: 18 },
       { label: 'Item Wt\n(kg)', w: 16 },
-      { label: 'Total Wt\n(kg)',w: 16 },
       { label: 'COO',           w: 12 },
       { label: 'QTY',           w: 11 },
       { label: 'Unit Value',    w: 27 },
@@ -625,7 +630,6 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
     // per-item weight: spread total weight evenly across items
     const itemW    = items.length > 0 ? weight / items.length : 0;
     const itemWStr = itemW.toFixed(3);
-    const totWStr  = (itemW * qty).toFixed(3);
 
     grandTotal += subTotal;
     totalQty   += qty;
@@ -654,7 +658,6 @@ export const generatePaymentInvoice = async (parcel: any, mode: OutputMode = 'do
           '',                              // handled above
           hsCode,
           itemWStr,
-          totWStr,
           coo,
           String(qty),
           `${unitVal.toFixed(2)} ${cur}`,
