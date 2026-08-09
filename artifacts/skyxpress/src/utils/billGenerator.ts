@@ -1410,10 +1410,9 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
       'I/We agree that the carrier\u2019s standard terms and conditions apply and limit carrier liability.',
       wA - s(5)
     ) as string[];
-    // Reduced clearance so the paragraph text appears in the NEXT ROW immediately
-    // below the "SENDER'S AUTHORIZATION" label, not pushed down with a big gap.
-    // Label baseline sits ~authTop+4.2; text now starts ~3mm below it.
-    let authY = authTop + s(5.6);
+    // Content starts on the row BELOW the badge + section-label row (badge bottom
+    // edge is authBadgeY + b3), instead of overlapping it.
+    let authY = authBadgeY + b3 + s(2.2);
     authText.slice(0, 2).forEach((ln) => { pdf.text(ln, xA + aPad, authY); authY += s(2.6); });
     TF(Math.max(4.6, s(5)), 'bold'); TX(INK);
     pdf.text(`Date: ${bookingDate} ${bookingTime}`, xA + aPad, authY + s(1.6));
@@ -1421,13 +1420,15 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     // 4 — Proof of Delivery
     const podTop = authTop + authH;
     D(LINE, 0.25); pdf.line(xA, podTop, xA + wA, podTop);
-    const b4 = badge(xA + aPad, podTop + s(2.4), '4');
-    sectionLabel(xA + aPad + b4 + s(1.4), podTop + s(2.4) + b4 * 0.72, wA - 12, 'PROOF OF DELIVERY (POD)');
+    const podBadgeY = podTop + s(2.4);
+    const b4 = badge(xA + aPad, podBadgeY, '4');
+    sectionLabel(xA + aPad + b4 + s(1.4), podBadgeY + b4 * 0.72, wA - 12, 'PROOF OF DELIVERY (POD)');
     TF(Math.max(4.6, s(5)), 'normal'); TX(INK);
-    // Reduced gap so Signature line appears in the NEXT ROW immediately below the
-    // "PROOF OF DELIVERY (POD)" label, not pushed down with a big gap.
-    pdf.text('Signature: ________________  Date: __ /__ /__', xA + aPad, podTop + s(5.6));
-    pdf.text('Print Name: ______________________________', xA + aPad, podTop + s(9.4));
+    // Signature/Print Name lines now start on the row BELOW the badge + section-label
+    // row instead of overlapping it.
+    const podLine1Y = podBadgeY + b4 + s(2.2);
+    pdf.text('Signature: ________________  Date: __ /__ /__', xA + aPad, podLine1Y);
+    pdf.text('Print Name: ______________________________', xA + aPad, podLine1Y + s(3.8));
 
     // ══════════════ COLUMN B — Tracking # / Consignee / DAP / Barcode ════
     const bPad = s(2);
@@ -1556,12 +1557,13 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     // 6 — Size & Weight
     const swTop = svcTop + svcH;
     D(LINE, 0.25); pdf.line(xC, swTop, xC + wC, swTop);
-    const b6 = badge(xC + cPad, swTop + s(2.6), '6');
-    sectionLabel(xC + cPad + b6 + s(1.4), swTop + s(2.6) + b6 * 0.72, wC - 12, 'SIZE & WEIGHT');
+    const swBadgeY = swTop + s(2.6);
+    const b6 = badge(xC + cPad, swBadgeY, '6');
+    sectionLabel(xC + cPad + b6 + s(1.4), swBadgeY + b6 * 0.72, wC - 12, 'SIZE & WEIGHT');
 
-    // Reduced gap so the first row (PIECES) appears in the NEXT ROW immediately
-    // below the "SIZE & WEIGHT" label, not pushed down with a big gap.
-    let swy = swTop + s(5.6);
+    // First data row starts on the row BELOW the badge + section-label row
+    // (badge bottom edge is swBadgeY + b6), instead of overlapping "SIZE & WEIGHT".
+    let swy = swBadgeY + b6 + s(2.6);
     const swRow = (label: string, value: string, highlight = false) => {
       const rowH = s(4);
       if (highlight) { F(PALE); pdf.rect(xC, swy - rowH * 0.72, wC, rowH, 'F'); }
