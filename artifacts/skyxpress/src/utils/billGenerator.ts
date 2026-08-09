@@ -1404,31 +1404,38 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     D(LINE, 0.25); pdf.line(xA, authTop, xA + wA, authTop);
     const authBadgeY = authTop + s(2.4);
     const b3 = badge(xA + aPad, authBadgeY, '3');
-    sectionLabel(xA + aPad + b3 + s(1.4), authBadgeY + b3 * 0.72, wA - 12, "SENDER'S AUTHORIZATION");
+    // Content is indented to the SAME x as the section label (past the badge),
+    // instead of flush under the badge — so label and its data share one clean
+    // left edge rather than the data jutting out further left than the label.
+    const authIndentX = xA + aPad + b3 + s(1.4);
+    sectionLabel(authIndentX, authBadgeY + b3 * 0.72, wA - 12, "SENDER'S AUTHORIZATION");
     TF(Math.max(4.4, s(4.7)), 'normal'); TX(MID);
+    const authWrapW = wA - (aPad + b3 + s(1.4)) - s(3);
     const authText = pdf.splitTextToSize(
       'I/We agree that the carrier\u2019s standard terms and conditions apply and limit carrier liability.',
-      wA - s(5)
+      authWrapW
     ) as string[];
     // Content starts on the row BELOW the badge + section-label row (badge bottom
     // edge is authBadgeY + b3), instead of overlapping it.
     let authY = authBadgeY + b3 + s(2.2);
-    authText.slice(0, 2).forEach((ln) => { pdf.text(ln, xA + aPad, authY); authY += s(2.6); });
+    authText.slice(0, 2).forEach((ln) => { pdf.text(ln, authIndentX, authY); authY += s(2.6); });
     TF(Math.max(4.6, s(5)), 'bold'); TX(INK);
-    pdf.text(`Date: ${bookingDate} ${bookingTime}`, xA + aPad, authY + s(1.6));
+    pdf.text(`Date: ${bookingDate} ${bookingTime}`, authIndentX, authY + s(1.6));
 
     // 4 — Proof of Delivery
     const podTop = authTop + authH;
     D(LINE, 0.25); pdf.line(xA, podTop, xA + wA, podTop);
     const podBadgeY = podTop + s(2.4);
     const b4 = badge(xA + aPad, podBadgeY, '4');
-    sectionLabel(xA + aPad + b4 + s(1.4), podBadgeY + b4 * 0.72, wA - 12, 'PROOF OF DELIVERY (POD)');
+    // Content indented to the same x as the section label, past the badge.
+    const podIndentX = xA + aPad + b4 + s(1.4);
+    sectionLabel(podIndentX, podBadgeY + b4 * 0.72, wA - 12, 'PROOF OF DELIVERY (POD)');
     TF(Math.max(4.6, s(5)), 'normal'); TX(INK);
     // Signature/Print Name lines now start on the row BELOW the badge + section-label
     // row instead of overlapping it.
     const podLine1Y = podBadgeY + b4 + s(2.2);
-    pdf.text('Signature: ________________  Date: __ /__ /__', xA + aPad, podLine1Y);
-    pdf.text('Print Name: ______________________________', xA + aPad, podLine1Y + s(3.8));
+    pdf.text('Signature: ______________  Date: __ /__ /__', podIndentX, podLine1Y);
+    pdf.text('Print Name: ___________________________', podIndentX, podLine1Y + s(3.8));
 
     // ══════════════ COLUMN B — Tracking # / Consignee / DAP / Barcode ════
     const bPad = s(2);
@@ -1524,14 +1531,19 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     D(LINE, 0.25); pdf.line(xC, svcTop, xC + wC, svcTop);
     let ey = svcTop + s(3);
     const b5 = badge(xC + cPad, ey - s(2.6), '5');
-    sectionLabel(xC + cPad + b5 + s(1.4), ey, wC - 12, 'SERVICE TYPE');
+    // Value indented to the same x as the label, past the badge, so "SERVICE TYPE"
+    // and its value ("DPD_UK") share one clean left edge instead of the value
+    // sitting further left under the badge.
+    const svcIndentX = xC + cPad + b5 + s(1.4);
+    sectionLabel(svcIndentX, ey, wC - 12, 'SERVICE TYPE');
     // Reduced clearance so the service value appears in the NEXT ROW immediately
     // below the "SERVICE TYPE" label, not pushed down with a big gap. The bold
     // value font is small enough that ~2.6mm spacing keeps it visually separated.
     ey += s(2.6);
     TF(Math.max(5.6, s(6.2)), 'bold'); TX(INK);
-    const serviceLines = pdf.splitTextToSize(service, wC - s(4)) as string[];
-    pdf.text(serviceLines[0] ?? '', xC + cPad, ey);
+    const svcValueW = wC - (cPad + b5 + s(1.4)) - s(2);
+    const serviceLines = pdf.splitTextToSize(service, svcValueW) as string[];
+    pdf.text(serviceLines[0] ?? '', svcIndentX, ey);
     // Reduced gap so CONTENTS label appears immediately below the service value.
     ey += s(2.6);
     TF(Math.max(4.2, s(4.5)), 'bold'); TX(NAVY);
@@ -1559,7 +1571,11 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     D(LINE, 0.25); pdf.line(xC, swTop, xC + wC, swTop);
     const swBadgeY = swTop + s(2.6);
     const b6 = badge(xC + cPad, swBadgeY, '6');
-    sectionLabel(xC + cPad + b6 + s(1.4), swBadgeY + b6 * 0.72, wC - 12, 'SIZE & WEIGHT');
+    // Row labels indented to the same x as the section label, past the badge,
+    // so "SIZE & WEIGHT" and its rows (PIECES / WEIGHT / etc.) share one clean
+    // left edge instead of the rows sitting further left under the badge.
+    const swIndentX = xC + cPad + b6 + s(1.4);
+    sectionLabel(swIndentX, swBadgeY + b6 * 0.72, wC - 12, 'SIZE & WEIGHT');
 
     // First data row starts on the row BELOW the badge + section-label row
     // (badge bottom edge is swBadgeY + b6), instead of overlapping "SIZE & WEIGHT".
@@ -1568,7 +1584,7 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
       const rowH = s(4);
       if (highlight) { F(PALE); pdf.rect(xC, swy - rowH * 0.72, wC, rowH, 'F'); }
       TF(Math.max(4.4, s(4.8)), 'bold'); TX(INK);
-      pdf.text(label, xC + cPad, swy);
+      pdf.text(label, swIndentX, swy);
       TF(Math.max(5, s(5.4)), 'bold'); TX(NAVY);
       pdf.text(value, xC + wC - cPad, swy, { align: 'right' });
       swy += rowH;
@@ -1753,7 +1769,8 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
       verticalStrip,
       showWebsite: true,
       showFreight: false,
-      showServiceBadge: false,       // page 2: no navy ECONOMIC box in the header
+      showServiceBadge: true,        // page 2: show the same navy service-name
+                                      // badge (e.g. "DPD_UK") that page 1's header has
     });
 
     // caption pill
