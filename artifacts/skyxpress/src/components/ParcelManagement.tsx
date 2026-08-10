@@ -45,6 +45,7 @@ import {
   ScrollText,
   Copy,
   Check,
+  CopyPlus,
 } from "lucide-react";
 import { ParcelForm } from "./ParcelForm";
 import { ParcelDetails } from "./ParcelDetails";
@@ -119,6 +120,25 @@ const statusColors: Record<string, string> = {
   cancelled: "bg-red-100 text-red-800",
 };
 
+// ── ID increment helper ────────────────────────────────────────────────────
+// Finds the trailing run of digits in an ID and increments it by 1, preserving
+// leading zeros / width (e.g. "SKX-00191100" -> "SKX-00191101").
+// If there is no trailing numeric run, appends "-1" ("ABC" -> "ABC-1").
+// If the number rolls over (e.g. "999" -> "1000"), the field simply grows by
+// one digit, which is the correct/expected behaviour for a sequential ID.
+const incrementTrailingNumber = (value: string): string => {
+  if (!value) return value;
+  const match = value.match(/^(.*?)(\d+)$/);
+  if (!match) return `${value}-1`;
+  const [, prefix, digits] = match;
+  const incremented = (BigInt(digits) + BigInt(1)).toString();
+  const padded =
+    incremented.length < digits.length
+      ? incremented.padStart(digits.length, "0")
+      : incremented;
+  return `${prefix}${padded}`;
+};
+
 export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filterUserId?: string; isPartnerView?: boolean } = {}) => {
   const PAGE_SIZE = 10;
   const [parcels, setParcels] = useState<Parcel[]>([]);
@@ -141,6 +161,9 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
   const [undertakingParcel, setUndertakingParcel] = useState<Parcel | null>(null);
   const [emailingId, setEmailingId] = useState<string | null>(null);
   const [emailedIds, setEmailedIds] = useState<Set<string>>(new Set());
+
+  // ── Clone parcel ────────────────────────────────────────────────────────
+  const [cloningId, setCloningId] = useState<string | null>(null);
 
   // ── Server IP reveal ───────────────────────────────────────────────────────
   const [ipVisible, setIpVisible] = useState(false);
@@ -497,6 +520,65 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
     }
   };
 
+  // ── Clone parcel ────────────────────────────────────────────────────────
+  // Duplicates a parcel with a new tracking_id (and reference_id, if it has
+  // one) that is the original value +1. If that collides with an existing
+  // unique value in the DB, it keeps incrementing until it finds a free one.
+  const handleCloneParcel = async (parcel: Parcel) => {
+    setCloningId(parcel.id);
+    try {
+      const { data: fullData, error: fetchError } = await supabase
+        .from("parcels")
+        .select("*")
+        .eq("id", parcel.id)
+        .single();
+      if (fetchError) throw fetchError;
+
+      // Strip fields that must not be copied verbatim
+      const { id, created_at, tracking_id, reference_id, xray_email_sent_at, ...rest } = fullData;
+
+      let nextTrackingId = incrementTrailingNumber(tracking_id);
+      let nextReferenceId = reference_id ? incrementTrailingNumber(reference_id) : reference_id;
+
+      const MAX_ATTEMPTS = 50;
+      let lastError: any = null;
+
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const { error: insertError } = await supabase.from("parcels").insert({
+          ...rest,
+          tracking_id: nextTrackingId,
+          reference_id: nextReferenceId,
+          current_status: "created",
+        });
+
+        if (!insertError) {
+          toast({
+            title: "Parcel cloned ✓",
+            description: `New parcel created: ${nextTrackingId}`,
+          });
+          fetchParcels();
+          return;
+        }
+
+        // 23505 = unique_violation — bump the id(s) again and retry
+        if (insertError.code === "23505") {
+          lastError = insertError;
+          nextTrackingId = incrementTrailingNumber(nextTrackingId);
+          if (nextReferenceId) nextReferenceId = incrementTrailingNumber(nextReferenceId);
+          continue;
+        }
+
+        throw insertError;
+      }
+
+      throw lastError || new Error("Could not find a free tracking/reference ID.");
+    } catch (error: any) {
+      toast({ title: "Clone failed", description: error.message || "Could not clone parcel", variant: "destructive" });
+    } finally {
+      setCloningId(null);
+    }
+  };
+
   // ── Inline editing ───────────────────────────────────────────────────
   const startEditingCell = (parcel: Parcel, field: EditableField) => {
     if (savingCell) return;
@@ -803,6 +885,13 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
                               onClick={() => handleEditClick(parcel)} title="Edit">
                               <Edit className="h-3.5 w-3.5" />
                             </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-fuchsia-600 hover:bg-fuchsia-50"
+                              onClick={() => handleCloneParcel(parcel)} disabled={cloningId === parcel.id} title="Clone parcel">
+                              {cloningId === parcel.id
+                                ? <span className="animate-spin h-3.5 w-3.5 border-2 border-fuchsia-300 border-t-fuchsia-600 rounded-full inline-block" />
+                                : <CopyPlus className="h-3.5 w-3.5" />
+                              }
+                            </Button>
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-violet-600 hover:bg-violet-50"
                               onClick={() => handleAttachmentsClick(parcel)} title="Attachments">
                               <Paperclip className="h-3.5 w-3.5" />
@@ -954,6 +1043,13 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-amber-600 hover:bg-amber-50"
                         onClick={() => handleEditClick(parcel)} title="Edit">
                         <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-fuchsia-600 hover:bg-fuchsia-50"
+                        onClick={() => handleCloneParcel(parcel)} disabled={cloningId === parcel.id} title="Clone parcel">
+                        {cloningId === parcel.id
+                          ? <span className="animate-spin h-4 w-4 border-2 border-fuchsia-300 border-t-fuchsia-600 rounded-full inline-block" />
+                          : <CopyPlus className="h-4 w-4" />
+                        }
                       </Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-violet-600 hover:bg-violet-50"
                         onClick={() => handleAttachmentsClick(parcel)} title="Attachments">
