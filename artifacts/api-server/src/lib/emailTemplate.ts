@@ -52,10 +52,10 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
   const tracking = parcel.tracking_id || "N/A";
   const receiverName = parcel.receiver_name || "Valued Customer";
   const currency = parcel.currency || "USD";
-  const dims =
-    parcel.length && parcel.width && parcel.height
-      ? `${parcel.length} × ${parcel.width} × ${parcel.height} cm`
-      : "—";
+  // NOTE: weight / chargeable weight / dimensions are intentionally NOT
+  // rendered anywhere in this email — they were often placeholder/garbage
+  // values (e.g. "1 × 1 × 1 cm") and added noise without value to the
+  // recipient. Only meaningful, customer-facing info is shown below.
   const serviceType = parcel.service_type
     ? parcel.service_type.replace(/_/g, " ").toUpperCase()
     : "STANDARD";
@@ -79,11 +79,11 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
           .map(
             (item, i) => `
         <tr style="background:${i % 2 === 0 ? "#F8FAFC" : "#FFFFFF"};">
-          <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #E5E7EB;">${item.description || "—"}</td>
-          <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #E5E7EB;text-align:center;">${item.quantity ?? "—"}</td>
-          <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #E5E7EB;text-align:right;">${currency} ${item.unit_price?.toFixed(2) ?? "—"}</td>
-          <td style="padding:10px 14px;font-size:13px;font-weight:600;color:#0A1628;border-bottom:1px solid #E5E7EB;text-align:right;">${currency} ${item.total?.toFixed(2) ?? "—"}</td>
-          ${item.hs_code ? `<td style="padding:10px 14px;font-size:12px;color:#6B7280;border-bottom:1px solid #E5E7EB;">${item.hs_code}</td>` : ""}
+          <td style="padding:12px 14px;font-size:13px;color:#374151;border-bottom:1px solid #EEF1F5;">${item.description || "—"}</td>
+          <td style="padding:12px 14px;font-size:13px;color:#374151;border-bottom:1px solid #EEF1F5;text-align:center;">${item.quantity ?? "—"}</td>
+          <td style="padding:12px 14px;font-size:13px;color:#374151;border-bottom:1px solid #EEF1F5;text-align:right;">${currency} ${item.unit_price?.toFixed(2) ?? "—"}</td>
+          <td style="padding:12px 14px;font-size:13px;font-weight:700;color:#0A1628;border-bottom:1px solid #EEF1F5;text-align:right;">${currency} ${item.total?.toFixed(2) ?? "—"}</td>
+          ${item.hs_code ? `<td style="padding:12px 14px;font-size:12px;color:#6B7280;border-bottom:1px solid #EEF1F5;">${item.hs_code}</td>` : ""}
         </tr>`
           )
           .join("")
@@ -93,18 +93,18 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
     itemsRows
       ? `
     <!-- Items Table -->
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;border:1px solid #E5E7EB;border-radius:12px;overflow:hidden;">
       <tr style="background:linear-gradient(135deg,#0A1628,#1E3A5F);">
-        <td colspan="${parcel.items?.some(i => i.hs_code) ? 5 : 4}" style="padding:12px 14px;">
+        <td colspan="${parcel.items?.some(i => i.hs_code) ? 5 : 4}" style="padding:14px 16px;">
           <span style="font-size:12px;font-weight:700;color:#F59E0B;letter-spacing:1.5px;text-transform:uppercase;">📦 Parcel Contents</span>
         </td>
       </tr>
-      <tr style="background:#F0F4F8;">
-        <th style="padding:10px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:left;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">Description</th>
-        <th style="padding:10px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:center;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">Qty</th>
-        <th style="padding:10px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:right;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">Unit Price</th>
-        <th style="padding:10px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:right;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">Total</th>
-        ${parcel.items?.some(i => i.hs_code) ? '<th style="padding:10px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:left;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">HS Code</th>' : ""}
+      <tr style="background:#F5F7FA;">
+        <th style="padding:11px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:left;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">Description</th>
+        <th style="padding:11px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:center;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">Qty</th>
+        <th style="padding:11px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:right;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">Unit Price</th>
+        <th style="padding:11px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:right;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">Total</th>
+        ${parcel.items?.some(i => i.hs_code) ? '<th style="padding:11px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:left;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">HS Code</th>' : ""}
       </tr>
       ${itemsRows}
     </table>`
@@ -126,6 +126,57 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
       </tr>
     </table>`;
 
+  // ── Shipment Details — 3 clean icon cards (Parcel Type / Service / Pieces) ──
+  // Weight, chargeable weight and dimensions are deliberately omitted.
+  const detailCards = `
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td width="32%" valign="top" style="background:linear-gradient(160deg,#FFF7ED,#FFFFFF);border:1px solid #FDE7C6;border-radius:12px;padding:18px 14px;text-align:center;">
+          <div style="width:38px;height:38px;line-height:38px;margin:0 auto 10px;background:#FEF3E2;border-radius:50%;font-size:18px;">📦</div>
+          <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#9A6B1E;letter-spacing:1px;text-transform:uppercase;">Parcel Type</p>
+          <p style="margin:0;font-size:15px;font-weight:800;color:#7C4A0A;">${parcelType}</p>
+        </td>
+        <td width="2%"></td>
+        <td width="32%" valign="top" style="background:linear-gradient(160deg,#EFF6FF,#FFFFFF);border:1px solid #C7DCFB;border-radius:12px;padding:18px 14px;text-align:center;">
+          <div style="width:38px;height:38px;line-height:38px;margin:0 auto 10px;background:#E4EEFF;border-radius:50%;font-size:18px;">🚚</div>
+          <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#1E4FA0;letter-spacing:1px;text-transform:uppercase;">Service</p>
+          <p style="margin:0;font-size:15px;font-weight:800;color:#1E3A8A;">${serviceType}</p>
+        </td>
+        <td width="2%"></td>
+        <td width="32%" valign="top" style="background:linear-gradient(160deg,#F0FDF4,#FFFFFF);border:1px solid #BFEAD0;border-radius:12px;padding:18px 14px;text-align:center;">
+          <div style="width:38px;height:38px;line-height:38px;margin:0 auto 10px;background:#DDF6E5;border-radius:50%;font-size:18px;">🔢</div>
+          <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#1D7A46;letter-spacing:1px;text-transform:uppercase;">Pieces</p>
+          <p style="margin:0;font-size:15px;font-weight:800;color:#166534;">${parcel.pieces ?? 1}</p>
+        </td>
+      </tr>
+    </table>`;
+
+  const priceBlock = parcel.total_price
+    ? `
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;background:linear-gradient(135deg,#ECFDF5,#F0FDF4);border:1px solid #BBF7D0;border-radius:12px;">
+      <tr>
+        <td style="padding:16px 20px;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td valign="top">
+                <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#166534;letter-spacing:1px;text-transform:uppercase;">💰 Shipping Price</p>
+                <p style="margin:0;font-size:22px;font-weight:900;color:#15803D;">${currency} ${parcel.total_price.toFixed(2)}</p>
+              </td>
+              ${
+                parcel.declared_value
+                  ? `<td align="right" valign="top">
+                <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#6B7280;letter-spacing:1px;text-transform:uppercase;">Declared Value</p>
+                <p style="margin:0;font-size:16px;font-weight:700;color:#374151;">USD ${parcel.declared_value.toFixed(2)}</p>
+              </td>`
+                  : ""
+              }
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>`
+    : "";
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -139,11 +190,11 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#EEF2F7;padding:32px 0;">
     <tr>
       <td align="center">
-        <table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%;">
+        <table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%;background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 8px 28px rgba(10,22,40,0.10);">
 
           <!-- ═══════════════ HEADER ═══════════════ -->
           <tr>
-            <td style="background:linear-gradient(135deg,#0A1628 0%,#1E3A5F 60%,#0D2240 100%);border-radius:12px 12px 0 0;padding:36px 40px 32px;">
+            <td style="background:linear-gradient(135deg,#0A1628 0%,#1E3A5F 60%,#0D2240 100%);padding:36px 40px 32px;">
               <!-- Logo Area -->
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
@@ -191,21 +242,21 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
 
           <!-- ═══════════════ REFERENCE CARDS ═══════════════ -->
           <tr>
-            <td style="background:#FFFFFF;padding:0 40px;">
+            <td style="padding:0 40px;">
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:-1px;border-top:4px solid #F59E0B;">
                 <tr>
                   <td style="padding:24px 0 20px;">
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
                         <!-- Reference ID -->
-                        <td width="48%" style="background:#FFF9EE;border:1.5px solid #FCD34D;border-radius:10px;padding:16px 18px;vertical-align:top;">
+                        <td width="48%" style="background:#FFF9EE;border:1.5px solid #FCD34D;border-radius:12px;padding:16px 18px;vertical-align:top;">
                           <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#92400E;letter-spacing:1.5px;text-transform:uppercase;">Reference ID</p>
                           <p style="margin:0;font-size:22px;font-weight:900;color:#B45309;letter-spacing:0.5px;">${ref}</p>
                           <p style="margin:4px 0 0;font-size:11px;color:#D97706;">⭐ Keep this for your records</p>
                         </td>
                         <td width="4%"></td>
                         <!-- Tracking Number -->
-                        <td width="48%" style="background:#EFF6FF;border:1.5px solid #93C5FD;border-radius:10px;padding:16px 18px;vertical-align:top;">
+                        <td width="48%" style="background:#EFF6FF;border:1.5px solid #93C5FD;border-radius:12px;padding:16px 18px;vertical-align:top;">
                           <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#1E3A8A;letter-spacing:1.5px;text-transform:uppercase;">Tracking Number</p>
                           <p style="margin:0;font-size:16px;font-weight:800;color:#1D4ED8;letter-spacing:0.5px;word-break:break-all;">${tracking}</p>
                           <p style="margin:4px 0 0;font-size:11px;color:#3B82F6;">🔍 Track on skyxpress.site</p>
@@ -220,10 +271,10 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
 
           <!-- ═══════════════ ROUTE BAR ═══════════════ -->
           <tr>
-            <td style="background:#FFFFFF;padding:0 40px 24px;">
-              <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#0A1628,#1E3A5F);border-radius:10px;overflow:hidden;">
+            <td style="padding:0 40px 24px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#0A1628,#1E3A5F);border-radius:12px;overflow:hidden;">
                 <tr>
-                  <td style="padding:18px 24px;">
+                  <td style="padding:20px 24px;">
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
                         <td align="center" width="40%">
@@ -231,7 +282,7 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
                           <p style="margin:0;font-size:18px;font-weight:900;color:#FFFFFF;">${fromCountry}</p>
                         </td>
                         <td align="center" width="20%">
-                          <p style="margin:0;font-size:28px;color:#F59E0B;">✈</p>
+                          <p style="margin:0;font-size:30px;color:#F59E0B;">✈</p>
                         </td>
                         <td align="center" width="40%">
                           <p style="margin:0 0 2px;font-size:10px;font-weight:700;color:#93C5FD;letter-spacing:1.5px;text-transform:uppercase;">Destination</p>
@@ -245,9 +296,9 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
             </td>
           </tr>
 
-          <!-- ═══════════════ PARCEL DETAILS ═══════════════ -->
+          <!-- ═══════════════ SHIPMENT DETAILS (no weight/dimensions) ═══════════════ -->
           <tr>
-            <td style="background:#FFFFFF;padding:0 40px 28px;">
+            <td style="padding:0 40px 28px;">
               <!-- Section Header -->
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
                 <tr>
@@ -260,54 +311,8 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
                 </tr>
               </table>
 
-              <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E5E7EB;border-radius:10px;overflow:hidden;">
-                <tr>
-                  <!-- Dimensions -->
-                  <td style="padding:16px;text-align:center;background:#F8FAFC;">
-                    <p style="margin:0 0 2px;font-size:10px;font-weight:700;color:#374151;letter-spacing:1px;text-transform:uppercase;">📐 Dimensions</p>
-                    <p style="margin:0;font-size:14px;font-weight:700;color:#1F2937;">${dims}</p>
-                    <p style="margin:2px 0 0;font-size:11px;color:#9CA3AF;">(L × W × H)</p>
-                  </td>
-                </tr>
-                <tr style="background:#F8FAFC;">
-                  <td style="padding:12px 16px;border-top:1px solid #E5E7EB;border-right:1px solid #E5E7EB;">
-                    <p style="margin:0 0 2px;font-size:10px;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.5px;">Parcel Type</p>
-                    <p style="margin:0;font-size:13px;font-weight:600;color:#1F2937;">${parcelType}</p>
-                  </td>
-                  <td style="padding:12px 16px;border-top:1px solid #E5E7EB;border-right:1px solid #E5E7EB;">
-                    <p style="margin:0 0 2px;font-size:10px;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.5px;">Service</p>
-                    <p style="margin:0;font-size:13px;font-weight:600;color:#1F2937;">${serviceType}</p>
-                  </td>
-                  <td style="padding:12px 16px;border-top:1px solid #E5E7EB;">
-                    <p style="margin:0 0 2px;font-size:10px;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.5px;">Pieces</p>
-                    <p style="margin:0;font-size:13px;font-weight:600;color:#1F2937;">${parcel.pieces ?? 1}</p>
-                  </td>
-                </tr>
-                ${
-                  parcel.total_price
-                    ? `<tr>
-                  <td colspan="3" style="padding:12px 16px;border-top:1px solid #E5E7EB;background:#F0FDF4;">
-                    <table width="100%" cellpadding="0" cellspacing="0">
-                      <tr>
-                        <td>
-                          <p style="margin:0 0 2px;font-size:10px;color:#166534;text-transform:uppercase;letter-spacing:0.5px;">💰 Shipping Price</p>
-                          <p style="margin:0;font-size:18px;font-weight:900;color:#166534;">${currency} ${parcel.total_price.toFixed(2)}</p>
-                        </td>
-                        ${
-                          parcel.declared_value
-                            ? `<td align="right">
-                          <p style="margin:0 0 2px;font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:0.5px;">Declared Value</p>
-                          <p style="margin:0;font-size:14px;font-weight:700;color:#374151;">USD ${parcel.declared_value.toFixed(2)}</p>
-                        </td>`
-                            : ""
-                        }
-                      </tr>
-                    </table>
-                  </td>
-                </tr>`
-                    : ""
-                }
-              </table>
+              ${detailCards}
+              ${priceBlock}
             </td>
           </tr>
 
@@ -315,22 +320,22 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
           ${
             itemsSection
               ? `<tr>
-            <td style="background:#FFFFFF;padding:0 40px 28px;">${itemsSection}</td>
+            <td style="padding:0 40px 28px;">${itemsSection}</td>
           </tr>`
               : ""
           }
 
           <!-- ═══════════════ DELIVERY ADDRESS ═══════════════ -->
           <tr>
-            <td style="background:#FFFFFF;padding:0 40px 28px;">
-              <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E5E7EB;border-radius:10px;overflow:hidden;">
+            <td style="padding:0 40px 28px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E5E7EB;border-radius:12px;overflow:hidden;">
                 <tr style="background:linear-gradient(135deg,#0A1628,#1E3A5F);">
                   <td style="padding:12px 16px;">
                     <span style="font-size:11px;font-weight:700;color:#F59E0B;letter-spacing:1.5px;text-transform:uppercase;">📍 Delivery Destination</span>
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding:16px;">${receiverBlock}</td>
+                  <td style="padding:18px 16px;">${receiverBlock}</td>
                 </tr>
               </table>
             </td>
@@ -340,10 +345,10 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
           ${
             parcel.special_instructions
               ? `<tr>
-            <td style="background:#FFFFFF;padding:0 40px 28px;">
-              <table width="100%" cellpadding="0" cellspacing="0" style="background:#FFF9EE;border:1px solid #FCD34D;border-radius:10px;padding:16px;">
+            <td style="padding:0 40px 28px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#FFF9EE;border:1px solid #FCD34D;border-radius:12px;">
                 <tr>
-                  <td style="padding:16px;">
+                  <td style="padding:16px 20px;">
                     <p style="margin:0 0 6px;font-size:10px;font-weight:700;color:#92400E;letter-spacing:1.5px;text-transform:uppercase;">⚠ Special Instructions</p>
                     <p style="margin:0;font-size:13px;color:#78350F;">${parcel.special_instructions}</p>
                   </td>
@@ -356,10 +361,10 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
 
           <!-- ═══════════════ INFO BOX ═══════════════ -->
           <tr>
-            <td style="background:#FFFFFF;padding:0 40px 28px;">
-              <table width="100%" cellpadding="0" cellspacing="0" style="background:#EFF6FF;border-left:4px solid #3B82F6;border-radius:0 8px 8px 0;padding:16px 20px;">
+            <td style="padding:0 40px 32px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#EFF6FF;border-left:4px solid #3B82F6;border-radius:0 12px 12px 0;">
                 <tr>
-                  <td style="padding:16px 20px;">
+                  <td style="padding:18px 22px;">
                     <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#1E40AF;">ℹ What happens next?</p>
                     <p style="margin:0;font-size:13px;color:#1E3A8A;line-height:1.6;">
                       Your parcel is now cleared for customs review and will proceed to the next stage of its journey. You will receive further updates as your shipment progresses. For any queries, please quote your <strong>Reference ID: ${ref}</strong>.
@@ -372,7 +377,7 @@ export function createXrayEmailHtml(parcel: ParcelEmailData): string {
 
           <!-- ═══════════════ FOOTER ═══════════════ -->
           <tr>
-            <td style="background:linear-gradient(135deg,#0A1628,#1E3A5F);border-radius:0 0 12px 12px;padding:32px 40px;">
+            <td style="background:linear-gradient(135deg,#0A1628,#1E3A5F);padding:32px 40px;">
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td>
