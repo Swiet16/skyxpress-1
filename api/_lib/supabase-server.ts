@@ -53,7 +53,7 @@ export async function getUserRole(token: string): Promise<string | null> {
 const PARCEL_COLS = [
   "id", "tracking_id", "reference_id", "sender_name", "sender_email",
   "sender_phone", "sender_address", "sender_city", "sender_country",
-  "receiver_name", "receiver_address", "receiver_city", "receiver_state",
+  "receiver_name", "receiver_email", "receiver_address", "receiver_city", "receiver_state",
   "receiver_country", "receiver_postal_code", "receiver_phone",
   "from_country", "to_country", "weight", "chargeable_weight",
   "length", "width", "height", "parcel_type", "service_type",

@@ -212,10 +212,10 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose, readOnly = false }: P
   };
 
   const sendXrayEmail = async (parcelData = parcel) => {
-    if (!parcelData.sender_email) {
+    if (!parcelData.receiver_email) {
       toast({
-        title: "No sender email",
-        description: "This parcel has no sender email address on record.",
+        title: "No receiver email",
+        description: "This parcel has no receiver email address on record.",
         variant: "destructive",
       });
       return;
@@ -247,6 +247,12 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose, readOnly = false }: P
         }
         throw new Error(result.error || `Server error (${response.status})`);
       }
+      if (
+        result.success !== true ||
+        result.sentTo?.toLowerCase() !== parcelData.receiver_email.trim().toLowerCase()
+      ) {
+        throw new Error("The email service did not confirm delivery to the receiver address.");
+      }
 
       // Record the send time in Supabase (best-effort — column may not exist yet)
       const sentAt = new Date().toISOString();
@@ -262,7 +268,7 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose, readOnly = false }: P
       setEmailSentAt(sentAt);
       toast({
         title: "✉ Email Sent!",
-        description: `X-ray notification sent to ${parcelData.sender_email}`,
+        description: `X-ray notification sent to ${parcelData.receiver_email}`,
       });
       onUpdate();
     } catch (err: any) {
@@ -787,7 +793,7 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose, readOnly = false }: P
             <div className="flex-1 min-w-0">
               <p className="text-xs text-muted-foreground">Sending to</p>
               <p className="text-sm font-semibold truncate text-emerald-900">
-                {parcel.sender_email || (
+                {parcel.receiver_email || (
                   <span className="text-red-500 font-normal">No email address on this parcel</span>
                 )}
               </p>
@@ -806,7 +812,7 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose, readOnly = false }: P
               <div>
                 <p className="text-sm font-semibold text-emerald-800">Email sent successfully!</p>
                 <p className="text-xs text-emerald-600">
-                  X-ray notification delivered to {parcel.sender_email}
+                  X-ray notification delivered to {parcel.receiver_email}
                   {emailSentAt && ` on ${new Date(emailSentAt).toLocaleString()}`}
                 </p>
               </div>
@@ -816,7 +822,7 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose, readOnly = false }: P
           <div className="flex gap-3 items-center">
             <Button
               onClick={() => sendXrayEmail(parcel)}
-              disabled={emailSending || !parcel.sender_email}
+              disabled={emailSending || !parcel.receiver_email}
               className="bg-emerald-600 hover:bg-emerald-700 text-white flex-1"
             >
               {emailSending ? (
@@ -845,7 +851,7 @@ export const ParcelDetails = ({ parcel, onUpdate, onClose, readOnly = false }: P
         {!readOnly && (
           <Button
             onClick={() => sendXrayEmail(parcel)}
-            disabled={emailSending || !parcel.sender_email}
+            disabled={emailSending || !parcel.receiver_email}
             className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
           >
             {emailSending ? (

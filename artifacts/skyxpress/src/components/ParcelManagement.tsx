@@ -240,6 +240,12 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
         }
         throw new Error(result.error || `Server error (${response.status})`);
       }
+      if (
+        result.success !== true ||
+        result.sentTo?.toLowerCase() !== parcel.receiver_email.trim().toLowerCase()
+      ) {
+        throw new Error("The email service did not confirm delivery to the receiver address.");
+      }
       setEmailedIds((prev) => new Set(prev).add(parcel.id));
       // Persist send timestamp in Supabase (run SQL migration first if column missing)
       await supabase.from("parcels").update({ xray_email_sent_at: new Date().toISOString() }).eq("id", parcel.id);

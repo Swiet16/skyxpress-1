@@ -30,9 +30,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const recipientEmail = parcel.sender_email;
+  const recipientEmail = typeof parcel.receiver_email === "string" ? parcel.receiver_email.trim() : "";
   if (!recipientEmail) {
-    res.status(400).json({ error: "Parcel has no sender_email — cannot send notification" });
+    res.status(400).json({ error: "Parcel has no receiver_email — cannot send notification" });
     return;
   }
 
