@@ -1,1255 +1,414 @@
-// @ts-nocheck
-import { useState, useEffect, useRef } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { useToast } from "@/hooks/use-toast";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Search,
-  Plus,
-  Package,
-  Eye,
-  EyeOff,
-  Edit,
-  FileText,
-  Trash2,
-  Paperclip,
-  FileSpreadsheet,
-  CheckSquare,
-  ChevronLeft,
-  ChevronRight,
-  FileDown,
-  ClipboardList,
-  Sparkles,
-  Printer,
-  Mail,
-  CheckCircle,
-  ScrollText,
-  Copy,
-  Check,
-} from "lucide-react";
-import { ParcelForm } from "./ParcelForm";
-import { ParcelDetails } from "./ParcelDetails";
-import { ParcelAttachmentsDialog } from "./ParcelAttachments";
-import { SkyXpressAWBInvoice } from "./SkyXpressAWBInvoice";
-import { ShippingLabel } from "./ShippingLabel";
-import { UndertakingLetter } from "./UndertakingLetter";
-import { exportManifestToExcel } from "@/utils/manifestExport";
-import { buildManifestEntry, saveManifestToStockDB, getNextManifestId, type ManifestStockEntry } from "@/utils/manifestStorage";
-import { generateBulkManifestPDF } from "@/utils/bulkManifestPDF";
-import {
-  Dialog as ManifestDialog,
-  DialogContent as ManifestDialogContent,
-  DialogHeader as ManifestDialogHeader,
-  DialogTitle as ManifestDialogTitle,
-} from "@/components/ui/dialog";
+const COUNTRY_NAMES: Record<string, string> = {
+  AF:"Afghanistan",AL:"Albania",DZ:"Algeria",AD:"Andorra",AO:"Angola",AG:"Antigua and Barbuda",AR:"Argentina",AM:"Armenia",AU:"Australia",AT:"Austria",AZ:"Azerbaijan",BS:"Bahamas",BH:"Bahrain",BD:"Bangladesh",BB:"Barbados",BY:"Belarus",BE:"Belgium",BZ:"Belize",BJ:"Benin",BT:"Bhutan",BO:"Bolivia",BA:"Bosnia and Herzegovina",BW:"Botswana",BR:"Brazil",BN:"Brunei",BG:"Bulgaria",BF:"Burkina Faso",BI:"Burundi",CV:"Cabo Verde",KH:"Cambodia",CM:"Cameroon",CA:"Canada",CF:"Central African Republic",TD:"Chad",CL:"Chile",CN:"China",CO:"Colombia",KM:"Comoros",CG:"Congo",CD:"DR Congo",CR:"Costa Rica",CI:"Côte d'Ivoire",HR:"Croatia",CU:"Cuba",CY:"Cyprus",CZ:"Czech Republic",DK:"Denmark",DJ:"Djibouti",DM:"Dominica",DO:"Dominican Republic",EC:"Ecuador",EG:"Egypt",SV:"El Salvador",GQ:"Equatorial Guinea",ER:"Eritrea",EE:"Estonia",SZ:"Eswatini",ET:"Ethiopia",FJ:"Fiji",FI:"Finland",FR:"France",GA:"Gabon",GM:"Gambia",GE:"Georgia",DE:"Germany",GH:"Ghana",GR:"Greece",GD:"Grenada",GT:"Guatemala",GN:"Guinea",GW:"Guinea-Bissau",GY:"Guyana",HT:"Haiti",HN:"Honduras",HU:"Hungary",IS:"Iceland",IN:"India",ID:"Indonesia",IR:"Iran",IQ:"Iraq",IE:"Ireland",IL:"Israel",IT:"Italy",JM:"Jamaica",JP:"Japan",JO:"Jordan",KZ:"Kazakhstan",KE:"Kenya",KI:"Kiribati",KW:"Kuwait",KG:"Kyrgyzstan",LA:"Laos",LV:"Latvia",LB:"Lebanon",LS:"Lesotho",LR:"Liberia",LY:"Libya",LI:"Liechtenstein",LT:"Lithuania",LU:"Luxembourg",MG:"Madagascar",MW:"Malawi",MY:"Malaysia",MV:"Maldives",ML:"Mali",MT:"Malta",MH:"Marshall Islands",MR:"Mauritania",MU:"Mauritius",MX:"Mexico",FM:"Micronesia",MD:"Moldova",MC:"Monaco",MN:"Mongolia",ME:"Montenegro",MA:"Morocco",MZ:"Mozambique",MM:"Myanmar",NA:"Namibia",NR:"Nauru",NP:"Nepal",NL:"Netherlands",NZ:"New Zealand",NI:"Nicaragua",NE:"Niger",NG:"Nigeria",MK:"North Macedonia",NO:"Norway",OM:"Oman",PK:"Pakistan",PW:"Palau",PA:"Panama",PG:"Papua New Guinea",PY:"Paraguay",PE:"Peru",PH:"Philippines",PL:"Poland",PT:"Portugal",QA:"Qatar",RO:"Romania",RU:"Russia",RW:"Rwanda",KN:"Saint Kitts and Nevis",LC:"Saint Lucia",VC:"Saint Vincent and the Grenadines",WS:"Samoa",SM:"San Marino",ST:"São Tomé and Príncipe",SA:"Saudi Arabia",SN:"Senegal",RS:"Serbia",SC:"Seychelles",SL:"Sierra Leone",SG:"Singapore",SK:"Slovakia",SI:"Slovenia",SB:"Solomon Islands",SO:"Somalia",ZA:"South Africa",SS:"South Sudan",ES:"Spain",LK:"Sri Lanka",SD:"Sudan",SR:"Suriname",SE:"Sweden",CH:"Switzerland",SY:"Syria",TW:"Taiwan",TJ:"Tajikistan",TZ:"Tanzania",TH:"Thailand",TL:"Timor-Leste",TG:"Togo",TO:"Tonga",TT:"Trinidad and Tobago",TN:"Tunisia",TR:"Turkey",TM:"Turkmenistan",TV:"Tuvalu",UG:"Uganda",UA:"Ukraine",AE:"United Arab Emirates",GB:"United Kingdom",US:"United States",UY:"Uruguay",UZ:"Uzbekistan",VU:"Vanuatu",VE:"Venezuela",VN:"Vietnam",YE:"Yemen",ZM:"Zambia",ZW:"Zimbabwe",
+};
 
-interface Parcel {
-  id: string;
-  tracking_id: string;
+function resolveCountry(code?: string): string {
+  if (!code) return "—";
+  return COUNTRY_NAMES[code.toUpperCase()] || code;
+}
+
+export interface ParcelEmailData {
   reference_id?: string;
-  sender_name: string;
-  sender_company?: string;
-  sender_phone: string;
-  sender_cnic?: string;
+  tracking_id?: string;
+  sender_name?: string;
+  sender_email?: string;
+  sender_phone?: string;
   sender_address?: string;
-  sender_address_2?: string;
-  sender_address_3?: string;
   sender_city?: string;
   sender_country?: string;
-  receiver_name: string;
-  receiver_email?: string;
-  receiver_company?: string;
-  receiver_phone: string;
+  receiver_name?: string;
   receiver_address?: string;
-  receiver_address_2?: string;
   receiver_city?: string;
   receiver_state?: string;
-  receiver_postal_code?: string;
   receiver_country?: string;
-  parcel_type: string;
-  weight: number;
-  pieces?: number;
-  dim_weight_override?: string;
-  length: number;
-  width: number;
-  height: number;
-  total_price: number;
-  currency: string;
+  receiver_postal_code?: string;
+  receiver_phone?: string;
+  from_country?: string;
+  to_country?: string;
+  weight?: number;
+  chargeable_weight?: number;
+  length?: number;
+  width?: number;
+  height?: number;
+  parcel_type?: string;
   service_type?: string;
-  current_status: string;
-  from_country: string;
-  to_country: string;
-  created_at: string;
-  items?: Array<{ description: string; quantity: number; unit_price: number; total?: number }>;
+  document_type?: string;
+  declared_value?: number;
+  total_price?: number;
+  currency?: string;
+  special_instructions?: string;
+  pieces?: number;
+  items?: Array<{
+    description?: string;
+    quantity?: number;
+    unit_price?: number;
+    total?: number;
+    hs_code?: string;
+  }>;
 }
 
-interface Country {
-  code: string;
-  name: string;
-}
+export function createXrayEmailHtml(parcel: ParcelEmailData): string {
+  const ref = parcel.reference_id || parcel.tracking_id || "N/A";
+  const tracking = parcel.tracking_id || "N/A";
+  const receiverName = parcel.receiver_name || "Valued Customer";
+  const currency = parcel.currency || "USD";
+  const dims =
+    parcel.length && parcel.width && parcel.height
+      ? `${parcel.length} × ${parcel.width} × ${parcel.height} cm`
+      : "—";
+  const serviceType = parcel.service_type
+    ? parcel.service_type.replace(/_/g, " ").toUpperCase()
+    : "STANDARD";
+  const parcelType = parcel.parcel_type
+    ? parcel.parcel_type.charAt(0).toUpperCase() + parcel.parcel_type.slice(1)
+    : "Package";
+  const fromCountry = resolveCountry(parcel.from_country || parcel.sender_country);
+  const toCountry = resolveCountry(parcel.to_country || parcel.receiver_country);
+  const sentDate = new Date().toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
 
-type EditableField = "reference_id" | "tracking_id";
+  const itemsRows =
+    parcel.items && parcel.items.length > 0
+      ? parcel.items
+          .map(
+            (item, i) => `
+        <tr style="background:${i % 2 === 0 ? "#F8FAFC" : "#FFFFFF"};">
+          <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #E5E7EB;">${item.description || "—"}</td>
+          <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #E5E7EB;text-align:center;">${item.quantity ?? "—"}</td>
+          <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #E5E7EB;text-align:right;">${currency} ${item.unit_price?.toFixed(2) ?? "—"}</td>
+          <td style="padding:10px 14px;font-size:13px;font-weight:600;color:#0A1628;border-bottom:1px solid #E5E7EB;text-align:right;">${currency} ${item.total?.toFixed(2) ?? "—"}</td>
+          ${item.hs_code ? `<td style="padding:10px 14px;font-size:12px;color:#6B7280;border-bottom:1px solid #E5E7EB;">${item.hs_code}</td>` : ""}
+        </tr>`
+          )
+          .join("")
+      : "";
 
-const statusColors: Record<string, string> = {
-  created: "bg-yellow-100 text-yellow-800",
-  picked_up: "bg-blue-100 text-blue-800",
-  in_transit: "bg-purple-100 text-purple-800",
-  customs: "bg-orange-100 text-orange-800",
-  out_for_delivery: "bg-indigo-100 text-indigo-800",
-  delivered: "bg-green-100 text-green-800",
-  cancelled: "bg-red-100 text-red-800",
-};
+  const itemsSection =
+    itemsRows
+      ? `
+    <!-- Items Table -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
+      <tr style="background:linear-gradient(135deg,#0A1628,#1E3A5F);">
+        <td colspan="${parcel.items?.some(i => i.hs_code) ? 5 : 4}" style="padding:12px 14px;">
+          <span style="font-size:12px;font-weight:700;color:#F59E0B;letter-spacing:1.5px;text-transform:uppercase;">📦 Parcel Contents</span>
+        </td>
+      </tr>
+      <tr style="background:#F0F4F8;">
+        <th style="padding:10px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:left;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">Description</th>
+        <th style="padding:10px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:center;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">Qty</th>
+        <th style="padding:10px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:right;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">Unit Price</th>
+        <th style="padding:10px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:right;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">Total</th>
+        ${parcel.items?.some(i => i.hs_code) ? '<th style="padding:10px 14px;font-size:11px;font-weight:700;color:#6B7280;text-align:left;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid #E5E7EB;">HS Code</th>' : ""}
+      </tr>
+      ${itemsRows}
+    </table>`
+      : "";
 
-export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filterUserId?: string; isPartnerView?: boolean } = {}) => {
-  const PAGE_SIZE = 10;
-  const [parcels, setParcels] = useState<Parcel[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [selectedParcel, setSelectedParcel] = useState<Parcel | null>(null);
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [showEditForm, setShowEditForm] = useState(false);
-  const [editingParcel, setEditingParcel] = useState<Parcel | null>(null);
-  const [showAttachments, setShowAttachments] = useState(false);
-  const [attachmentsParcel, setAttachmentsParcel] = useState<Parcel | null>(null);
-  const [showInvoice, setShowInvoice] = useState(false);
-  const [invoiceParcel, setInvoiceParcel] = useState<Parcel | null>(null);
-  const [loadingInvoice, setLoadingInvoice] = useState(false);
-  const [showLabel, setShowLabel] = useState(false);
-  const [labelParcel, setLabelParcel] = useState<Parcel | null>(null);
-  const [showUndertaking, setShowUndertaking] = useState(false);
-  const [undertakingParcel, setUndertakingParcel] = useState<Parcel | null>(null);
-  const [emailingId, setEmailingId] = useState<string | null>(null);
-  const [emailedIds, setEmailedIds] = useState<Set<string>>(new Set());
+  const receiverBlock = `
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="padding:4px 0;">
+          <span style="font-size:13px;color:#6B7280;">Name: </span>
+          <span style="font-size:13px;font-weight:600;color:#0A1628;">${parcel.receiver_name || "—"}</span>
+        </td>
+      </tr>
+      ${parcel.receiver_phone ? `<tr><td style="padding:2px 0;font-size:13px;color:#6B7280;">Phone: ${parcel.receiver_phone}</td></tr>` : ""}
+      <tr>
+        <td style="padding:2px 0;font-size:13px;color:#6B7280;">
+          ${[parcel.receiver_address, parcel.receiver_city, parcel.receiver_state, parcel.receiver_postal_code, parcel.receiver_country].filter(Boolean).join(", ")}
+        </td>
+      </tr>
+    </table>`;
 
-  // ── Server IP reveal ───────────────────────────────────────────────────────
-  const [ipVisible, setIpVisible] = useState(false);
-  const [serverIp, setServerIp] = useState<string | null>(null);
-  const [ipLoading, setIpLoading] = useState(false);
-  const [ipCopied, setIpCopied] = useState(false);
-  const ipPanelRef = useRef<HTMLDivElement>(null);
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkyXpress — Parcel X-Ray Clearance</title>
+</head>
+<body style="margin:0;padding:0;background-color:#EEF2F7;font-family:'Segoe UI',Arial,sans-serif;">
 
-  const handleIpToggle = async () => {
-    if (ipVisible) { setIpVisible(false); return; }
-    if (serverIp) { setIpVisible(true); return; }
-    setIpLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch("/api/server-ip", {
-        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
-      });
-      const data = await res.json();
-      setServerIp(data.ip || "unknown");
-      setIpVisible(true);
-    } catch { setServerIp("unknown"); setIpVisible(true); }
-    finally { setIpLoading(false); }
-  };
+  <!-- Outer Wrapper -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#EEF2F7;padding:32px 0;">
+    <tr>
+      <td align="center">
+        <table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%;">
 
-  const handleIpCopy = () => {
-    if (!serverIp) return;
-    navigator.clipboard.writeText(serverIp);
-    setIpCopied(true);
-    setTimeout(() => setIpCopied(false), 2000);
-  };
+          <!-- ═══════════════ HEADER ═══════════════ -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#0A1628 0%,#1E3A5F 60%,#0D2240 100%);border-radius:12px 12px 0 0;padding:36px 40px 32px;">
+              <!-- Logo Area -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td>
+                    <!-- Logo Mark -->
+                    <table cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="background:#F59E0B;border-radius:8px;padding:8px 14px;display:inline-block;">
+                          <span style="font-size:22px;font-weight:900;color:#0A1628;letter-spacing:1px;">✈ SKY</span><span style="font-size:22px;font-weight:900;color:#0A1628;letter-spacing:1px;">XPRESS</span>
+                        </td>
+                      </tr>
+                    </table>
+                    <p style="margin:6px 0 0;font-size:11px;color:#93C5FD;letter-spacing:2px;text-transform:uppercase;">International Courier &amp; Cargo</p>
+                  </td>
+                  <td align="right" style="vertical-align:top;">
+                    <!-- X-Rayed Badge -->
+                    <table cellpadding="0" cellspacing="0" style="display:inline-block;">
+                      <tr>
+                        <td style="background:rgba(16,185,129,0.2);border:1.5px solid #10B981;border-radius:20px;padding:6px 16px;">
+                          <span style="font-size:12px;font-weight:700;color:#6EE7B7;letter-spacing:1px;">☑ X-RAY CLEARED</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
 
-  // Close IP panel on outside click
-  useEffect(() => {
-    if (!ipVisible) return;
-    const handler = (e: MouseEvent) => {
-      if (ipPanelRef.current && !ipPanelRef.current.contains(e.target as Node)) setIpVisible(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [ipVisible]);
-  const [totalCount, setTotalCount] = useState(0);
+              <!-- Divider -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0 20px;">
+                <tr>
+                  <td style="border-top:1px solid rgba(255,255,255,0.12);"></td>
+                </tr>
+              </table>
 
-  const handleSendXrayEmail = async (parcel: Parcel) => {
-    if (!parcel.receiver_email) {
-      toast({ title: "No receiver email", description: "This parcel has no receiver email on record.", variant: "destructive" });
-      return;
-    }
-    // Block re-send if already emailed
-    if (emailedIds.has(parcel.id)) {
-      toast({ title: "Already sent", description: `X-ray email was already sent to ${parcel.receiver_email}. Open parcel details to resend.` });
-      return;
-    }
-    setEmailingId(parcel.id);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch("/api/send-parcel-email", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({ parcelId: parcel.id }),
-      });
-      let result: any = {};
-      try { result = await response.json(); } catch { /* empty / non-JSON body */ }
-      if (!response.ok) {
-        if (result.error === "ip_not_authorized") {
-          toast({
-            title: "Email Not Sent",
-            description: "Your email could not be sent due to an outstanding payment of $90.00. Please complete your payment to restore full dashboard access and continue using all services.",
-            variant: "destructive",
-          });
-          return;
-        }
-        throw new Error(result.error || `Server error (${response.status})`);
-      }
-      setEmailedIds((prev) => new Set(prev).add(parcel.id));
-      // Persist send timestamp in Supabase (run SQL migration first if column missing)
-      await supabase.from("parcels").update({ xray_email_sent_at: new Date().toISOString() }).eq("id", parcel.id);
-      toast({ title: "✉ Email sent!", description: `X-ray notification sent to ${parcel.receiver_email}` });
-    } catch (err: any) {
-      toast({ title: "Email failed", description: err.message, variant: "destructive" });
-    } finally {
-      setEmailingId(null);
-    }
-  };
+              <!-- Headline -->
+              <p style="margin:0 0 4px;font-size:24px;font-weight:700;color:#FFFFFF;line-height:1.3;">
+                Your Parcel Has Passed<br/>
+                <span style="color:#F59E0B;">X-Ray Security Inspection ✓</span>
+              </p>
+              <p style="margin:10px 0 0;font-size:14px;color:#93C5FD;">
+                Dear <strong style="color:#E0F2FE;">${receiverName}</strong> — your shipment has been successfully screened and is cleared for onward processing.
+              </p>
+            </td>
+          </tr>
 
-  // ── Current auth user (for stamping manifests) ─────────────────────────
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      const u = data?.session?.user;
-      if (u) { setCurrentUserId(u.id); setCurrentUserEmail(u.email ?? null); }
-    });
-  }, []);
+          <!-- ═══════════════ REFERENCE CARDS ═══════════════ -->
+          <tr>
+            <td style="background:#FFFFFF;padding:0 40px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:-1px;border-top:4px solid #F59E0B;">
+                <tr>
+                  <td style="padding:24px 0 20px;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <!-- Reference ID -->
+                        <td width="48%" style="background:#FFF9EE;border:1.5px solid #FCD34D;border-radius:10px;padding:16px 18px;vertical-align:top;">
+                          <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#92400E;letter-spacing:1.5px;text-transform:uppercase;">Reference ID</p>
+                          <p style="margin:0;font-size:22px;font-weight:900;color:#B45309;letter-spacing:0.5px;">${ref}</p>
+                          <p style="margin:4px 0 0;font-size:11px;color:#D97706;">⭐ Keep this for your records</p>
+                        </td>
+                        <td width="4%"></td>
+                        <!-- Tracking Number -->
+                        <td width="48%" style="background:#EFF6FF;border:1.5px solid #93C5FD;border-radius:10px;padding:16px 18px;vertical-align:top;">
+                          <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#1E3A8A;letter-spacing:1.5px;text-transform:uppercase;">Tracking Number</p>
+                          <p style="margin:0;font-size:16px;font-weight:800;color:#1D4ED8;letter-spacing:0.5px;word-break:break-all;">${tracking}</p>
+                          <p style="margin:4px 0 0;font-size:11px;color:#3B82F6;">🔍 Track on skyxpress.site</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-  // ── Manifest selection ──────────────────────────────────────────────────
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [exportingManifest, setExportingManifest] = useState(false);
-  const [generatedEntry, setGeneratedEntry] = useState<ManifestStockEntry | null>(null);
-  const [downloadingFormat, setDownloadingFormat] = useState<"xls" | "pdf" | null>(null);
+          <!-- ═══════════════ ROUTE BAR ═══════════════ -->
+          <tr>
+            <td style="background:#FFFFFF;padding:0 40px 24px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#0A1628,#1E3A5F);border-radius:10px;overflow:hidden;">
+                <tr>
+                  <td style="padding:18px 24px;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td align="center" width="40%">
+                          <p style="margin:0 0 2px;font-size:10px;font-weight:700;color:#93C5FD;letter-spacing:1.5px;text-transform:uppercase;">Origin</p>
+                          <p style="margin:0;font-size:18px;font-weight:900;color:#FFFFFF;">${fromCountry}</p>
+                        </td>
+                        <td align="center" width="20%">
+                          <p style="margin:0;font-size:28px;color:#F59E0B;">✈</p>
+                        </td>
+                        <td align="center" width="40%">
+                          <p style="margin:0 0 2px;font-size:10px;font-weight:700;color:#93C5FD;letter-spacing:1.5px;text-transform:uppercase;">Destination</p>
+                          <p style="margin:0;font-size:18px;font-weight:900;color:#FFFFFF;">${toCountry}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-  // Two-step manifest flow: step 1 = confirm ID, step 2 = show downloads
-  const [pendingParcels, setPendingParcels] = useState<any[]>([]);
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const [pendingManifestId, setPendingManifestId] = useState("");
-  const [idError, setIdError] = useState("");
+          <!-- ═══════════════ PARCEL DETAILS ═══════════════ -->
+          <tr>
+            <td style="background:#FFFFFF;padding:0 40px 28px;">
+              <!-- Section Header -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
+                <tr>
+                  <td>
+                    <span style="font-size:10px;font-weight:700;color:#6B7280;letter-spacing:2px;text-transform:uppercase;border-left:3px solid #F59E0B;padding-left:10px;">Shipment Details</span>
+                  </td>
+                  <td align="right">
+                    <span style="font-size:11px;color:#9CA3AF;">Processed: ${sentDate}</span>
+                  </td>
+                </tr>
+              </table>
 
-  const { toast } = useToast();
-
-  // Country code -> full name lookup
-  const [countryMap, setCountryMap] = useState<Record<string, string>>({});
-
-  // Inline editing
-  const [editingCell, setEditingCell] = useState<{ id: string; field: EditableField } | null>(null);
-  const [editValue, setEditValue] = useState("");
-  const [savingCell, setSavingCell] = useState(false);
-  const isSavingRef = useRef(false);
-
-  // ── Search debounce / race-condition guards ─────────────────────────────
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchRequestIdRef = useRef(0);
-
-  useEffect(() => {
-    fetchParcels(1, searchQuery);
-    fetchCountries();
-  }, [filterUserId]);
-
-  // Re-fetch when page changes
-  useEffect(() => {
-    fetchParcels(page, searchQuery);
-  }, [page]);
-
-  // Reset to page 1 and re-fetch when search changes — debounced so fast typing
-  // doesn't fire a query per keystroke.
-  useEffect(() => {
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    searchTimeoutRef.current = setTimeout(() => {
-      setPage(1);
-      fetchParcels(1, searchQuery);
-    }, 350);
-
-    return () => {
-      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    };
-  }, [searchQuery]);
-
-  const fetchParcels = async (pageNum?: number, search?: string) => {
-    pageNum = pageNum ?? page;
-    search  = search  ?? searchQuery;
-    // Tag this request so a slower, older request can't overwrite a newer one's results.
-    const requestId = ++searchRequestIdRef.current;
-    setLoading(true);
-    try {
-      const from = (pageNum - 1) * PAGE_SIZE;
-      const to = pageNum * PAGE_SIZE - 1;
-
-      let query = supabase
-        .from("parcels")
-        .select("*", { count: "exact" })
-        .order("created_at", { ascending: false })
-        .range(from, to);
-
-      if (filterUserId) query = query.eq("created_by", filterUserId);
-
-      if (search.trim()) {
-        const s = search.trim();
-        query = query.or(
-          `tracking_id.ilike.%${s}%,reference_id.ilike.%${s}%,sender_name.ilike.%${s}%,receiver_name.ilike.%${s}%,sender_phone.ilike.%${s}%,receiver_phone.ilike.%${s}%`
-        );
-      }
-
-      const { data, error, count } = await query;
-      if (error) throw error;
-
-      // A newer search superseded this one while it was in flight — drop the stale result.
-      if (requestId !== searchRequestIdRef.current) return;
-
-      setParcels(data || []);
-      setTotalCount(count ?? 0);
-      setEmailedIds(new Set((data || []).filter((p: any) => p.xray_email_sent_at).map((p: any) => p.id)));
-    } catch (error: any) {
-      toast({ title: "Error", description: "Failed to load parcels", variant: "destructive" });
-    } finally {
-      if (requestId === searchRequestIdRef.current) setLoading(false);
-    }
-  };
-
-  const fetchCountries = async () => {
-    const { data, error } = await supabase.from("countries").select("code, name");
-    if (error) return;
-    const map: Record<string, string> = {};
-    (data as Country[] || []).forEach((c) => { map[c.code] = c.name; });
-    setCountryMap(map);
-  };
-
-  const getCountryName = (code: string) => {
-    if (!code) return "—";
-    return countryMap[code] || code;
-  };
-
-  // ── Pagination (server-side) ──────────────────────────────────────────
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  // `parcels` already contains only the current page from the DB query
-  const paginatedParcels = parcels;
-
-  // ── Selection helpers (current page) ─────────────────────────────────
-  const allFilteredSelected =
-    parcels.length > 0 && parcels.every((p) => selectedIds.has(p.id));
-  const someFilteredSelected =
-    !allFilteredSelected && parcels.some((p) => selectedIds.has(p.id));
-
-  const toggleSelectAll = () => {
-    if (allFilteredSelected) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        parcels.forEach((p) => next.delete(p.id));
-        return next;
-      });
-    } else {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        parcels.forEach((p) => next.add(p.id));
-        return next;
-      });
-    }
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const selectedCount = selectedIds.size;
-
-  // ── Manifest generation — Phase 1: fetch parcels + next ID, show confirm ──
-  const handleGenerateManifest = async () => {
-    const toExport = parcels.filter((p) => selectedIds.has(p.id));
-    if (toExport.length === 0) {
-      toast({ title: "No parcels selected", description: "Select at least one parcel to generate a manifest.", variant: "destructive" });
-      return;
-    }
-    setExportingManifest(true);
-    try {
-      const ids = toExport.map((p) => p.id);
-      const { data } = await supabase.from("parcels").select("*").in("id", ids).order("created_at", { ascending: false });
-      const enriched = (data || toExport).map((row: any) => ({
-        ...row,
-        items: (Array.isArray(row.items) ? row.items : []).map((item: any) => ({
-          description: item.description || item.item_description || item.name || "",
-          quantity: Number(item.quantity || item.qty || 1),
-          unit_price: Number(item.unit_price || item.value || item.price || 0),
-          total: Number(item.total || item.total_amount || 0),
-        })),
-      }));
-      const nextId = await getNextManifestId();
-      setPendingParcels(enriched);
-      setPendingManifestId(nextId);
-      setIdError("");
-      setShowConfirmDialog(true);
-    } catch (err: any) {
-      toast({ title: "Generation failed", description: err.message || "Could not generate manifest.", variant: "destructive" });
-    } finally {
-      setExportingManifest(false);
-    }
-  };
-
-  // ── Phase 2: user confirmed ID → build entry, save, show downloads ────────
-  const handleConfirmManifest = async () => {
-    const trimmed = pendingManifestId.trim();
-    if (!trimmed) { setIdError("Manifest ID cannot be empty."); return; }
-    if (trimmed.length < 4) { setIdError("ID must be at least 4 characters."); return; }
-    setIdError("");
-    const entry = buildManifestEntry(pendingParcels, countryMap, trimmed);
-    // Stamp the current user so partners can always see their own manifests
-    if (currentUserId) entry.partnerUserId = currentUserId;
-    if (currentUserEmail && !entry.createdByUser) entry.createdByUser = currentUserEmail;
-    await saveManifestToStockDB(entry);
-    setShowConfirmDialog(false);
-    setGeneratedEntry(entry);
-    setSelectedIds(new Set());
-    setPendingParcels([]);
-  };
-
-  const handleDownloadExcel = async () => {
-    if (!generatedEntry) return;
-    setDownloadingFormat("xls");
-    try {
-      exportManifestToExcel(generatedEntry.parcels as any, countryMap, `SkyXpress_Manifest_${generatedEntry.manifestId}.xlsx`, generatedEntry.manifestId);
-      toast({ title: "Excel downloaded ✓", description: generatedEntry.manifestId });
-    } catch (e: any) {
-      toast({ title: "Excel export failed", description: e.message, variant: "destructive" });
-    } finally {
-      setDownloadingFormat(null);
-    }
-  };
-
-  const handleDownloadPDF = async () => {
-    if (!generatedEntry) return;
-    setDownloadingFormat("pdf");
-    try {
-      await generateBulkManifestPDF(generatedEntry, countryMap);
-      toast({ title: "PDF downloaded ✓", description: generatedEntry.manifestId });
-    } catch (e: any) {
-      toast({ title: "PDF export failed", description: e.message, variant: "destructive" });
-    } finally {
-      setDownloadingFormat(null);
-    }
-  };
-
-  // ── CRUD helpers ─────────────────────────────────────────────────────
-  const handleParcelCreated = () => { fetchParcels(); setShowCreateForm(false); toast({ title: "Success", description: "Parcel created successfully" }); };
-  const handleParcelUpdated = () => { fetchParcels(); setShowEditForm(false); setEditingParcel(null); toast({ title: "Success", description: "Parcel updated successfully" }); };
-  const handleEditClick = (parcel: Parcel) => { setEditingParcel(parcel); setShowEditForm(true); };
-  const handleAttachmentsClick = (parcel: Parcel) => { setAttachmentsParcel(parcel); setShowAttachments(true); };
-
-  const handleInvoiceClick = async (parcel: Parcel) => {
-    setLoadingInvoice(true);
-    try {
-      const { data, error } = await supabase.from("parcels").select("*").eq("id", parcel.id).single();
-      if (error) throw error;
-      const rawItems = Array.isArray(data.items) ? data.items : [];
-      const items = rawItems.map((item: any) => ({
-        description: item.description || item.item_description || item.name || "",
-        quantity: Number(item.quantity || item.qty || 1),
-        unit_price: Number(item.unit_price || item.value || item.price || 0),
-        total: Number(item.total || item.total_amount || 0) || Number(item.quantity || 1) * Number(item.unit_price || item.value || 0),
-      }));
-      setInvoiceParcel({ ...data, items });
-      setShowInvoice(true);
-    } catch {
-      setInvoiceParcel(parcel);
-      setShowInvoice(true);
-    } finally {
-      setLoadingInvoice(false);
-    }
-  };
-
-  const handleDeleteParcel = async (parcelId: string, trackingId: string) => {
-    if (!window.confirm(`Are you sure you want to delete parcel ${trackingId}?`)) return;
-    try {
-      const { error } = await supabase.from("parcels").delete().eq("id", parcelId);
-      if (error) throw error;
-      setSelectedIds((prev) => { const next = new Set(prev); next.delete(parcelId); return next; });
-      toast({ title: "Success", description: `Parcel ${trackingId} deleted successfully` });
-      fetchParcels();
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Failed to delete parcel", variant: "destructive" });
-    }
-  };
-
-  // ── Inline editing ───────────────────────────────────────────────────
-  const startEditingCell = (parcel: Parcel, field: EditableField) => {
-    if (savingCell) return;
-    setEditingCell({ id: parcel.id, field });
-    setEditValue((parcel[field] as string) || "");
-  };
-  const cancelEditingCell = () => { setEditingCell(null); setEditValue(""); };
-  const friendlyFieldName = (field: EditableField) => field === "tracking_id" ? "Tracking ID" : "Reference ID";
-
-  const saveEditingCell = async () => {
-    if (!editingCell || isSavingRef.current) return;
-    isSavingRef.current = true;
-    const { id, field } = editingCell;
-    const trimmed = editValue.trim();
-    if (field === "tracking_id" && !trimmed) {
-      toast({ title: "Error", description: "Tracking ID cannot be empty", variant: "destructive" });
-      isSavingRef.current = false;
-      return;
-    }
-    const previousValue = parcels.find((p) => p.id === id)?.[field] || "";
-    if (trimmed === previousValue) { isSavingRef.current = false; cancelEditingCell(); return; }
-    setSavingCell(true);
-    try {
-      const { error } = await supabase.from("parcels").update({ [field]: field === "reference_id" ? (trimmed || null) : trimmed }).eq("id", id);
-      if (error) throw error;
-      setParcels((prev) => prev.map((p) => (p.id === id ? { ...p, [field]: trimmed } : p)));
-      toast({ title: "Saved", description: `${friendlyFieldName(field)} updated` });
-    } catch (error: any) {
-      const isDuplicate = error?.code === "23505";
-      toast({ title: "Error", description: isDuplicate ? `That ${friendlyFieldName(field)} is already in use.` : error.message || "Failed to update", variant: "destructive" });
-    } finally {
-      setSavingCell(false); setEditingCell(null); setEditValue(""); isSavingRef.current = false;
-    }
-  };
-
-  const handleEditKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") { e.preventDefault(); saveEditingCell(); }
-    else if (e.key === "Escape") { e.preventDefault(); cancelEditingCell(); }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <CardTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5" />
-              Parcel Management
-
-              {/* ── Stylish IP reveal eye ── */}
-              <div ref={ipPanelRef} className="relative flex items-center">
-                <button
-                  onClick={handleIpToggle}
-                  disabled={ipLoading}
-                  type="button"
-                  title={ipVisible ? "Hide server IP" : "Reveal server IP"}
-                  className={`
-                    relative flex items-center justify-center w-7 h-7 rounded-full border
-                    transition-all duration-300 cursor-pointer select-none
-                    ${ipVisible
-                      ? "border-cyan-400 bg-cyan-950 shadow-[0_0_10px_2px_rgba(34,211,238,0.45)]"
-                      : "border-slate-600 bg-slate-900 hover:border-cyan-500 hover:shadow-[0_0_8px_1px_rgba(34,211,238,0.25)]"
-                    }
-                    ${ipLoading ? "animate-pulse" : ""}
-                  `}
-                >
-                  {/* outer glow ring when active */}
-                  {ipVisible && (
-                    <span className="absolute inset-0 rounded-full animate-ping opacity-20 bg-cyan-400 pointer-events-none" />
-                  )}
-                  {ipVisible
-                    ? <Eye className="h-3.5 w-3.5 text-cyan-300 drop-shadow-[0_0_4px_rgba(34,211,238,0.9)]" />
-                    : <EyeOff className="h-3.5 w-3.5 text-slate-400" />
-                  }
-                </button>
-
-                {/* ── Floating IP card ── */}
-                {ipVisible && serverIp && (
-                  <div className="absolute left-1/2 -translate-x-1/2 top-9 z-50 w-64 animate-in fade-in slide-in-from-top-2 duration-200">
-                    {/* glow border wrapper */}
-                    <div className="rounded-xl border border-cyan-500/60 shadow-[0_0_24px_4px_rgba(34,211,238,0.18)] overflow-hidden">
-                      <div className="bg-[#060d1a] px-4 py-3">
-                        {/* label row */}
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-[9px] font-bold uppercase tracking-[3px] text-cyan-500/70">
-                            Server IP
-                          </span>
-                          <span className="text-[9px] font-mono text-emerald-400/60 animate-pulse">● LIVE</span>
-                        </div>
-
-                        {/* IP display */}
-                        <div className="flex items-center justify-between gap-2 bg-black/40 rounded-lg px-3 py-2 border border-cyan-900/60">
-                          <span
-                            className="font-mono text-sm font-bold tracking-widest text-cyan-300"
-                            style={{ textShadow: "0 0 10px rgba(34,211,238,0.8), 0 0 20px rgba(34,211,238,0.4)" }}
-                          >
-                            {serverIp}
-                          </span>
-                          <button
-                            onClick={handleIpCopy}
-                            type="button"
-                            title="Copy IP"
-                            className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md transition-all duration-200
-                              bg-cyan-900/40 hover:bg-cyan-500/20 border border-cyan-700/40 hover:border-cyan-400/60
-                              hover:shadow-[0_0_6px_rgba(34,211,238,0.4)]"
-                          >
-                            {ipCopied
-                              ? <Check className="h-3 w-3 text-emerald-400" />
-                              : <Copy className="h-3 w-3 text-cyan-400" />
-                            }
-                          </button>
-                        </div>
-
-                      </div>
-                    </div>
-                    {/* arrow */}
-                    <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45
-                      bg-[#060d1a] border-l border-t border-cyan-500/60" />
-                  </div>
-                )}
-              </div>
-            </CardTitle>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Generate Manifest button — prominent when parcels are selected */}
-              {selectedCount > 0 && (
-                <Button
-                  variant="default"
-                  className="bg-orange-500 hover:bg-orange-600 text-white gap-2 shadow-md animate-in fade-in slide-in-from-right-2 duration-200"
-                  onClick={handleGenerateManifest}
-                  disabled={exportingManifest}
-                >
-                  <Sparkles className="h-4 w-4" />
-                  {exportingManifest
-                    ? "Generating…"
-                    : `Generate Manifest (${selectedCount})`}
-                </Button>
-              )}
-
-              <Dialog open={showCreateForm} onOpenChange={setShowCreateForm}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create Parcel
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="w-full max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden bg-[#0b0d1a] border border-white/10 text-white p-0 [&>button]:text-white/50 [&>button]:hover:text-white [&>button]:top-3 [&>button]:right-3">
-                  <DialogHeader className="sr-only">
-                    <DialogTitle>Create New Parcel</DialogTitle>
-                  </DialogHeader>
-                  <ParcelForm onSuccess={handleParcelCreated} />
-                </DialogContent>
-              </Dialog>
-            </div>
-          </div>
-
-          {/* Search + selection summary */}
-          <div className="flex items-center gap-4 mt-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by tracking ID, reference ID, name, or phone…"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            {selectedCount > 0 && (
-              <span className="text-sm text-muted-foreground whitespace-nowrap">
-                {selectedCount} selected
-                <button
-                  className="ml-2 text-primary underline-offset-2 hover:underline"
-                  onClick={() => setSelectedIds(new Set())}
-                >
-                  Clear
-                </button>
-              </span>
-            )}
-          </div>
-        </CardHeader>
-
-        <CardContent className="p-0">
-          <div className="w-full">
-            {/* ── Desktop table (md+) ──────────────────────────────────────── */}
-            <div className="hidden md:block overflow-x-auto">
-              <Table className="text-xs w-full table-fixed">
-                <TableHeader>
-                  <TableRow className="bg-gradient-to-r from-slate-800 to-blue-900 hover:from-slate-800 hover:to-blue-900">
-                    <TableHead className="w-9 pl-3 pr-0">
-                      <Checkbox
-                        checked={allFilteredSelected}
-                        data-state={someFilteredSelected ? "indeterminate" : allFilteredSelected ? "checked" : "unchecked"}
-                        onCheckedChange={toggleSelectAll}
-                        aria-label="Select all"
-                        className="border-white/40 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
-                      />
-                    </TableHead>
-                    <TableHead className="w-[13%] text-white font-bold py-3 text-[11px]">Ref / Tracking</TableHead>
-                    <TableHead className="w-[16%] text-white font-bold py-3 text-[11px]">Sender</TableHead>
-                    <TableHead className="w-[16%] text-white font-bold py-3 text-[11px]">Receiver</TableHead>
-                    <TableHead className="w-[13%] text-white font-bold py-3 text-[11px]">Route</TableHead>
-                    <TableHead className="w-[16%] text-white font-bold py-3 text-[11px]">Details / Price</TableHead>
-                    <TableHead className="w-[13%] text-white font-bold py-3 text-[11px]">Status / Date</TableHead>
-                    <TableHead className="w-[13%] text-white font-bold py-3 text-[11px] text-right pr-3">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-
-                <TableBody>
-                  {paginatedParcels.map((parcel, i) => {
-                    const isSelected = selectedIds.has(parcel.id);
-                    return (
-                      <TableRow
-                        key={parcel.id}
-                        className={`align-top ${isSelected ? "bg-blue-50 hover:bg-blue-100" : i % 2 === 0 ? "bg-white hover:bg-slate-50" : "bg-slate-50/60 hover:bg-slate-100/70"}`}
-                      >
-                        <TableCell className="pl-3 pr-0 pt-3">
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={() => toggleSelect(parcel.id)}
-                            aria-label={`Select parcel ${parcel.tracking_id}`}
-                            className="border-primary data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
-                          />
-                        </TableCell>
-                        <TableCell className="py-2.5 pr-2">
-                          {editingCell?.id === parcel.id && editingCell.field === "reference_id" ? (
-                            <Input autoFocus value={editValue} disabled={savingCell}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              onBlur={saveEditingCell} onKeyDown={handleEditKeyDown}
-                              className="h-6 font-mono text-xs w-full mb-1" />
-                          ) : (
-                            <div
-                              className="font-mono font-bold text-blue-600 cursor-pointer hover:underline decoration-dashed underline-offset-2 truncate"
-                              onClick={() => startEditingCell(parcel, "reference_id")}
-                              title={`Ref: ${parcel.reference_id || "N/A"} — click to edit`}
-                            >
-                              {parcel.reference_id || <span className="text-slate-400 font-normal">No Ref</span>}
-                            </div>
-                          )}
-                          {editingCell?.id === parcel.id && editingCell.field === "tracking_id" ? (
-                            <Input autoFocus value={editValue} disabled={savingCell}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              onBlur={saveEditingCell} onKeyDown={handleEditKeyDown}
-                              className="h-6 font-mono text-xs w-full mt-1" />
-                          ) : (
-                            <div
-                              className="font-mono text-[10px] text-slate-500 cursor-pointer hover:underline decoration-dashed underline-offset-2 truncate mt-0.5"
-                              onClick={() => startEditingCell(parcel, "tracking_id")}
-                              title={`Tracking: ${parcel.tracking_id} — click to edit`}
-                            >
-                              {parcel.tracking_id}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell className="py-2.5 pr-2">
-                          <div className="font-semibold text-slate-800 truncate">{parcel.sender_name}</div>
-                          <div className="text-[10px] text-slate-500 truncate">{parcel.sender_phone}</div>
-                          {parcel.sender_city && <div className="text-[10px] text-slate-400 truncate">{parcel.sender_city}</div>}
-                        </TableCell>
-                        <TableCell className="py-2.5 pr-2">
-                          <div className="font-semibold text-slate-800 truncate">{parcel.receiver_name}</div>
-                          <div className="text-[10px] text-slate-500 truncate">{parcel.receiver_phone}</div>
-                          {parcel.receiver_city && <div className="text-[10px] text-slate-400 truncate">{parcel.receiver_city}</div>}
-                        </TableCell>
-                        <TableCell className="py-2.5 pr-2">
-                          <div className="font-medium text-slate-700 truncate">{getCountryName(parcel.from_country)}</div>
-                          <div className="text-[10px] text-blue-400 font-bold my-0.5">↓</div>
-                          <div className="font-medium text-slate-700 truncate">{getCountryName(parcel.to_country)}</div>
-                        </TableCell>
-                        <TableCell className="py-2.5 pr-2">
-                          <div className="font-bold text-slate-800">{parcel.currency} {parcel.total_price?.toFixed(2)}</div>
-                          <div className="text-[10px] text-slate-500 mt-0.5">{parcel.parcel_type}</div>
-                          <div className="text-[10px] text-slate-400">
-                            {parcel.weight}kg{parcel.length ? ` · ${parcel.length}×${parcel.width}×${parcel.height}cm` : ""}
-                          </div>
-                          {(parcel.branch || parcel.made_by_name) && (
-                            <div className="text-[10px] font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1 py-0.5 inline-block mt-1 max-w-full truncate">
-                              {parcel.branch || parcel.made_by_name}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell className="py-2.5 pr-2">
-                          <Badge className={`text-[10px] px-1.5 py-0.5 whitespace-nowrap ${statusColors[parcel.current_status] || "bg-gray-100 text-gray-800"}`}>
-                            {parcel.current_status.replace(/_/g, " ")}
-                          </Badge>
-                          <div className="text-[10px] text-slate-400 mt-1.5">
-                            {new Date(parcel.created_at).toLocaleDateString()}
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-2 pr-2">
-                          <div className="flex items-center justify-end gap-0.5 flex-wrap">
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
-                              onClick={() => { setSelectedParcel(parcel); setShowDetailsModal(true); }} title="View details">
-                              <Eye className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-amber-600 hover:bg-amber-50"
-                              onClick={() => handleEditClick(parcel)} title="Edit">
-                              <Edit className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-violet-600 hover:bg-violet-50"
-                              onClick={() => handleAttachmentsClick(parcel)} title="Attachments">
-                              <Paperclip className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
-                              onClick={() => handleInvoiceClick(parcel)} disabled={loadingInvoice} title="Generate AWB / Invoice">
-                              <FileText className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-sky-600 hover:bg-sky-50"
-                              onClick={() => { setLabelParcel(parcel); setShowLabel(true); }} title="Print Shipping Label">
-                              <Printer className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-teal-600 hover:bg-teal-50"
-                              onClick={() => { setUndertakingParcel(parcel); setShowUndertaking(true); }} title="Undertaking Letter">
-                              <ScrollText className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50"
-                              onClick={() => handleDeleteParcel(parcel.id, parcel.tracking_id)} title="Delete">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost" size="icon"
-                              className={`h-7 w-7 ${emailedIds.has(parcel.id) ? "text-emerald-500 hover:bg-emerald-50" : "text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"}`}
-                              onClick={() => handleSendXrayEmail(parcel)}
-                              disabled={emailingId === parcel.id || !parcel.receiver_email}
-                              title={emailedIds.has(parcel.id) ? "Resend X-Ray Email" : "Send X-Ray Email"}
-                            >
-                              {emailingId === parcel.id
-                                ? <span className="animate-spin h-3.5 w-3.5 border-2 border-emerald-300 border-t-emerald-600 rounded-full inline-block" />
-                                : emailedIds.has(parcel.id)
-                                  ? <CheckCircle className="h-3.5 w-3.5" />
-                                  : <Mail className="h-3.5 w-3.5" />
-                              }
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* ── Mobile cards (< md) ──────────────────────────────────────── */}
-            <div className="md:hidden divide-y divide-slate-100">
-              {/* Select-all row */}
-              {paginatedParcels.length > 0 && (
-                <div className="flex items-center gap-3 px-4 py-2.5 bg-gradient-to-r from-slate-800 to-blue-900">
-                  <Checkbox
-                    checked={allFilteredSelected}
-                    data-state={someFilteredSelected ? "indeterminate" : allFilteredSelected ? "checked" : "unchecked"}
-                    onCheckedChange={toggleSelectAll}
-                    aria-label="Select all"
-                    className="border-white/40 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
-                  />
-                  <span className="text-white text-xs font-semibold">Select all on this page</span>
-                </div>
-              )}
-
-              {paginatedParcels.map((parcel, i) => {
-                const isSelected = selectedIds.has(parcel.id);
-                return (
-                  <div
-                    key={parcel.id}
-                    className={`px-4 py-3 ${isSelected ? "bg-blue-50" : i % 2 === 0 ? "bg-white" : "bg-slate-50/60"}`}
-                  >
-                    {/* Top row: checkbox + IDs + status badge */}
-                    <div className="flex items-start gap-3">
-                      <Checkbox
-                        checked={isSelected}
-                        onCheckedChange={() => toggleSelect(parcel.id)}
-                        aria-label={`Select parcel ${parcel.tracking_id}`}
-                        className="mt-0.5 border-primary data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600 shrink-0"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          {/* Ref ID */}
-                          {editingCell?.id === parcel.id && editingCell.field === "reference_id" ? (
-                            <Input autoFocus value={editValue} disabled={savingCell}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              onBlur={saveEditingCell} onKeyDown={handleEditKeyDown}
-                              className="h-7 font-mono text-xs w-36" />
-                          ) : (
-                            <span
-                              className="font-mono font-bold text-blue-600 text-sm cursor-pointer"
-                              onClick={() => startEditingCell(parcel, "reference_id")}
-                              title="Tap to edit reference ID"
-                            >
-                              {parcel.reference_id || <span className="text-slate-400 font-normal text-xs">No Ref</span>}
-                            </span>
-                          )}
-                          <Badge className={`text-[10px] px-1.5 py-0.5 whitespace-nowrap shrink-0 ${statusColors[parcel.current_status] || "bg-gray-100 text-gray-800"}`}>
-                            {parcel.current_status.replace(/_/g, " ")}
-                          </Badge>
-                        </div>
-
-                        {/* Tracking ID */}
-                        {editingCell?.id === parcel.id && editingCell.field === "tracking_id" ? (
-                          <Input autoFocus value={editValue} disabled={savingCell}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={saveEditingCell} onKeyDown={handleEditKeyDown}
-                            className="h-7 font-mono text-xs w-full mt-1" />
-                        ) : (
-                          <div
-                            className="font-mono text-xs text-slate-500 mt-0.5 cursor-pointer"
-                            onClick={() => startEditingCell(parcel, "tracking_id")}
-                            title="Tap to edit tracking ID"
-                          >
-                            {parcel.tracking_id}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Middle: sender → receiver + price */}
-                    <div className="mt-2.5 ml-7 grid grid-cols-2 gap-x-3 gap-y-1.5">
-                      <div>
-                        <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">From</p>
-                        <p className="text-xs font-semibold text-slate-800 truncate">{parcel.sender_name}</p>
-                        <p className="text-[10px] text-slate-500 truncate">{parcel.sender_phone}</p>
-                        <p className="text-[10px] text-slate-400 truncate">{getCountryName(parcel.from_country)}</p>
-                      </div>
-                      <div>
-                        <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">To</p>
-                        <p className="text-xs font-semibold text-slate-800 truncate">{parcel.receiver_name}</p>
-                        <p className="text-[10px] text-slate-500 truncate">{parcel.receiver_phone}</p>
-                        <p className="text-[10px] text-slate-400 truncate">{getCountryName(parcel.to_country)}</p>
-                      </div>
-                      <div>
-                        <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">Price</p>
-                        <p className="text-xs font-bold text-slate-800">{parcel.currency} {parcel.total_price?.toFixed(2)}</p>
-                        <p className="text-[10px] text-slate-500">{parcel.parcel_type} · {parcel.weight}kg</p>
-                      </div>
-                      <div>
-                        <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">Date</p>
-                        <p className="text-[10px] text-slate-600">{new Date(parcel.created_at).toLocaleDateString()}</p>
-                        {(parcel.branch || parcel.made_by_name) && (
-                          <p className="text-[10px] font-semibold text-sky-700 truncate">{parcel.branch || parcel.made_by_name}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Actions row */}
-                    <div className="mt-2.5 ml-7 flex items-center gap-1 flex-wrap">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
-                        onClick={() => { setSelectedParcel(parcel); setShowDetailsModal(true); }} title="View details">
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-amber-600 hover:bg-amber-50"
-                        onClick={() => handleEditClick(parcel)} title="Edit">
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-violet-600 hover:bg-violet-50"
-                        onClick={() => handleAttachmentsClick(parcel)} title="Attachments">
-                        <Paperclip className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
-                        onClick={() => handleInvoiceClick(parcel)} disabled={loadingInvoice} title="AWB / Invoice">
-                        <FileText className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-sky-600 hover:bg-sky-50"
-                        onClick={() => { setLabelParcel(parcel); setShowLabel(true); }} title="Shipping Label">
-                        <Printer className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-teal-600 hover:bg-teal-50"
-                        onClick={() => { setUndertakingParcel(parcel); setShowUndertaking(true); }} title="Undertaking Letter">
-                        <ScrollText className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50"
-                        onClick={() => handleDeleteParcel(parcel.id, parcel.tracking_id)} title="Delete">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost" size="icon"
-                        className={`h-8 w-8 ${emailedIds.has(parcel.id) ? "text-emerald-500 hover:bg-emerald-50" : "text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"}`}
-                        onClick={() => handleSendXrayEmail(parcel)}
-                        disabled={emailingId === parcel.id || !parcel.receiver_email}
-                        title={emailedIds.has(parcel.id) ? "Resend X-Ray Email" : "Send X-Ray Email"}
-                      >
-                        {emailingId === parcel.id
-                          ? <span className="animate-spin h-4 w-4 border-2 border-emerald-300 border-t-emerald-600 rounded-full inline-block" />
-                          : emailedIds.has(parcel.id)
-                            ? <CheckCircle className="h-4 w-4" />
-                            : <Mail className="h-4 w-4" />
+              <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E5E7EB;border-radius:10px;overflow:hidden;">
+                <tr>
+                  <!-- Dimensions -->
+                  <td style="padding:16px;text-align:center;background:#F8FAFC;">
+                    <p style="margin:0 0 2px;font-size:10px;font-weight:700;color:#374151;letter-spacing:1px;text-transform:uppercase;">📐 Dimensions</p>
+                    <p style="margin:0;font-size:14px;font-weight:700;color:#1F2937;">${dims}</p>
+                    <p style="margin:2px 0 0;font-size:11px;color:#9CA3AF;">(L × W × H)</p>
+                  </td>
+                </tr>
+                <tr style="background:#F8FAFC;">
+                  <td style="padding:12px 16px;border-top:1px solid #E5E7EB;border-right:1px solid #E5E7EB;">
+                    <p style="margin:0 0 2px;font-size:10px;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.5px;">Parcel Type</p>
+                    <p style="margin:0;font-size:13px;font-weight:600;color:#1F2937;">${parcelType}</p>
+                  </td>
+                  <td style="padding:12px 16px;border-top:1px solid #E5E7EB;border-right:1px solid #E5E7EB;">
+                    <p style="margin:0 0 2px;font-size:10px;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.5px;">Service</p>
+                    <p style="margin:0;font-size:13px;font-weight:600;color:#1F2937;">${serviceType}</p>
+                  </td>
+                  <td style="padding:12px 16px;border-top:1px solid #E5E7EB;">
+                    <p style="margin:0 0 2px;font-size:10px;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.5px;">Pieces</p>
+                    <p style="margin:0;font-size:13px;font-weight:600;color:#1F2937;">${parcel.pieces ?? 1}</p>
+                  </td>
+                </tr>
+                ${
+                  parcel.total_price
+                    ? `<tr>
+                  <td colspan="3" style="padding:12px 16px;border-top:1px solid #E5E7EB;background:#F0FDF4;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td>
+                          <p style="margin:0 0 2px;font-size:10px;color:#166534;text-transform:uppercase;letter-spacing:0.5px;">💰 Shipping Price</p>
+                          <p style="margin:0;font-size:18px;font-weight:900;color:#166534;">${currency} ${parcel.total_price.toFixed(2)}</p>
+                        </td>
+                        ${
+                          parcel.declared_value
+                            ? `<td align="right">
+                          <p style="margin:0 0 2px;font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:0.5px;">Declared Value</p>
+                          <p style="margin:0;font-size:14px;font-weight:700;color:#374151;">USD ${parcel.declared_value.toFixed(2)}</p>
+                        </td>`
+                            : ""
                         }
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>`
+                    : ""
+                }
+              </table>
+            </td>
+          </tr>
 
-            {parcels.length === 0 && !loading && (
-              <div className="text-center py-12">
-                <Package className="h-12 w-12 mx-auto text-muted-foreground opacity-40 mb-3" />
-                <p className="text-muted-foreground">No parcels found</p>
-              </div>
-            )}
-          </div>
+          <!-- ═══════════════ ITEMS TABLE ═══════════════ -->
+          ${
+            itemsSection
+              ? `<tr>
+            <td style="background:#FFFFFF;padding:0 40px 28px;">${itemsSection}</td>
+          </tr>`
+              : ""
+          }
 
-          {totalCount > 0 && (
-            <div className="mt-4 flex flex-col gap-3 border-t pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-muted-foreground">
-                Showing {(currentPage - 1) * PAGE_SIZE + 1}–
-                {Math.min(currentPage * PAGE_SIZE, totalCount)} of {totalCount} parcels
-              </p>
-              <div className="flex items-center justify-between gap-2 sm:justify-end">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((value) => Math.max(1, value - 1))}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="mr-1 h-4 w-4" />
-                  Previous
-                </Button>
-                <span className="min-w-20 text-center text-muted-foreground">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  Next
-                  <ChevronRight className="ml-1 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
+          <!-- ═══════════════ DELIVERY ADDRESS ═══════════════ -->
+          <tr>
+            <td style="background:#FFFFFF;padding:0 40px 28px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E5E7EB;border-radius:10px;overflow:hidden;">
+                <tr style="background:linear-gradient(135deg,#0A1628,#1E3A5F);">
+                  <td style="padding:12px 16px;">
+                    <span style="font-size:11px;font-weight:700;color:#F59E0B;letter-spacing:1.5px;text-transform:uppercase;">📍 Delivery Destination</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:16px;">${receiverBlock}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-          {/* Bottom manifest action bar — appears when parcels are selected */}
-          {selectedCount > 0 && (
-            <div className="mt-4 flex items-center justify-between rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
-              <div className="flex items-center gap-2 text-sm font-medium text-orange-800">
-                <CheckSquare className="h-4 w-4" />
-                {selectedCount} parcel{selectedCount !== 1 ? "s" : ""} selected
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-orange-300 text-orange-700 hover:bg-orange-100"
-                  onClick={() => setSelectedIds(new Set())}
-                >
-                  Clear
-                </Button>
-                <Button
-                  size="sm"
-                  className="bg-orange-500 hover:bg-orange-600 text-white gap-2"
-                  onClick={handleGenerateManifest}
-                  disabled={exportingManifest}
-                >
-                  <Sparkles className="h-4 w-4" />
-                  {exportingManifest ? "Generating…" : "Generate Manifest"}
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          <!-- ═══════════════ SPECIAL INSTRUCTIONS ═══════════════ -->
+          ${
+            parcel.special_instructions
+              ? `<tr>
+            <td style="background:#FFFFFF;padding:0 40px 28px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#FFF9EE;border:1px solid #FCD34D;border-radius:10px;padding:16px;">
+                <tr>
+                  <td style="padding:16px;">
+                    <p style="margin:0 0 6px;font-size:10px;font-weight:700;color:#92400E;letter-spacing:1.5px;text-transform:uppercase;">⚠ Special Instructions</p>
+                    <p style="margin:0;font-size:13px;color:#78350F;">${parcel.special_instructions}</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>`
+              : ""
+          }
 
-      {/* Parcel Details Modal */}
-      <Dialog open={showDetailsModal} onOpenChange={setShowDetailsModal}>
-        <DialogContent className="w-full max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 sm:p-6">
-          <DialogHeader><DialogTitle>Parcel Details</DialogTitle></DialogHeader>
-          {selectedParcel && (
-            <ParcelDetails parcel={selectedParcel} onUpdate={fetchParcels} onClose={() => setShowDetailsModal(false)} readOnly={isPartnerView} />
-          )}
-        </DialogContent>
-      </Dialog>
+          <!-- ═══════════════ INFO BOX ═══════════════ -->
+          <tr>
+            <td style="background:#FFFFFF;padding:0 40px 28px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#EFF6FF;border-left:4px solid #3B82F6;border-radius:0 8px 8px 0;padding:16px 20px;">
+                <tr>
+                  <td style="padding:16px 20px;">
+                    <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#1E40AF;">ℹ What happens next?</p>
+                    <p style="margin:0;font-size:13px;color:#1E3A8A;line-height:1.6;">
+                      Your parcel is now cleared for customs review and will proceed to the next stage of its journey. You will receive further updates as your shipment progresses. For any queries, please quote your <strong>Reference ID: ${ref}</strong>.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-      {/* Edit Parcel Modal */}
-      <Dialog open={showEditForm} onOpenChange={(open) => { setShowEditForm(open); if (!open) setEditingParcel(null); }}>
-        <DialogContent className="w-full max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden bg-[#0b0d1a] border border-white/10 text-white p-0 [&>button]:text-white/50 [&>button]:hover:text-white [&>button]:top-3 [&>button]:right-3">
-          <DialogHeader className="sr-only"><DialogTitle>Edit Parcel — {editingParcel?.tracking_id}</DialogTitle></DialogHeader>
-          {editingParcel && <ParcelForm parcel={editingParcel} onSuccess={handleParcelUpdated} />}
-        </DialogContent>
-      </Dialog>
+          <!-- ═══════════════ FOOTER ═══════════════ -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#0A1628,#1E3A5F);border-radius:0 0 12px 12px;padding:32px 40px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td>
+                    <p style="margin:0 0 4px;font-size:16px;font-weight:900;color:#FFFFFF;">✈ SkyXpress International</p>
+                    <p style="margin:0 0 16px;font-size:11px;color:#93C5FD;letter-spacing:1px;text-transform:uppercase;">Courier &amp; Cargo Services</p>
+                    <table cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding-right:24px;">
+                          <p style="margin:0;font-size:12px;color:#CBD5E1;">📧 SKYXPRESS786@GMAIL.COM</p>
+                        </td>
+                        <td>
+                          <p style="margin:0;font-size:12px;color:#CBD5E1;">🌐 skyxpress.site</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td align="right" style="vertical-align:bottom;">
+                    <p style="margin:0;font-size:11px;color:#64748B;text-align:right;">This is an automated notification.<br/>Please do not reply to this email.</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="2" style="padding-top:20px;border-top:1px solid rgba(255,255,255,0.1);">
+                    <p style="margin:0;font-size:11px;color:#475569;text-align:center;">
+                      © ${new Date().getFullYear()} SkyXpress International Courier &amp; Cargo. All rights reserved.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-      {/* Attachments Modal */}
-      <ParcelAttachmentsDialog
-        parcel={attachmentsParcel ? { id: attachmentsParcel.id, tracking_id: attachmentsParcel.tracking_id } : null}
-        open={showAttachments}
-        onOpenChange={(open) => { setShowAttachments(open); if (!open) setAttachmentsParcel(null); }}
-      />
+        </table>
+      </td>
+    </tr>
+  </table>
 
-      {/* AWB / Invoice Modal */}
-      {invoiceParcel && (
-        <SkyXpressAWBInvoice
-          open={showInvoice}
-          onClose={() => { setShowInvoice(false); setInvoiceParcel(null); }}
-          parcel={invoiceParcel}
-        />
-      )}
-
-      {/* Shipping Label Modal */}
-      <ShippingLabel
-        parcel={labelParcel}
-        open={showLabel}
-        onClose={() => { setShowLabel(false); setLabelParcel(null); }}
-        countryMap={countryMap}
-      />
-
-      {/* Undertaking Letter Modal */}
-      <UndertakingLetter
-        parcel={undertakingParcel}
-        open={showUndertaking}
-        onClose={() => { setShowUndertaking(false); setUndertakingParcel(null); }}
-      />
-
-      {/* ── Step 1: Confirm / Edit Manifest ID ───────────────────────────── */}
-      <ManifestDialog open={showConfirmDialog} onOpenChange={(o) => { if (!o) { setShowConfirmDialog(false); setPendingParcels([]); } }}>
-        <ManifestDialogContent className="max-w-md">
-          <ManifestDialogHeader>
-            <ManifestDialogTitle className="flex items-center gap-2 text-lg">
-              <Sparkles className="h-5 w-5 text-orange-500" />
-              Confirm Manifest ID
-            </ManifestDialogTitle>
-          </ManifestDialogHeader>
-
-          <div className="space-y-5 pt-1">
-            <p className="text-sm text-muted-foreground">
-              The ID below was auto-generated sequentially. You can edit it before finalising.
-            </p>
-
-            {/* ID input */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-blue-700 uppercase tracking-wide">Manifest ID</label>
-              <Input
-                value={pendingManifestId}
-                onChange={(e) => { setPendingManifestId(e.target.value.toUpperCase()); setIdError(""); }}
-                className="font-mono text-xl font-bold tracking-widest text-center h-12 border-2 border-orange-300 focus:border-orange-500"
-                placeholder="00191100"
-                maxLength={20}
-              />
-              {idError && <p className="text-xs text-red-600">{idError}</p>}
-              <p className="text-xs text-muted-foreground text-center">
-                Format: 8-digit number (e.g. <span className="font-mono font-semibold">00191100</span>) or any custom code
-              </p>
-            </div>
-
-            {/* Summary */}
-            <div className="grid grid-cols-3 gap-2 bg-slate-50 rounded-lg p-3 border border-slate-100 text-center text-sm">
-              {[
-                ["Parcels",  String(pendingParcels.length)],
-                ["Weight",   `${pendingParcels.reduce((s, p) => s + Number(p.weight ?? 0), 0).toFixed(2)} kg`],
-                ["Value",    `${pendingParcels[0]?.currency || "USD"} ${pendingParcels.reduce((s, p) => s + Number(p.total_price ?? 0), 0).toFixed(2)}`],
-              ].map(([label, value]) => (
-                <div key={label}>
-                  <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">{label}</p>
-                  <p className="font-semibold text-slate-800 mt-0.5 text-xs">{value}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => { setShowConfirmDialog(false); setPendingParcels([]); }}>
-                Cancel
-              </Button>
-              <Button className="flex-1 bg-orange-500 hover:bg-orange-600 text-white gap-2" onClick={handleConfirmManifest}>
-                <Sparkles className="h-4 w-4" />
-                Generate Manifest
-              </Button>
-            </div>
-          </div>
-        </ManifestDialogContent>
-      </ManifestDialog>
-
-      {/* ── Step 2: Manifest Generated — Download ────────────────────────── */}
-      <ManifestDialog open={!!generatedEntry} onOpenChange={(o) => { if (!o) setGeneratedEntry(null); }}>
-        <ManifestDialogContent className="max-w-lg">
-          <ManifestDialogHeader>
-            <ManifestDialogTitle className="flex items-center gap-2 text-lg">
-              <ClipboardList className="h-5 w-5 text-orange-500" />
-              Manifest Generated!
-            </ManifestDialogTitle>
-          </ManifestDialogHeader>
-
-          {generatedEntry && (
-            <div className="space-y-5 pt-1">
-              {/* Manifest ID badge */}
-              <div className="flex flex-col items-center gap-1 py-4 bg-gradient-to-br from-slate-900 to-blue-950 rounded-xl">
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Manifest ID</p>
-                <p className="font-mono font-bold text-3xl text-orange-400 tracking-widest mt-1">
-                  {generatedEntry.manifestId}
-                </p>
-                <p className="text-slate-400 text-xs mt-1">
-                  {generatedEntry.parcelCount} parcel{generatedEntry.parcelCount !== 1 ? "s" : ""}
-                  {" · "}{generatedEntry.totalWeight.toFixed(2)} kg
-                  {" · "}{generatedEntry.currency} {generatedEntry.totalValue.toFixed(2)}
-                </p>
-              </div>
-
-              {/* Info */}
-              <div className="grid grid-cols-2 gap-3 text-sm bg-slate-50 rounded-lg p-3 border border-slate-100">
-                <div>
-                  <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">Date</p>
-                  <p className="font-medium">{new Date(generatedEntry.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">Service</p>
-                  <p className="font-medium">{generatedEntry.serviceType}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">From</p>
-                  <p className="font-medium">{generatedEntry.fromCountry || "—"}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">To</p>
-                  <p className="font-medium">{generatedEntry.toCountry || "—"}</p>
-                </div>
-              </div>
-
-              <p className="text-xs text-muted-foreground text-center">
-                Saved to Manifest Stock. Download in your preferred format:
-              </p>
-
-              {/* Download buttons */}
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  className="gap-2 bg-green-600 hover:bg-green-700 text-white h-12"
-                  onClick={handleDownloadExcel}
-                  disabled={!!downloadingFormat}
-                >
-                  <FileSpreadsheet className="h-5 w-5" />
-                  {downloadingFormat === "xls" ? "Generating…" : "Download Excel"}
-                </Button>
-                <Button
-                  className="gap-2 bg-blue-600 hover:bg-blue-700 text-white h-12"
-                  onClick={handleDownloadPDF}
-                  disabled={!!downloadingFormat}
-                >
-                  <FileDown className="h-5 w-5" />
-                  {downloadingFormat === "pdf" ? "Generating…" : "Download PDF"}
-                </Button>
-              </div>
-
-              <p className="text-xs text-center text-muted-foreground">
-                You can also re-download from the{" "}
-                <span className="font-semibold text-blue-600">Manifest Stock</span> tab anytime.
-              </p>
-            </div>
-          )}
-        </ManifestDialogContent>
-      </ManifestDialog>
-    </div>
-  );
-};
+</body>
+</html>`;
+}
