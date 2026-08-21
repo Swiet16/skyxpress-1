@@ -637,6 +637,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
   const [importing, setImporting]     = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus]   = useState<string>("");
+  const [bulkComment, setBulkComment] = useState<string>("");
   const [showBulkDialog, setShowBulkDialog]   = useState(false);
   const [showBagging, setShowBagging]         = useState(false);
   const [showHistory, setShowHistory]         = useState(false);
@@ -650,6 +651,19 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
   const [partners, setPartners]               = useState<Array<{ id: string; email: string; name: string }>>([]);
   // Lookup map: user_id → { username, branch } from public.partner_profiles
   const [partnerProfileMap, setPartnerProfileMap] = useState<Record<string, { username: string; branch: string }>>({});
+  // ── Parcel reference-ID search (add to open manifest, or spin up a new one) ──
+  const [parcelSearchQuery, setParcelSearchQuery]     = useState("");
+  const [parcelSearchResults, setParcelSearchResults] = useState<any[]>([]);
+  const [searchingParcels, setSearchingParcels]       = useState(false);
+  const [showFindParcelDialog, setShowFindParcelDialog] = useState(false);
+  const [findParcelQuery, setFindParcelQuery]         = useState("");
+  const [findParcelResults, setFindParcelResults]     = useState<any[]>([]);
+  const [findingParcel, setFindingParcel]             = useState(false);
+  const [creatingManifestFor, setCreatingManifestFor] = useState<string | null>(null);
+  // ── Status update dialog (single row / detail panel) — asks for a comment ──
+  const [singleStatusDialog, setSingleStatusDialog] = useState<{ open: boolean; manifestId: string; status: string; comment: string }>({
+    open: false, manifestId: "", status: "", comment: "",
+  });
   const csvInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -733,6 +747,8 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     setEditing(null);
     setAwbSearch("");
     setCsvFile(null);
+    setParcelSearchQuery("");
+    setParcelSearchResults([]);
   };
 
   const handleSave = async () => {
@@ -840,6 +856,107 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     }
   };
 
+  // ── Parcel Reference-ID Search (inside an open manifest) ─────────────────────
+  // Looks a parcel up by reference_id OR tracking_id in the shared `parcels`
+  // table and lets you drop it straight into the manifest that's currently open.
+  const handleParcelSearch = async () => {
+    const q = parcelSearchQuery.trim();
+    if (!q) return;
+    setSearchingParcels(true);
+    try {
+      const { data, error } = await supabase
+        .from("parcels")
+        .select("*")
+        .or(`reference_id.ilike.%${q}%,tracking_id.ilike.%${q}%`)
+        .limit(15);
+      if (error) throw error;
+      setParcelSearchResults(data || []);
+      if (!data || data.length === 0) {
+        toast({ title: "No parcels found", description: `Nothing matched "${q}"` });
+      }
+    } catch (e: any) {
+      toast({ title: "Search failed", description: e.message, variant: "destructive" });
+    } finally {
+      setSearchingParcels(false);
+    }
+  };
+
+  const handleAddParcelToManifest = (parcel: any) => {
+    if (!editing) return;
+    const already = editing.parcels.some((p) => p.tracking_id === parcel.tracking_id);
+    if (already) {
+      toast({ title: "Already in this manifest", description: parcel.tracking_id, variant: "destructive" });
+      return;
+    }
+    const merged = [...editing.parcels, parcel];
+    setEditing({
+      ...editing,
+      parcels: merged,
+      parcelCount: merged.length,
+      trackingIds: merged.map((p) => p.tracking_id),
+      totalWeight: Math.round(merged.reduce((s, p) => s + Number(p.weight || 0), 0) * 100) / 100,
+      totalValue: Math.round(merged.reduce((s, p) => s + Number(p.total_price ?? p.value ?? 0), 0) * 100) / 100,
+    });
+    setParcelSearchResults((r) => r.filter((p) => (p.id || p.tracking_id) !== (parcel.id || parcel.tracking_id)));
+    toast({ title: "Parcel added ✓", description: `${parcel.tracking_id} added. Click Update Manifest to save.` });
+  };
+
+  // ── Find Parcel → Create New Manifest (when nothing is open yet) ─────────────
+  const handleFindParcelSearch = async () => {
+    const q = findParcelQuery.trim();
+    if (!q) return;
+    setFindingParcel(true);
+    try {
+      const { data, error } = await supabase
+        .from("parcels")
+        .select("*")
+        .or(`reference_id.ilike.%${q}%,tracking_id.ilike.%${q}%`)
+        .limit(15);
+      if (error) throw error;
+      setFindParcelResults(data || []);
+      if (!data || data.length === 0) {
+        toast({ title: "No parcels found", description: `Nothing matched "${q}"` });
+      }
+    } catch (e: any) {
+      toast({ title: "Search failed", description: e.message, variant: "destructive" });
+    } finally {
+      setFindingParcel(false);
+    }
+  };
+
+  const handleCreateManifestFromParcel = async (parcel: any) => {
+    setCreatingManifestFor(parcel.id || parcel.tracking_id);
+    try {
+      const manifestId = `SXM-${Date.now().toString().slice(-9)}`;
+      const newEntry: any = {
+        manifestId,
+        createdAt: new Date().toISOString(),
+        parcels: [parcel],
+        parcelCount: 1,
+        trackingIds: [parcel.tracking_id],
+        totalWeight: Number(parcel.weight) || 0,
+        totalValue: Number(parcel.total_price ?? parcel.value ?? 0) || 0,
+        currency: parcel.currency || "USD",
+        serviceType: parcel.service_type || "Standard",
+        fromCountry: parcel.from_country || "",
+        toCountry: parcel.to_country || "",
+        isLocked: false,
+        createdByUser: currentUser?.email || currentUser?.name || "",
+      };
+      await saveManifestToStockDB(newEntry);
+      await reload();
+      setShowFindParcelDialog(false);
+      setFindParcelResults([]);
+      setFindParcelQuery("");
+      toast({ title: "Manifest created ✓", description: `${manifestId} · ${parcel.tracking_id}` });
+      openDetail(newEntry);
+    } catch (e: any) {
+      toast({ title: "Failed to create manifest", description: e.message, variant: "destructive" });
+    } finally {
+      setCreatingManifestFor(null);
+    }
+  };
+
   // ── Selection helpers ──────────────────────────────────────────────────────
   const toggleSelect = (id: string) =>
     setSelectedIds((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -847,15 +964,21 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
   const toggleSelectAll = () =>
     setSelectedIds((prev) => prev.size === filtered.length ? new Set() : new Set(filtered.map((e) => e.manifestId)));
 
-  // ── Cascade a status change down to every parcel inside a manifest ──────────
-  // Keeps three places in sync whenever a manifest's status is changed:
+  // ── Cascade a status change (with an optional comment) down to every parcel
+  // inside a manifest. Keeps things in sync in three places:
   //   1. The manifest record itself (manifestStatus)
   //   2. Each parcel embedded in that manifest's `parcels` array (current_status)
-  //   3. The standalone `parcels` table in Supabase, which is what the Parcel
-  //      Management screen reads from — so a status set here shows up there too.
-  const cascadeStatusToParcels = async (manifestId: string, status: string, parcels: any[]) => {
+  //   3. The standalone `parcels` table in Supabase — including appending a
+  //      timeline event (status + comment) to `status_timeline`, which is what
+  //      the public tracking page reads and displays to the customer.
+  const cascadeStatusToParcels = async (manifestId: string, status: string, parcels: any[], comment?: string) => {
     const hasParcels = parcels && parcels.length > 0;
-    const updatedParcels = hasParcels ? parcels.map((p) => ({ ...p, current_status: status })) : parcels;
+    const entry = entries.find((e) => e.manifestId === manifestId);
+    const location = entry?.destinationHub || entry?.originHub || "";
+    const nowIso = new Date().toISOString();
+    const updatedParcels = hasParcels
+      ? parcels.map((p) => ({ ...p, current_status: status, status_comment: comment || p.status_comment }))
+      : parcels;
 
     // 1+2. Persist the manifest status, and (if we have them) the parcels with new current_status
     await updateManifestInStockDB(
@@ -863,17 +986,34 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
       hasParcels ? { manifestStatus: status, parcels: updatedParcels } : { manifestStatus: status }
     );
 
-    // 3. Push the same status into the shared `parcels` table (Parcel Management backend)
+    // 3. Push the same status + a timeline event (with the optional comment) into
+    //    the shared `parcels` table (Parcel Management + Public Tracking backend).
     if (hasParcels) {
       const trackingIds = updatedParcels.map((p) => p.tracking_id).filter(Boolean);
       if (trackingIds.length > 0) {
         try {
-          const { error } = await supabase
+          const { data: rows, error: fetchErr } = await supabase
             .from("parcels")
-            .update({ current_status: status, updated_at: new Date().toISOString() })
+            .select("id, tracking_id, status_timeline")
             .in("tracking_id", trackingIds);
-          if (error) {
-            console.warn("[ManifestStock] failed to sync status to parcels table:", error.message);
+
+          if (fetchErr) {
+            console.warn("[ManifestStock] failed to fetch parcels for timeline update:", fetchErr.message);
+          } else if (rows) {
+            const newEvent = { status, timestamp: nowIso, location, notes: comment || "" };
+            await Promise.all(
+              rows.map((r: any) => {
+                const existing = Array.isArray(r.status_timeline) ? r.status_timeline : [];
+                return supabase
+                  .from("parcels")
+                  .update({
+                    current_status: status,
+                    updated_at: nowIso,
+                    status_timeline: [...existing, newEvent],
+                  })
+                  .eq("id", r.id);
+              })
+            );
           }
         } catch (err) {
           console.warn("[ManifestStock] parcels table sync error:", err);
@@ -889,7 +1029,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     await Promise.all(
       [...selectedIds].map((id) => {
         const entry = entries.find((e) => e.manifestId === id);
-        return cascadeStatusToParcels(id, bulkStatus, entry?.parcels || []);
+        return cascadeStatusToParcels(id, bulkStatus, entry?.parcels || [], bulkComment);
       })
     );
     await reload();
@@ -897,20 +1037,33 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     const count = selectedIds.size;
     setSelectedIds(new Set());
     setShowBulkDialog(false);
-    toast({ title: `Status updated ✓`, description: `${count} manifest(s) → ${label} (parcels synced)` });
+    toast({ title: `Status updated ✓`, description: `${count} manifest(s) → ${label}${bulkComment ? " · comment added" : ""} (parcels synced)` });
     setBulkStatus("");
+    setBulkComment("");
   };
 
-  const handleSingleStatus = async (manifestId: string, status: string) => {
+  const handleSingleStatus = async (manifestId: string, status: string, comment?: string) => {
     const entry = entries.find((e) => e.manifestId === manifestId);
     const sourceParcels = editing?.manifestId === manifestId ? editing.parcels : entry?.parcels || [];
-    const updatedParcels = await cascadeStatusToParcels(manifestId, status, sourceParcels);
+    const updatedParcels = await cascadeStatusToParcels(manifestId, status, sourceParcels, comment);
     await reload();
     if (editing?.manifestId === manifestId) {
       setEditing((e) => e ? { ...e, manifestStatus: status, parcels: updatedParcels || e.parcels } : e);
     }
     const label = MANIFEST_STATUSES.find((s) => s.value === status)?.label || status;
-    toast({ title: "Status updated ✓", description: `${manifestId} → ${label} (parcels synced)` });
+    toast({ title: "Status updated ✓", description: `${manifestId} → ${label}${comment ? " · comment added" : ""} (parcels synced)` });
+  };
+
+  // Opens the confirm dialog instead of applying instantly, so a comment can
+  // be attached before the status change is pushed to tracking.
+  const openSingleStatusDialog = (manifestId: string, status: string) =>
+    setSingleStatusDialog({ open: true, manifestId, status, comment: "" });
+
+  const confirmSingleStatus = async () => {
+    const { manifestId, status, comment } = singleStatusDialog;
+    if (!manifestId || !status) return;
+    await handleSingleStatus(manifestId, status, comment.trim() || undefined);
+    setSingleStatusDialog({ open: false, manifestId: "", status: "", comment: "" });
   };
 
   const filtered = entries.filter((e) => {
@@ -996,6 +1149,11 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
               )}
             </CardTitle>
             <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm"
+                className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+                onClick={() => { setShowFindParcelDialog(true); setFindParcelQuery(""); setFindParcelResults([]); }}>
+                <Search className="h-3.5 w-3.5" /> Find Parcel by Ref ID
+              </Button>
               <Button variant="outline" size="sm" onClick={reload} className="gap-2 border-slate-300">
                 <RefreshCw className="h-3.5 w-3.5" /> Refresh
               </Button>
@@ -1069,7 +1227,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                     <span className="text-blue-200 text-xs font-medium">Set status:</span>
                     {MANIFEST_STATUSES.map((s) => (
                       <button key={s.value}
-                        onClick={() => { setBulkStatus(s.value); setShowBulkDialog(true); }}
+                        onClick={() => { setBulkStatus(s.value); setBulkComment(""); setShowBulkDialog(true); }}
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer transition-transform hover:scale-105 active:scale-95 ${s.tw}`}>
                         <span>{s.icon}</span>{s.label}
                       </button>
@@ -1131,7 +1289,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                         <TableCell>{(() => { const pInfo = partnerProfileMap[entry.partnerUserId || ""]; const branch = pInfo?.branch || entry.company; const username = pInfo?.username; return branch || entry.createdByUser || username ? (<div className="space-y-0.5">{branch && <div className="flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5 max-w-[130px] truncate" title={branch}><Building2 className="h-2.5 w-2.5 flex-shrink-0" />{branch}</div>}{entry.createdByUser && <div className="text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5 inline-block max-w-[130px] truncate" title={entry.createdByUser}>{entry.createdByUser}</div>}{username && <div className="flex items-center gap-1 text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-100 rounded px-1.5 py-0.5 max-w-[130px] truncate" title={username}><User className="h-2.5 w-2.5 flex-shrink-0" />{username}</div>}</div>) : <span className="text-slate-300 text-xs">—</span>; })()}</TableCell>
                         <TableCell>{entry.flightNo ? <div className="flex items-center gap-1 text-xs text-slate-700"><Plane className="h-3 w-3 text-blue-400" />{entry.flightNo}</div> : <span className="text-slate-300 text-xs">—</span>}</TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Select value={entry.manifestStatus || ""} onValueChange={(v) => handleSingleStatus(entry.manifestId, v)}>
+                          <Select value={entry.manifestStatus || ""} onValueChange={(v) => openSingleStatusDialog(entry.manifestId, v)}>
                             <SelectTrigger className="h-7 w-[150px] text-[11px] border-slate-200 bg-white px-2 py-0">
                               <SelectValue placeholder="Set status…">{entry.manifestStatus ? <ManifestStatusBadge status={entry.manifestStatus} size="xs" /> : <span className="text-slate-400 text-[11px]">Set status…</span>}</SelectValue>
                             </SelectTrigger>
@@ -1212,7 +1370,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                         </div>
                         {/* Status picker + actions */}
                         <div className="mt-2.5 flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                          <Select value={entry.manifestStatus || ""} onValueChange={(v) => handleSingleStatus(entry.manifestId, v)}>
+                          <Select value={entry.manifestStatus || ""} onValueChange={(v) => openSingleStatusDialog(entry.manifestId, v)}>
                             <SelectTrigger className="h-7 w-[140px] text-[11px] border-slate-200 bg-white px-2 py-0">
                               <SelectValue placeholder="Set status…">{entry.manifestStatus ? <ManifestStatusBadge status={entry.manifestStatus} size="xs" /> : <span className="text-slate-400 text-[11px]">Set status…</span>}</SelectValue>
                             </SelectTrigger>
@@ -1376,10 +1534,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                                 const active = (editing.manifestStatus || "") === s.value;
                                 return (
                                   <button key={s.value} disabled={editing.isLocked}
-                                    onClick={() => {
-                                      setEditField("manifestStatus", s.value);
-                                      handleSingleStatus(editing.manifestId, s.value);
-                                    }}
+                                    onClick={() => openSingleStatusDialog(editing.manifestId, s.value)}
                                     className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border-2 transition-all text-left
                                       ${active
                                         ? `${s.tw} border-transparent shadow-md scale-[1.02]`
@@ -1602,6 +1757,56 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                             </div>
                           </div>
                         </div>
+                      </div>
+
+                      {/* Add Parcel by Reference ID */}
+                      <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                        <div className="bg-slate-800 px-4 py-2.5 flex items-center gap-3 flex-wrap">
+                          <span className="text-white font-bold text-xs uppercase tracking-widest flex items-center gap-2">
+                            <Search className="h-3.5 w-3.5 text-orange-400" /> Add Parcel by Reference / Tracking ID
+                          </span>
+                          <div className="flex items-center gap-2 ml-auto">
+                            <div className="relative">
+                              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+                              <input
+                                value={parcelSearchQuery}
+                                onChange={(e) => setParcelSearchQuery(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleParcelSearch(); } }}
+                                placeholder="Reference ID or Tracking ID…"
+                                disabled={editing.isLocked}
+                                className="pl-6 h-7 text-xs bg-white/10 border border-white/20 rounded text-white placeholder-slate-400 focus:outline-none focus:border-white/40 w-56 disabled:opacity-50"
+                              />
+                            </div>
+                            <Button size="sm" className="h-7 text-[11px] bg-blue-600 hover:bg-blue-700 text-white gap-1"
+                              disabled={editing.isLocked || searchingParcels || !parcelSearchQuery.trim()}
+                              onClick={handleParcelSearch}>
+                              {searchingParcels ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+                              Search
+                            </Button>
+                          </div>
+                        </div>
+                        {parcelSearchResults.length > 0 && (
+                          <div className="divide-y divide-slate-50 max-h-52 overflow-y-auto">
+                            {parcelSearchResults.map((p) => (
+                              <div key={p.id || p.tracking_id} className="flex items-center justify-between gap-3 px-4 py-2 hover:bg-blue-50/40">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono font-bold text-blue-600 text-xs">{p.tracking_id}</span>
+                                    {p.reference_id && <span className="text-[10px] text-slate-400">Ref: {p.reference_id}</span>}
+                                  </div>
+                                  <p className="text-xs text-slate-600 truncate">
+                                    {p.sender_name || "—"} → {p.receiver_name || "—"} · {p.weight ?? 0} kg
+                                  </p>
+                                </div>
+                                <Button size="sm" className="h-7 text-[11px] bg-green-600 hover:bg-green-700 text-white gap-1 shrink-0"
+                                  disabled={editing.isLocked}
+                                  onClick={() => handleAddParcelToManifest(p)}>
+                                  <Plus className="h-3 w-3" /> Add
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       {/* AWBs table */}
@@ -1871,6 +2076,104 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
         />
       )}
 
+      {/* ── Find Parcel by Ref ID → New Manifest Dialog ───────────────────────── */}
+      <Dialog open={showFindParcelDialog} onOpenChange={setShowFindParcelDialog}>
+        <DialogContent className="max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5 text-blue-600" />
+              Find Parcel by Reference ID
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-slate-500">
+            Search any parcel by its Reference ID or Tracking ID. If it isn't already part of a
+            manifest, you can spin up a new manifest for it right here.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              autoFocus
+              value={findParcelQuery}
+              onChange={(e) => setFindParcelQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleFindParcelSearch(); } }}
+              placeholder="Reference ID or Tracking ID…"
+              className="h-9 text-sm"
+            />
+            <Button size="sm" className="h-9 bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
+              disabled={findingParcel || !findParcelQuery.trim()} onClick={handleFindParcelSearch}>
+              {findingParcel ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+              Search
+            </Button>
+          </div>
+          <div className="flex-1 overflow-y-auto space-y-2">
+            {findParcelResults.length === 0 && !findingParcel && (
+              <p className="text-xs text-slate-400 text-center py-6">No results yet — try a search above.</p>
+            )}
+            {findParcelResults.map((p) => (
+              <div key={p.id || p.tracking_id} className="border border-slate-100 rounded-lg p-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-blue-600 text-sm">{p.tracking_id}</span>
+                    {p.reference_id && <Badge variant="outline" className="text-[10px]">Ref: {p.reference_id}</Badge>}
+                  </div>
+                  <p className="text-xs text-slate-600 truncate mt-0.5">
+                    {p.sender_name || "—"} → {p.receiver_name || "—"} · {p.weight ?? 0} kg · {p.from_country || "—"} → {p.to_country || "—"}
+                  </p>
+                </div>
+                <Button size="sm" className="h-8 text-xs bg-green-600 hover:bg-green-700 text-white gap-1.5 shrink-0"
+                  disabled={creatingManifestFor === (p.id || p.tracking_id)}
+                  onClick={() => handleCreateManifestFromParcel(p)}>
+                  {creatingManifestFor === (p.id || p.tracking_id)
+                    ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    : <Plus className="h-3.5 w-3.5" />}
+                  Create Manifest
+                </Button>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Single Status Update Dialog (with comment) ────────────────────────── */}
+      <Dialog open={singleStatusDialog.open} onOpenChange={(o) => { if (!o) setSingleStatusDialog({ open: false, manifestId: "", status: "", comment: "" }); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tag className="h-5 w-5 text-blue-600" />
+              Update Status
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-slate-600">
+              Set <strong>{singleStatusDialog.manifestId}</strong> to:
+            </p>
+            {singleStatusDialog.status && (
+              <div className="flex justify-center">
+                <ManifestStatusBadge status={singleStatusDialog.status} />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
+                Comment <span className="text-slate-400 font-normal normal-case">(optional — shown on public tracking)</span>
+              </Label>
+              <Textarea
+                value={singleStatusDialog.comment}
+                onChange={(e) => setSingleStatusDialog((d) => ({ ...d, comment: e.target.value }))}
+                placeholder="e.g. Held for additional customs documentation"
+                rows={3}
+                className="text-sm resize-none"
+              />
+            </div>
+            <p className="text-xs text-slate-500">This updates the manifest and every parcel inside it.</p>
+            <div className="flex gap-3 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setSingleStatusDialog({ open: false, manifestId: "", status: "", comment: "" })}>Cancel</Button>
+              <Button size="sm" className="bg-blue-700 hover:bg-blue-800 text-white gap-1.5" onClick={confirmSingleStatus}>
+                <CheckCircle2 className="h-3.5 w-3.5" /> Apply
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Bulk Status Confirm Dialog ────────────────────────────────────────── */}
       <Dialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
         <DialogContent className="max-w-sm">
@@ -1889,6 +2192,18 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                 <ManifestStatusBadge status={bulkStatus} />
               </div>
             )}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
+                Comment <span className="text-slate-400 font-normal normal-case">(optional — shown on public tracking)</span>
+              </Label>
+              <Textarea
+                value={bulkComment}
+                onChange={(e) => setBulkComment(e.target.value)}
+                placeholder="e.g. Delayed due to weather at origin hub"
+                rows={3}
+                className="text-sm resize-none"
+              />
+            </div>
             <p className="text-xs text-slate-500 text-center">This will overwrite the current status of all selected manifests.</p>
             <div className="flex gap-3 justify-end">
               <Button variant="outline" size="sm" onClick={() => setShowBulkDialog(false)}>Cancel</Button>
