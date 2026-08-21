@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -141,7 +141,6 @@ const incrementTrailingNumber = (value: string): string => {
 
 export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filterUserId?: string; isPartnerView?: boolean } = {}) => {
   const PAGE_SIZE = 10;
-  const [parcels, setParcels] = useState<Parcel[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -204,7 +203,6 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [ipVisible]);
-  const [totalCount, setTotalCount] = useState(0);
 
   const handleSendXrayEmail = async (parcel: Parcel) => {
     if (!parcel.receiver_email) {
@@ -290,74 +288,73 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
   const [savingCell, setSavingCell] = useState(false);
   const isSavingRef = useRef(false);
 
-  // ── Search debounce / race-condition guards ─────────────────────────────
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchRequestIdRef = useRef(0);
+  // ── Race-condition guard for data fetches ───────────────────────────
+  const fetchRequestIdRef = useRef(0);
 
-  useEffect(() => {
-    fetchParcels(1, searchQuery);
-    fetchCountries();
-  }, [filterUserId]);
+  // Store ALL parcels fetched from the server (no pagination, no search filter)
+  const [allParcels, setAllParcels] = useState<Parcel[]>([]);
 
-  // Re-fetch when page changes
-  useEffect(() => {
-    fetchParcels(page, searchQuery);
-  }, [page]);
-
-  // Reset to page 1 and re-fetch when search changes — debounced so fast typing
-  // doesn't fire a query per keystroke.
-  useEffect(() => {
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    searchTimeoutRef.current = setTimeout(() => {
-      setPage(1);
-      fetchParcels(1, searchQuery);
-    }, 350);
-
-    return () => {
-      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    };
-  }, [searchQuery]);
-
-  const fetchParcels = async (pageNum?: number, search?: string) => {
-    pageNum = pageNum ?? page;
-    search  = search  ?? searchQuery;
-    // Tag this request so a slower, older request can't overwrite a newer one's results.
-    const requestId = ++searchRequestIdRef.current;
+  // Fetch ALL parcels once — no server-side search or pagination
+  const fetchAllParcels = async () => {
+    const requestId = ++fetchRequestIdRef.current;
     setLoading(true);
     try {
-      const from = (pageNum - 1) * PAGE_SIZE;
-      const to = pageNum * PAGE_SIZE - 1;
-
       let query = supabase
         .from("parcels")
-        .select("*", { count: "exact" })
-        .order("created_at", { ascending: false })
-        .range(from, to);
+        .select("*")
+        .order("created_at", { ascending: false });
 
       if (filterUserId) query = query.eq("created_by", filterUserId);
 
-      if (search.trim()) {
-        const s = search.trim();
-        query = query.or(
-          `tracking_id.ilike.%${s}%,reference_id.ilike.%${s}%,sender_name.ilike.%${s}%,receiver_name.ilike.%${s}%,sender_phone.ilike.%${s}%,receiver_phone.ilike.%${s}%`
-        );
-      }
-
-      const { data, error, count } = await query;
+      const { data, error } = await query;
       if (error) throw error;
 
-      // A newer search superseded this one while it was in flight — drop the stale result.
-      if (requestId !== searchRequestIdRef.current) return;
+      // Drop stale result if a newer request was fired
+      if (requestId !== fetchRequestIdRef.current) return;
 
-      setParcels(data || []);
-      setTotalCount(count ?? 0);
-      setEmailedIds(new Set((data || []).filter((p: any) => p.xray_email_sent_at).map((p: any) => p.id)));
+      const list = (data || []) as Parcel[];
+      setAllParcels(list);
+      setEmailedIds(new Set(list.filter((p: any) => p.xray_email_sent_at).map((p: any) => p.id)));
     } catch (error: any) {
       toast({ title: "Error", description: "Failed to load parcels", variant: "destructive" });
     } finally {
-      if (requestId === searchRequestIdRef.current) setLoading(false);
+      if (requestId === fetchRequestIdRef.current) setLoading(false);
     }
   };
+
+  // Initial load & reload when filterUserId changes
+  useEffect(() => {
+    fetchAllParcels();
+    fetchCountries();
+  }, [filterUserId]);
+
+  // Reset to page 1 when search query changes (instant, no API call)
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery]);
+
+  // ── Client-side filtering (instant, no API call) ─────────────────────
+  const filteredParcels = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return allParcels;
+    return allParcels.filter((p) =>
+      (p.tracking_id ?? "").toLowerCase().includes(q) ||
+      (p.reference_id ?? "").toLowerCase().includes(q) ||
+      (p.sender_name ?? "").toLowerCase().includes(q) ||
+      (p.receiver_name ?? "").toLowerCase().includes(q) ||
+      (p.sender_phone ?? "").toLowerCase().includes(q) ||
+      (p.receiver_phone ?? "").toLowerCase().includes(q)
+    );
+  }, [allParcels, searchQuery]);
+
+  // ── Client-side pagination ───────────────────────────────────────────
+  const totalCount = filteredParcels.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedParcels = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredParcels.slice(start, start + PAGE_SIZE);
+  }, [filteredParcels, currentPage]);
 
   const fetchCountries = async () => {
     const { data, error } = await supabase.from("countries").select("code, name");
@@ -372,11 +369,8 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
     return countryMap[code] || code;
   };
 
-  // ── Pagination (server-side) ──────────────────────────────────────────
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  // `parcels` already contains only the current page from the DB query
-  const paginatedParcels = parcels;
+  // parcels reference for selection helpers (full filtered list)
+  const parcels = filteredParcels;
 
   // ── Selection helpers (current page) ─────────────────────────────────
   const allFilteredSelected =
@@ -486,8 +480,8 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
   };
 
   // ── CRUD helpers ─────────────────────────────────────────────────────
-  const handleParcelCreated = () => { fetchParcels(); setShowCreateForm(false); toast({ title: "Success", description: "Parcel created successfully" }); };
-  const handleParcelUpdated = () => { fetchParcels(); setShowEditForm(false); setEditingParcel(null); toast({ title: "Success", description: "Parcel updated successfully" }); };
+  const handleParcelCreated = () => { fetchAllParcels(); setShowCreateForm(false); toast({ title: "Success", description: "Parcel created successfully" }); };
+  const handleParcelUpdated = () => { fetchAllParcels(); setShowEditForm(false); setEditingParcel(null); toast({ title: "Success", description: "Parcel updated successfully" }); };
   const handleEditClick = (parcel: Parcel) => { setEditingParcel(parcel); setShowEditForm(true); };
   const handleAttachmentsClick = (parcel: Parcel) => { setAttachmentsParcel(parcel); setShowAttachments(true); };
 
@@ -520,7 +514,7 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
       if (error) throw error;
       setSelectedIds((prev) => { const next = new Set(prev); next.delete(parcelId); return next; });
       toast({ title: "Success", description: `Parcel ${trackingId} deleted successfully` });
-      fetchParcels();
+      fetchAllParcels();
     } catch (error: any) {
       toast({ title: "Error", description: error.message || "Failed to delete parcel", variant: "destructive" });
     }
@@ -562,7 +556,7 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
             title: "Parcel cloned ✓",
             description: `New parcel created: ${nextTrackingId}`,
           });
-          fetchParcels();
+          fetchAllParcels();
           return;
         }
 
@@ -610,7 +604,7 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
     try {
       const { error } = await supabase.from("parcels").update({ [field]: field === "reference_id" ? (trimmed || null) : trimmed }).eq("id", id);
       if (error) throw error;
-      setParcels((prev) => prev.map((p) => (p.id === id ? { ...p, [field]: trimmed } : p)));
+      setAllParcels((prev) => prev.map((p) => (p.id === id ? { ...p, [field]: trimmed } : p)));
       toast({ title: "Saved", description: `${friendlyFieldName(field)} updated` });
     } catch (error: any) {
       const isDuplicate = error?.code === "23505";
@@ -1097,7 +1091,7 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
               })}
             </div>
 
-            {parcels.length === 0 && !loading && (
+            {paginatedParcels.length === 0 && !loading && (
               <div className="text-center py-12">
                 <Package className="h-12 w-12 mx-auto text-muted-foreground opacity-40 mb-3" />
                 <p className="text-muted-foreground">No parcels found</p>
@@ -1173,7 +1167,7 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
         <DialogContent className="w-full max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 sm:p-6">
           <DialogHeader><DialogTitle>Parcel Details</DialogTitle></DialogHeader>
           {selectedParcel && (
-            <ParcelDetails parcel={selectedParcel} onUpdate={fetchParcels} onClose={() => setShowDetailsModal(false)} readOnly={isPartnerView} />
+            <ParcelDetails parcel={selectedParcel} onUpdate={fetchAllParcels} onClose={() => setShowDetailsModal(false)} readOnly={isPartnerView} />
           )}
         </DialogContent>
       </Dialog>
