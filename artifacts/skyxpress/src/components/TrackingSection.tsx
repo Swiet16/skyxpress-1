@@ -57,24 +57,34 @@ const groupEventsByDate = (timeline: any[]) => {
   return grouped;
 };
 
-// Remove consecutive duplicate-status events so the Flight Log doesn't show the
-// same status label twice in a row. This collapses the "duplicate status" issue
-// where the top boarding-pass badge already shows current_status AND the first
-// timeline row repeats the same status text.
+// Collapse duplicate-status events on the SAME day so the Flight Log
+// never shows the same status label twice within one date group. This
+// fixes the "double showing" bug where the backend writes two events
+// with the same status (e.g. two "Delivered", two "In Transit", two
+// "Flight Arrived") on the same day with slightly different timestamps
+// or locations — we now keep only the most recent one per (status, day)
+// pair, which is the one with the richest info.
+//
+// This is safe for a shipping timeline because statuses are monotonic
+// (a parcel never goes back from "Delivered" to "In Transit"), so any
+// two same-status-same-day events are genuinely redundant.
 const dedupeConsecutiveStatuses = (timeline: any[]): any[] => {
   if (!Array.isArray(timeline) || timeline.length === 0) return [];
   const sorted = [...timeline].sort(
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   );
-  return sorted.filter((evt: any, idx: number, arr: any[]) => {
-    if (idx === 0) return true;
-    const prev = arr[idx - 1];
-    const curStatus = (evt.status || evt.title || "").toString().toLowerCase();
-    const prevStatus = (prev.status || prev.title || "").toString().toLowerCase();
-    if (curStatus !== prevStatus) return true;
-    const curLoc = (evt.location || evt.place || evt.city || evt.checkpoint || "").toString().toLowerCase();
-    const prevLoc = (prev.location || prev.place || prev.city || prev.checkpoint || "").toString().toLowerCase();
-    return curLoc !== prevLoc;
+  const seen = new Set<string>();
+  return sorted.filter((evt: any) => {
+    const status = (evt.status || evt.title || "update").toString().toLowerCase();
+    const ts = evt.timestamp ? new Date(evt.timestamp) : new Date(0);
+    // Use the calendar day as the grouping key so events on different days
+    // with the same status are preserved (e.g. "In Transit" on Monday AND
+    // Tuesday should still show both — only same-day duplicates collapse).
+    const dayKey = ts.toDateString();
+    const key = `${status}|${dayKey}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
 };
 
