@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -514,6 +514,11 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [trackingIdLoading, setTrackingIdLoading] = useState(false);
   const [referenceIdLoading, setReferenceIdLoading] = useState(false);
+  // Tracks whether the user has manually typed/edited the reference_id
+  // since the form opened. If they have NOT touched it, we let the
+  // backend consume the sequence on save. If they HAVE touched it,
+  // we honor their value as-is (and skip consuming a sequence number).
+  const referenceIdTouched = useRef(false);
   const [createdByLoading, setCreatedByLoading] = useState(false);
 
   const [formData, setFormData] = useState<FormData>({
@@ -706,11 +711,18 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
 
       const { data: profile } = await supabase.from("profiles").select("partner_id, office_id").eq("user_id", session.user.id).single();
 
-      // Only now — at the moment of actually saving — do we consume the
-      // sequence and lock in the real reference_id. This guarantees no
+      // Determine the final reference_id. If the user manually typed a
+      // non-empty value, honor it as-is. Otherwise, consume the backend
+      // sequence now to lock in the real id. This also avoids burning a
+      // sequence number when the user overrides it, and guarantees no
       // numbers are skipped just because someone opened and closed the form.
       let finalReferenceId = formData.reference_id;
-      if (!isEdit) {
+      const userOverrodeRef =
+        !isEdit &&
+        referenceIdTouched.current &&
+        typeof finalReferenceId === "string" &&
+        finalReferenceId.trim().length > 0;
+      if (!isEdit && !userOverrodeRef) {
         const { data: genRef, error: genRefError } = await supabase.rpc("generate_sequential_reference");
         if (!genRefError && genRef) finalReferenceId = genRef;
       }
@@ -775,7 +787,10 @@ export const ParcelForm = ({ onSuccess, parcel }: ParcelFormProps) => {
         <div className="relative">
           <StyledInput
             value={formData.reference_id}
-            onChange={(e: any) => set("reference_id", e.target.value)}
+            onChange={(e: any) => {
+              referenceIdTouched.current = true;
+              set("reference_id", e.target.value);
+            }}
             placeholder={referenceIdLoading ? "Generating…" : "Auto-generated"}
             className="font-mono"
           />
