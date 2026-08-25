@@ -154,6 +154,54 @@ const formatStatusLabel = (status: string) =>
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(" ");
 
+// Pull a note/comment out of a timeline event by checking every plausible
+// field name the backend might use. Different parts of the app write notes
+// under different keys (note, comment, remarks, admin_note, etc.), and
+// previously only some of them triggered the stylish box — that's why a
+// note you updated on a status sometimes didn't show. This helper finds
+// the first non-empty note regardless of which field it lives in.
+const NOTE_FIELDS = [
+  "admin_note",
+  "staff_note",
+  "internal_note",
+  "note",
+  "notes",
+  "comment",
+  "comments",
+  "remarks",
+  "remark",
+  "message",
+  "description",
+  "text",
+  "memo",
+  "details",
+] as const;
+
+const getEventNote = (event: any): string | null => {
+  if (!event || typeof event !== "object") return null;
+  for (const key of NOTE_FIELDS) {
+    const v = event[key];
+    if (typeof v === "string" && v.trim().length > 0) return v.trim();
+    if (typeof v === "number" && !Number.isNaN(v)) return String(v);
+  }
+  return null;
+};
+
+// Decide whether a `place`-like value looks like a real place (city /
+// airport / hub name) rather than a free-form note that was mistakenly
+// stored in the location field. If it doesn't look like a place, we drop
+// it from the MapPin line so it doesn't visually merge with the note.
+const looksLikePlace = (value: string): boolean => {
+  if (!value) return false;
+  const s = value.trim();
+  if (s.length < 2 || s.length > 80) return false;
+  // Notes are usually full sentences with verbs; places aren't.
+  if (/\b(we|your|its|i am|please|kindly|note that|this is|the parcel|the shipment|your parcel)\b/i.test(s)) return false;
+  // Multiple full sentences = definitely a note, not a place.
+  if (/[.!?]\s+[A-Z]/.test(s)) return false;
+  return true;
+};
+
 export const TrackingSection = () => {
   const [trackingQuery, setTrackingQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -283,8 +331,26 @@ export const TrackingSection = () => {
           background: conic-gradient(from 0deg, transparent 0deg, rgba(23,166,115,0.55) 70deg, transparent 100deg);
           animation: sx-radar-spin 2.4s linear infinite;
         }
+        /* ── Animated admin-note box ──
+           A "marching ants" dashed border in amber that slowly rotates
+           around the note, making it visually unmistakable as a comment
+           and impossible to confuse with the location/place line. */
+        @keyframes sx-note-border {
+          0%   { border-color: rgba(255,176,32,0.55); box-shadow: 0 0 0 0 rgba(255,176,32,0.25); }
+          50%  { border-color: rgba(255,106,26,0.95); box-shadow: 0 0 0 4px rgba(255,176,32,0.10); }
+          100% { border-color: rgba(255,176,32,0.55); box-shadow: 0 0 0 0 rgba(255,176,32,0.00); }
+        }
+        .sx-note-box {
+          animation: sx-note-border 2.6s ease-in-out infinite;
+        }
+        @keyframes sx-note-label-pulse {
+          0%, 100% { transform: scale(1); }
+          50%      { transform: scale(1.06); }
+        }
+        .sx-note-label { animation: sx-note-label-pulse 2.6s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) {
-          .sx-flicker, .sx-glide, .sx-beacon, .sx-radar::before { animation: none !important; }
+          .sx-flicker, .sx-glide, .sx-beacon, .sx-radar::before,
+          .sx-note-box, .sx-note-label { animation: none !important; }
         }
       `}</style>
 
@@ -545,7 +611,15 @@ export const TrackingSection = () => {
                     <div className="space-y-7 border-l-[3px] border-dotted border-[#0B2545]/25 pl-9">
                       {events.map((event, eventIndex) => {
                         const isLatest = dateIndex === 0 && eventIndex === 0;
-                        const place = event.location || event.place || event.city || event.checkpoint;
+                        const rawPlace = event.location || event.place || event.city || event.checkpoint;
+                        const eventNote = getEventNote(event);
+                        // Only show the MapPin line if the value actually
+                        // looks like a place AND isn't a duplicate of the
+                        // note (which sometimes gets stored in both fields).
+                        const place =
+                          rawPlace && looksLikePlace(rawPlace) && rawPlace !== eventNote
+                            ? rawPlace
+                            : "";
                         const eventStageIndex = getStageIndex(event.status);
                         const StageIcon = STAGES[eventStageIndex]?.icon || Clock;
                         const dotColor = isLatest ? TOKENS.orange : STAGE_COLORS[eventStageIndex];
@@ -589,20 +663,17 @@ export const TrackingSection = () => {
                               </p>
                             )}
 
-                            {event.note && (
-                              <p className="mt-1 flex items-start gap-1.5 text-xs text-[#5B6B82]">
-                                <MessageSquareText className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                                {event.note}
-                              </p>
-                            )}
-
-                            {(event.admin_note || event.staff_note || event.internal_note || event.remarks || event.comment) && (
-                              <div className="sx-display relative mt-2 inline-block max-w-sm rotate-[-1.5deg] rounded-lg border border-dashed border-[#FFB020]/50 bg-[#FFF7E8] px-3 py-2 text-xs text-[#8A5B00] shadow-sm transition-transform duration-200 hover:rotate-0">
-                                <span className="absolute -top-2 left-3 rounded-full bg-[#FFB020] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow">
-                                  ✎ Admin note
+                            {eventNote && (
+                              <div
+                                className="sx-note-box sx-display relative mt-3 block max-w-md rounded-lg border-2 border-dashed bg-[#FFF7E8] px-4 py-3 text-xs text-[#8A5B00] shadow-sm transition-transform duration-200 hover:rotate-0"
+                                style={{ transform: "rotate(-1deg)", borderColor: "rgba(255,176,32,0.55)" }}
+                              >
+                                <span className="sx-note-label absolute -top-2.5 left-3 inline-flex items-center gap-1 rounded-full bg-[#FFB020] px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow">
+                                  <MessageSquareText className="h-2.5 w-2.5" />
+                                  Note from SkyXpress
                                 </span>
-                                <p className="mt-1.5 leading-snug">
-                                  {event.admin_note || event.staff_note || event.internal_note || event.remarks || event.comment}
+                                <p className="mt-1.5 leading-snug whitespace-pre-wrap break-words">
+                                  {eventNote}
                                 </p>
                               </div>
                             )}
