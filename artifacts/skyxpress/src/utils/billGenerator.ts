@@ -1343,7 +1343,12 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const gridH      = accountH + shipperH + authH + podH;   // column A drives the total height
 
     const trackH     = s(6.5);
-    const consigneeH = s(36);   // fits 3.1 top-pad + 11 lines × 2.9mm = 35mm (added Email line)
+    // Consignee block grown from 36 → 40mm to match the SHIPPER block height, so
+    // long consignee names/addresses (e.g. "GOVT OF PAKISTAN MINISTRY OF COMMERCE")
+    // and the full set of optional fields (company + 2 address lines + city +
+    // state+postal + country + phone + email + VAT/EORI/Tax ID) all fit without
+    // cropping or overflowing into the DAP / barcode blocks below.
+    const consigneeH = s(40);
     const dapH       = s(9);
     const barcodeH   = gridH - trackH - s(5.6) - consigneeH - dapH; // column B fills the rest (s(5.6) accounts for badge-2 gap above consignee)
 
@@ -1355,7 +1360,10 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     // stays accurate and svcH doesn't undersize the block.
     TF(Math.max(4.6, s(5)), 'normal');
     const badgeApprox = Math.max(3.2, s(4.2));
-    const contentsWrapWApprox = UW * 0.31 - (s(2) + badgeApprox + s(1.4) + s(2));
+    // Column C width ratio is now ~0.28 (was 0.31 before the column rebalance
+    // that gave the consignee more room). Keep this in sync with the actual
+    // wC computation below so svcH doesn't under- or over-allocate space.
+    const contentsWrapWApprox = UW * 0.28 - (s(2) + badgeApprox + s(1.4) + s(2));
     const contentsLineCount = Math.min(
       10,
       (pdf.splitTextToSize(contentsDescription, contentsWrapWApprox) as string[]).length
@@ -1366,11 +1374,13 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     const swH        = gridH - refH - freightH - svcH;     // column C fills the rest
 
     // ── column widths ──────────────────────────────────────────────────
-    // Column A (sender) widened from 0.395 → 0.42 so long city / country / phone
-    // / CNIC / VAT values no longer overflow the right border of the SHIPPER
-    // box. Columns B and C shrink slightly to compensate.
-    const wA = UW * 0.42;
-    const wB = UW * 0.27;
+    // Rebalanced: sender column 0.42 → 0.40 (still plenty for long city/country/
+    // phone/CNIC/VAT values), consignee column 0.27 → 0.32 (was the narrowest
+    // column yet held the same number of fields as the sender — this is what
+    // caused long consignee names like "GOVT OF PAKISTAN MINISTRY OF COMMERCE"
+    // to crop / look cramped), and column C absorbs the remainder (~0.28).
+    const wA = UW * 0.40;
+    const wB = UW * 0.32;
     const wC = UW - wA - wB;
     const xA = M, xB = M + wA, xC = M + wA + wB;
 
@@ -1444,12 +1454,22 @@ const sw = wA - s(12);
       pdf.text(senderCompanyVal, sx, sy, { maxWidth: sw });
       sy += s(3);
     }
+    // Address — each part on its OWN line (was previously joined with ', ' and
+    // then truncated to the first 2 wrapped lines, which dropped long addresses'
+    // 2nd/3rd parts entirely). Now every address line that exists is rendered
+    // and wraps independently if it's still too long for the column.
     TF(Math.max(5, s(5.6)), 'bold');
-    const senderAddrLines = pdf.splitTextToSize(
-      [parcel.sender_address, parcel.sender_address_2, parcel.sender_address_3].filter(Boolean).join(', '),
-      sw
-    ) as string[];
-    senderAddrLines.slice(0, 2).forEach((ln) => { pdf.text(ln, sx, sy, { maxWidth: sw }); sy += s(3); });
+    const senderAddrParts = [
+      parcel.sender_address,
+      parcel.sender_address_2,
+      parcel.sender_address_3,
+    ].filter(Boolean) as string[];
+    senderAddrParts.forEach((part) => {
+      const wrapped = pdf.splitTextToSize(String(part).trim(), sw) as string[];
+      // Cap at 2 wrapped lines per part so a single runaway field can't push
+      // everything else off the page — but every part now gets its 1–2 lines.
+      wrapped.slice(0, 2).forEach((ln) => { pdf.text(ln, sx, sy, { maxWidth: sw }); sy += s(3); });
+    });
     // Phone, Email, CNIC — normal weight (only name & address are bold)
     TF(Math.max(4.4, s(5)), 'normal'); TX(INK);
     if (safeText(parcel.sender_phone, '')) { pdf.text(safeText(parcel.sender_phone, ''), sx, sy, { maxWidth: sw }); sy += s(3); }
@@ -1515,8 +1535,13 @@ const sw = wA - s(12);
 
     let by = boxTop + trackH;
     const b2 = badge(xB + bPad, by + s(1.1), '2');
-    TF(Math.max(5.6, s(6.2)), 'bold'); TX(INK);
-    pdf.text(safeText(parcel.receiver_name, 'N/A').toUpperCase(), xB + bPad + b2 + s(1.4), by + s(1.1) + b2 * 0.72, { maxWidth: wB - 12 });
+    // Section label rendered next to the badge (was the receiver_name itself
+    // before, which cramped long names like "GOVT OF PAKISTAN MINISTRY OF
+    // COMMERCE" into the narrow gap above the CONSIGNEE block). The name now
+    // renders INSIDE the consignee block as its first bold line, so it can
+    // wrap properly across 2 lines without overlapping the block top.
+    TF(Math.max(5.6, s(6.2)), 'bold'); TX(NAVY);
+    pdf.text('CONSIGNEE NAME', xB + bPad + b2 + s(1.4), by + s(1.1) + b2 * 0.72, { maxWidth: wB - 12 });
 
     const consigneeTop = by + s(5.6);
     // Widened from 4.6→6.5mm and bumped to a much bigger font (was capped at
@@ -1527,7 +1552,16 @@ vLabel(xB + s(4), consigneeTop, consigneeH, 'CONSIGNEE', Math.max(9, s(10.5)), N
 let cy = consigneeTop + s(3.1);
 const cx = xB + s(10);
 const cw = wB - s(12);
-    TF(Math.max(5, s(5.6)), 'bold'); TX(INK);
+    // Name — bold, rendered as the FIRST line inside the consignee block so it
+    // can wrap to 2 lines when very long (previously it was squeezed into the
+    // tiny gap above the block, causing the cramped look).
+    TF(Math.max(5.6, s(6.2)), 'bold'); TX(INK);
+    const receiverNameLines = pdf.splitTextToSize(
+      safeText(parcel.receiver_name, 'N/A').toUpperCase(),
+      cw
+    ) as string[];
+    // Cap at 2 wrapped lines so a runaway name can't push everything else off.
+    receiverNameLines.slice(0, 2).forEach((ln) => { pdf.text(ln, cx, cy, { maxWidth: cw }); cy += s(3); });
     // Company — normal weight (only name & address are bold)
     const receiverCompanyVal = safeText(parcel.receiver_company, '');
     if (receiverCompanyVal) {
@@ -1535,13 +1569,21 @@ const cw = wB - s(12);
       pdf.text(receiverCompanyVal, cx, cy, { maxWidth: cw });
       cy += s(2.9);
     }
-    // Address — bold
+    // Address — each part on its OWN line (was previously joined with ', ' and
+    // then truncated to the first 2 wrapped lines, which dropped long addresses'
+    // 2nd/3rd parts entirely — the consignee's street+building+floor combos were
+    // getting cropped on the right). Now every address part renders independently
+    // and wraps within its own 1–2 lines.
     TF(Math.max(5, s(5.6)), 'bold'); TX(INK);
-    const recvAddrLines = pdf.splitTextToSize(
-      [parcel.receiver_address, parcel.receiver_address_2, parcel.receiver_address_3].filter(Boolean).join(', '),
-      cw
-    ) as string[];
-    recvAddrLines.slice(0, 2).forEach((ln) => { pdf.text(ln, cx, cy, { maxWidth: cw }); cy += s(2.9); });
+    const recvAddrParts = [
+      parcel.receiver_address,
+      parcel.receiver_address_2,
+      parcel.receiver_address_3,
+    ].filter(Boolean) as string[];
+    recvAddrParts.forEach((part) => {
+      const wrapped = pdf.splitTextToSize(String(part).trim(), cw) as string[];
+      wrapped.slice(0, 2).forEach((ln) => { pdf.text(ln, cx, cy, { maxWidth: cw }); cy += s(2.9); });
+    });
     pdf.text(safeText(parcel.receiver_city, ''), cx, cy, { maxWidth: cw }); cy += s(2.9);
     pdf.text(`${safeText(parcel.receiver_state, '')} ${safeText(parcel.receiver_postal_code, '')}`.trim(), cx, cy, { maxWidth: cw }); cy += s(2.9);
     pdf.text(codeToCountryName(safeText(parcel.receiver_country, 'United Kingdom')).toUpperCase(), cx, cy, { maxWidth: cw }); cy += s(2.9);
