@@ -336,22 +336,22 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
     // Transform helpers: convert original-design (x, y, w, h) in mm
     // into A4 page coordinates with margin + uniform scale.
-    const tx = (x: number) => _originX + x * _scale;
-    const ty = (y: number) => _originY + y * _scale;
-    const ts = (v: number) => v * _scale;
+    const pdfTx = (x: number) => _originX + x * _scale;
+    const pdfTy = (y: number) => _originY + y * _scale;
+    const pdfTs = (v: number) => v * _scale;
 
     const fillRect = (x: number, y: number, w: number, h: number, r: number, g: number, b: number) => {
       doc.setFillColor(r, g, b);
-      _origRect(tx(x), ty(y), ts(w), ts(h), "F");
+      _origRect(pdfTx(x), pdfTy(y), pdfTs(w), pdfTs(h), "F");
     };
     const hline = (y: number, lw = 0.3, r = 0, g = 0, b = 0) => {
       doc.setDrawColor(r, g, b); doc.setLineWidth(lw * _scale);
-      _origLine(tx(0), ty(y), tx(W), ty(y));
+      _origLine(pdfTx(0), pdfTy(y), pdfTx(W), pdfTy(y));
     };
     const txt = (s: string, x: number, y: number, opts?: any) => {
       // jsPDF text options like { align: "center" } compute alignment
       // relative to the (x, y) anchor, so transforming the anchor is enough.
-      return doc.text(s, tx(x), ty(y), opts);
+      return doc.text(s, pdfTx(x), pdfTy(y), opts);
     };
     const sf = (style: string, size: number, r = 0, g = 0, b = 0) => {
       // Font size also needs to be scaled so text stays proportional
@@ -361,7 +361,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     // Override addImage so existing barcode addImage calls also get transformed.
     const _origAddImage = doc.addImage.bind(doc);
     doc.addImage = (data: any, format: string, x: number, y: number, w: number, h: number, alias?: any, compression?: any, rotation?: any) => {
-      return _origAddImage(data, format, tx(x), ty(y), ts(w), ts(h), alias, compression, rotation);
+      return _origAddImage(data, format, pdfTx(x), pdfTy(y), pdfTs(w), pdfTs(h), alias, compression, rotation);
     };
     // Bind originals so we can call them with already-transformed coords
     // from hline/fillRect (avoids double-transform via the doc.line override).
@@ -370,10 +370,10 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     // Override line() and rect() so any direct calls elsewhere in the code
     // (e.g. the vertical divider, outer border) also get transformed.
     doc.line = (x1: number, y1: number, x2: number, y2: number, style?: string) => {
-      return _origLine(tx(x1), ty(y1), tx(x2), ty(y2), style);
+      return _origLine(pdfTx(x1), pdfTy(y1), pdfTx(x2), pdfTy(y2), style);
     };
     doc.rect = (x: number, y: number, w: number, h: number, style?: string) => {
-      return _origRect(tx(x), ty(y), ts(w), ts(h), style);
+      return _origRect(pdfTx(x), pdfTy(y), pdfTs(w), pdfTs(h), style);
     };
     // getTextWidth depends on current font size — already scaled via sf().
     // splitTextToSize is independent of scale (it works in mm units) so we
@@ -485,7 +485,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     // Wrap at the SCALED width (in real page mm) so wrapped lines fit
     // the rendered box; then draw at the transformed anchor.
     const sndNameLines = doc.splitTextToSize(parcel.sender_name, (ORIGIN_W - 2) * _scale);
-    doc.text(sndNameLines, tx(W - ORIGIN_W + 1), ty(y + 10));
+    doc.text(sndNameLines, pdfTx(W - ORIGIN_W + 1), pdfTy(y + 10));
     if (parcel.sender_phone) {
       sf("normal", 8, 30, 30, 30);
       txt(parcel.sender_phone, W - ORIGIN_W + 1, y + 10 + sndNameLines.length * LINE_H + 1);
@@ -518,7 +518,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     sf("bold", 8, 0, 0, 0);
     // wrap contact name if too long
     const cNameLines = doc.splitTextToSize(parcel.receiver_name, (CONTACT_W - 2) * _scale);
-    doc.text(cNameLines, tx(cxLeft + 1), ty(y + 10.5));
+    doc.text(cNameLines, pdfTx(cxLeft + 1), pdfTy(y + 10.5));
     if (parcel.receiver_phone) {
       sf("normal", 8, 30, 30, 30);
       txt(parcel.receiver_phone, cxLeft + 1, y + 10.5 + cNameLines.length * LINE_H + 1);
@@ -589,7 +589,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     txt("Contents:", cntX, y + 5);
     sf("normal", 6.5, 30, 30, 30);
     const cntWrapped = doc.splitTextToSize(contentsText.toUpperCase().slice(0, 80), (W - cntX - pad) * _scale);
-    doc.text(cntWrapped, tx(cntX), ty(y + 9.5));
+    doc.text(cntWrapped, pdfTx(cntX), pdfTy(y + 9.5));
 
     y += bcH + 8;
 
