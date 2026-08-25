@@ -196,55 +196,41 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     styleEl.textContent = styleContent;
     doc.head.appendChild(styleEl);
 
-    // Scale 560px label to fill A4 printable width
-    // A4 = 210mm âˆ’ 2Ã—5mm margin = 200mm usable â‰ˆ 756px at 96dpi
-    // 756 / 560 â‰ˆ 1.35
+    // ── A4 geometry ──
+    // A4 = 210 × 297 mm. With a 10 mm margin each side we get a usable
+    // printable area of 190 × 277 mm.
+    //
+    // The label is designed at 560 px on screen. We scale it so its width
+    // maps to roughly 175 mm (≈ 660 px at 96 dpi) — that leaves a
+    // comfortable 7.5 mm of breathing room INSIDE the 190 mm usable area,
+    // so the label never touches the page margin and looks "a bit small"
+    // but proportionally correct, exactly as requested.
+    //
+    // We deliberately DO NOT stretch the label to the full usable height
+    // anymore — that produced an oversized, half-empty card. The label
+    // now renders at its natural height, vertically centered on the page.
     const LABEL_W = 560;
-    const A4_SCALE = 1.35;
-
-    // Usable A4 print area at 96dpi (210x297mm page, 5mm margin each side).
+    const A4_SCALE = 1.15; // 560 × 1.15 ≈ 644 px ≈ 170 mm
     const PX_PER_MM = 96 / 25.4;
-    const USABLE_W_PX = (210 - 10) * PX_PER_MM; // â‰ˆ 756px
-    const USABLE_H_PX = (297 - 10) * PX_PER_MM; // â‰ˆ 1085px
+    const USABLE_W_PX = (210 - 20) * PX_PER_MM; // ≈ 718 px
+    const USABLE_H_PX = (297 - 20) * PX_PER_MM; // ≈ 1046 px
 
-    // FIX: CSS `zoom` re-runs layout at the scaled factor, and Chromium's
-    // print pipeline computes flex-basis for un-sized flex children (like the
-    // DOX / NON DOX badge, which has no explicit width) BEFORE applying zoom
-    // correctly in some builds â€” this is what made that column balloon to a
-    // disproportionate size only when printing. `transform: scale()` instead
-    // scales the already-correct layout as a bitmap-like operation, so every
-    // column keeps the exact same proportions you see on screen.
-    //
-    // FIX: `position: fixed` pinned the label to the print window's viewport,
-    // which is what caused the "half page" / cropped output â€” anything below
-    // one viewport height never made it onto the page. The wrapper below
-    // gets an explicit height (measured from the real, unscaled label) so
-    // the scaled content reserves its correct space in normal document flow
-    // instead of being clipped.
-    //
-    // FIX: the label's natural content is shorter than a full A4 sheet, so
-    // scaling it to fill the full WIDTH left a large blank gap below it
-    // (the "half page" look). Stretching it non-uniformly to also fill the
-    // full height would distort the barcode (breaking scannability) and the
-    // logo. Instead, we measure the natural content height and pad the
-    // BOTTOM of the label's own bordered box (blank space, nothing scaled
-    // or stretched) so the box itself grows to reach the bottom of the
-    // usable A4 area â€” the printed page ends up fully covered by the label
-    // card edge-to-edge, with no distortion of any element inside it.
     const naturalHeight = labelEl.getBoundingClientRect().height || labelEl.scrollHeight;
-    const targetUnscaledHeight = USABLE_H_PX / A4_SCALE;
-    const extraBottomPadding = Math.max(0, targetUnscaledHeight - naturalHeight);
-    const finalUnscaledHeight = naturalHeight + extraBottomPadding;
+    const scaledW = LABEL_W * A4_SCALE;
+    const scaledH = naturalHeight * A4_SCALE;
+    // Center the label both horizontally and vertically inside the usable area
+    const offsetX = Math.max(0, (USABLE_W_PX - scaledW) / 2);
+    const offsetY = Math.max(0, (USABLE_H_PX - scaledH) / 2);
 
     const printStyle = doc.createElement("style");
     printStyle.textContent = `
-      @page { margin: 5mm; size: A4 portrait; }
+      @page { margin: 10mm; size: A4 portrait; }
       html, body { margin: 0; padding: 0; background: #fff; }
       #print-wrapper {
-        width: ${LABEL_W * A4_SCALE}px;
-        height: ${finalUnscaledHeight * A4_SCALE}px;
-        margin: 0 auto;
         position: relative;
+        width: ${USABLE_W_PX}px;
+        height: ${USABLE_H_PX}px;
+        margin: 0 auto;
       }
       #shipping-label-print {
         width: ${LABEL_W}px !important;
@@ -256,19 +242,17 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
         background: #fff !important;
         color: #000 !important;
         box-sizing: border-box !important;
-        padding-bottom: ${extraBottomPadding}px !important;
         transform: scale(${A4_SCALE}) !important;
         transform-origin: top left !important;
         position: absolute !important;
-        top: 0 !important;
-        left: 0 !important;
+        top: ${offsetY / A4_SCALE}px !important;
+        left: ${offsetX / A4_SCALE}px !important;
       }
     `;
     doc.head.appendChild(printStyle);
 
-    // Wrapper reserves the real (scaled) space in the page flow so the
-    // absolutely-positioned, scaled label doesn't get clipped or overlap
-    // anything after it â€” sized to fill the full usable A4 height.
+    // Wrapper reserves the real usable area on the page so the absolutely-
+    // positioned, scaled label is centered inside it instead of clipped.
     const wrapper = doc.createElement("div");
     wrapper.id = "print-wrapper";
 
@@ -289,21 +273,40 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const { default: jsPDF } = await import("jspdf");
 
     // â”€â”€ constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── A4 layout ──
+    // Use a real A4 page (210 × 297 mm) with a 10 mm margin on every side,
+    // matching the print output. The label itself is drawn at its original
+    // 105 mm design width and then scaled to ~1.6× to occupy about 170 mm
+    // of the 190 mm usable area — same proportional size as the print
+    // preview, so PDF and printed page look the same.
+    const PAGE_W = 210;
+    const PAGE_H = 297;
+    const MARGIN = 10;
+    const USABLE_W = PAGE_W - 2 * MARGIN; // 190 mm
+    const USABLE_H = PAGE_H - 2 * MARGIN; // 277 mm
+
+    // Original design width of the label drawing code (do not change —
+    // all coordinates below assume this).
     const W = 105;
     const pad = 4;
     const CONTACT_W = 34;        // right panel width for contact
     const ORIGIN_W  = 22;        // right panel width for origin
     const addrMaxW  = W - CONTACT_W - pad - 3;  // max width for address lines
+    const PDF_SCALE = USABLE_W / W / 1.12; // ≈ 1.62 — leaves a small breathing margin
 
     // â”€â”€ temp doc to measure text before we know final height â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Use the SCALED font size so splitTextToSize wraps at the same width
+    // the real drawing will render at (otherwise wrapped lines overflow).
     const tmp = new jsPDF({ unit: "mm", format: [W, 300] });
-    tmp.setFont("helvetica", "normal"); tmp.setFontSize(7.5);
+    tmp.setFont("helvetica", "normal"); tmp.setFontSize(7.5 * PDF_SCALE);
 
-    // Pre-wrap address lines so we know how many rows each section needs
+    // Pre-wrap address lines so we know how many rows each section needs.
+    // Wrap widths are SCALED (real page mm) so wrapping matches what the
+    // real doc renders at the scaled font size.
     const sndWrapped: string[] = sndLines.flatMap(ln =>
-      tmp.splitTextToSize(ln, W - ORIGIN_W - pad - 3));
+      tmp.splitTextToSize(ln, (W - ORIGIN_W - pad - 3) * PDF_SCALE));
     const rcvWrapped: string[] = rcvLines.flatMap(ln =>
-      tmp.splitTextToSize(ln, addrMaxW));
+      tmp.splitTextToSize(ln, addrMaxW * PDF_SCALE));
 
     const LINE_H = 3.6;
     const fromBodyH = Math.max(0, (sndWrapped.slice(0, 6).length) * LINE_H);
@@ -320,18 +323,62 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const H = hdrH + fromH + toH + barH + refH + wH + 4 + (bcH + 7) * 2 + 6;
 
     // â”€â”€ real doc â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [W, H] });
+    // A4 page, all drawing is offset by MARGIN and scaled to fit nicely.
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [PAGE_W, PAGE_H] });
+    // Translate the drawing origin to (MARGIN, MARGIN) and scale uniformly
+    // around that new origin so all existing (x, y) coordinates keep
+    // working unchanged.
+    const _scale = PDF_SCALE;
+    const _originX = (USABLE_W - W * _scale) / 2 + MARGIN;
+    const _originY = (USABLE_H - H * _scale) / 2 + MARGIN;
+    // Helper wrappers — every fillRect/hline/txt/addImage call below uses
+    // these so coordinates are transformed consistently.
+
+    // Transform helpers: convert original-design (x, y, w, h) in mm
+    // into A4 page coordinates with margin + uniform scale.
+    const tx = (x: number) => _originX + x * _scale;
+    const ty = (y: number) => _originY + y * _scale;
+    const ts = (v: number) => v * _scale;
 
     const fillRect = (x: number, y: number, w: number, h: number, r: number, g: number, b: number) => {
-      doc.setFillColor(r, g, b); doc.rect(x, y, w, h, "F");
+      doc.setFillColor(r, g, b);
+      _origRect(tx(x), ty(y), ts(w), ts(h), "F");
     };
     const hline = (y: number, lw = 0.3, r = 0, g = 0, b = 0) => {
-      doc.setDrawColor(r, g, b); doc.setLineWidth(lw); doc.line(0, y, W, y);
+      doc.setDrawColor(r, g, b); doc.setLineWidth(lw * _scale);
+      _origLine(tx(0), ty(y), tx(W), ty(y));
     };
-    const txt = (s: string, x: number, y: number, opts?: any) => doc.text(s, x, y, opts);
+    const txt = (s: string, x: number, y: number, opts?: any) => {
+      // jsPDF text options like { align: "center" } compute alignment
+      // relative to the (x, y) anchor, so transforming the anchor is enough.
+      return doc.text(s, tx(x), ty(y), opts);
+    };
     const sf = (style: string, size: number, r = 0, g = 0, b = 0) => {
-      doc.setFont("helvetica", style); doc.setFontSize(size); doc.setTextColor(r, g, b);
+      // Font size also needs to be scaled so text stays proportional
+      // with the rest of the drawing.
+      doc.setFont("helvetica", style); doc.setFontSize(size * _scale); doc.setTextColor(r, g, b);
     };
+    // Override addImage so existing barcode addImage calls also get transformed.
+    const _origAddImage = doc.addImage.bind(doc);
+    doc.addImage = (data: any, format: string, x: number, y: number, w: number, h: number, alias?: any, compression?: any, rotation?: any) => {
+      return _origAddImage(data, format, tx(x), ty(y), ts(w), ts(h), alias, compression, rotation);
+    };
+    // Bind originals so we can call them with already-transformed coords
+    // from hline/fillRect (avoids double-transform via the doc.line override).
+    const _origLine = doc.line.bind(doc);
+    const _origRect = doc.rect.bind(doc);
+    // Override line() and rect() so any direct calls elsewhere in the code
+    // (e.g. the vertical divider, outer border) also get transformed.
+    doc.line = (x1: number, y1: number, x2: number, y2: number, style?: string) => {
+      return _origLine(tx(x1), ty(y1), tx(x2), ty(y2), style);
+    };
+    doc.rect = (x: number, y: number, w: number, h: number, style?: string) => {
+      return _origRect(tx(x), ty(y), ts(w), ts(h), style);
+    };
+    // getTextWidth depends on current font size — already scaled via sf().
+    // splitTextToSize is independent of scale (it works in mm units) so we
+    // leave it alone, but its results are interpreted in design-mm, which
+    // is what the original code expects.
 
     // â”€â”€ logo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // FIX: previously the logo was force-fit into a fixed width AND fixed height
@@ -373,7 +420,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const trkBC = makeBC(trackCode || "000000");
 
     // â”€â”€ outer border â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    doc.setDrawColor(0); doc.setLineWidth(0.4); doc.rect(0, 0, W, H);
+    doc.setDrawColor(0); doc.setLineWidth(0.4 * _scale); doc.rect(0, 0, W, H);
 
     // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // HEADER
@@ -406,7 +453,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
     // service type badge
     sf("bold", 7, 255, 255, 255);
-    const stBadgeW = Math.min(doc.getTextWidth(serviceType) + 5, mainW - pad - 2);
+    const stBadgeW = Math.min((doc.getTextWidth(serviceType) / _scale) + 5, mainW - pad - 2);
     fillRect(pad, 11, stBadgeW, 5, 26, 26, 46);
     txt(serviceType, pad + 2.5, 15);
 
@@ -435,8 +482,10 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     sf("normal", 6.5, 90, 90, 90);
     txt("Contact:", W - ORIGIN_W + 1, y + 5);
     sf("bold", 8, 0, 0, 0);
-    const sndNameLines = doc.splitTextToSize(parcel.sender_name, ORIGIN_W - 2);
-    doc.text(sndNameLines, W - ORIGIN_W + 1, y + 10);
+    // Wrap at the SCALED width (in real page mm) so wrapped lines fit
+    // the rendered box; then draw at the transformed anchor.
+    const sndNameLines = doc.splitTextToSize(parcel.sender_name, (ORIGIN_W - 2) * _scale);
+    doc.text(sndNameLines, tx(W - ORIGIN_W + 1), ty(y + 10));
     if (parcel.sender_phone) {
       sf("normal", 8, 30, 30, 30);
       txt(parcel.sender_phone, W - ORIGIN_W + 1, y + 10 + sndNameLines.length * LINE_H + 1);
@@ -461,15 +510,15 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     for (const ln of rcvWrapped.slice(0, 7)) { txt(ln, pad, ty); ty += LINE_H; }
 
     // vertical divider between address and contact
-    doc.setDrawColor(200); doc.setLineWidth(0.2);
+    doc.setDrawColor(200); doc.setLineWidth(0.2 * _scale);
     doc.line(cxLeft - 1, y, cxLeft - 1, y + toH);
 
     sf("normal", 6.5, 90, 90, 90);
     txt("Contact:", cxLeft + 1, y + 5);
     sf("bold", 8, 0, 0, 0);
     // wrap contact name if too long
-    const cNameLines = doc.splitTextToSize(parcel.receiver_name, CONTACT_W - 2);
-    doc.text(cNameLines, cxLeft + 1, y + 10.5);
+    const cNameLines = doc.splitTextToSize(parcel.receiver_name, (CONTACT_W - 2) * _scale);
+    doc.text(cNameLines, tx(cxLeft + 1), ty(y + 10.5));
     if (parcel.receiver_phone) {
       sf("normal", 8, 30, 30, 30);
       txt(parcel.receiver_phone, cxLeft + 1, y + 10.5 + cNameLines.length * LINE_H + 1);
@@ -539,8 +588,8 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     sf("bold", 6.5, 60, 60, 60);
     txt("Contents:", cntX, y + 5);
     sf("normal", 6.5, 30, 30, 30);
-    const cntWrapped = doc.splitTextToSize(contentsText.toUpperCase().slice(0, 80), W - cntX - pad);
-    doc.text(cntWrapped, cntX, y + 9.5);
+    const cntWrapped = doc.splitTextToSize(contentsText.toUpperCase().slice(0, 80), (W - cntX - pad) * _scale);
+    doc.text(cntWrapped, tx(cntX), ty(y + 9.5));
 
     y += bcH + 8;
 
@@ -796,28 +845,25 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
       {/* â”€â”€ Print styles â”€â”€ */}
       <style>{`
         @media print {
-          @page { margin: 5mm; size: A4 portrait; }
+          @page { margin: 10mm; size: A4 portrait; }
           body * { visibility: hidden !important; }
           #shipping-label-print,
           #shipping-label-print * { visibility: visible !important; }
-          /* Reserve the real, scaled footprint in normal flow (via the
-             DialogContent wrapper) instead of position:fixed, which pinned
-             the label to the viewport and cropped anything past one
-             viewport height ("half page" bug). transform:scale (not zoom)
-             keeps every column's proportions identical to the on-screen
-             preview instead of letting un-sized flex children (like the
-             DOX / NON DOX badge) balloon. */
+          /* Scale the 560px label so it sits nicely inside the 190mm
+             usable area with a 10mm page margin — matches the Save-PDF
+             output exactly. transform-origin top center keeps it
+             horizontally centered on the page. */
           #shipping-label-print {
             position: relative !important;
             top: 0 !important;
             left: 0 !important;
             width: 560px !important;
             max-width: 560px !important;
-            border: none !important;
+            border: 1px solid #000 !important;
             padding: 0 !important;
             margin: 0 auto !important;
-            transform: scale(1.35) !important;
-            transform-origin: top left !important;
+            transform: scale(1.15) !important;
+            transform-origin: top center !important;
           }
         }
       `}</style>
