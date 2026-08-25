@@ -57,6 +57,27 @@ const groupEventsByDate = (timeline: any[]) => {
   return grouped;
 };
 
+// Remove consecutive duplicate-status events so the Flight Log doesn't show the
+// same status label twice in a row. This collapses the "duplicate status" issue
+// where the top boarding-pass badge already shows current_status AND the first
+// timeline row repeats the same status text.
+const dedupeConsecutiveStatuses = (timeline: any[]): any[] => {
+  if (!Array.isArray(timeline) || timeline.length === 0) return [];
+  const sorted = [...timeline].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+  return sorted.filter((evt: any, idx: number, arr: any[]) => {
+    if (idx === 0) return true;
+    const prev = arr[idx - 1];
+    const curStatus = (evt.status || evt.title || "").toString().toLowerCase();
+    const prevStatus = (prev.status || prev.title || "").toString().toLowerCase();
+    if (curStatus !== prevStatus) return true;
+    const curLoc = (evt.location || evt.place || evt.city || evt.checkpoint || "").toString().toLowerCase();
+    const prevLoc = (prev.location || prev.place || prev.city || prev.checkpoint || "").toString().toLowerCase();
+    return curLoc !== prevLoc;
+  });
+};
+
 // Deterministic faux-barcode bars derived from the tracking ID itself,
 // so every parcel prints its own unique "ticket stub" pattern.
 const getBarcodeBars = (value: string) => {
@@ -502,7 +523,9 @@ export const TrackingSection = () => {
               </div>
 
               <div className="space-y-3">
-                {Object.entries(groupEventsByDate(trackingResult.status_timeline)).map(([date, events], dateIndex) => (
+                {Object.entries(
+                  groupEventsByDate(dedupeConsecutiveStatuses(trackingResult.status_timeline))
+                ).map(([date, events], dateIndex) => (
                   <div
                     key={dateIndex}
                     className="rounded-2xl border border-transparent p-4 transition-colors hover:border-[#0B2545]/8 hover:bg-[#F5F8FC]/60 sm:p-5"
