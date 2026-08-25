@@ -130,6 +130,29 @@ const PublicTracking = () => {
     }
   };
 
+  // Remove consecutive duplicate-status events so the timeline doesn't show the
+  // same status label twice in a row (the most recent one always wins). This
+  // also collapses the "duplicate status" issue where the top badge already
+  // shows current_status AND the first timeline row repeats the same status.
+  const dedupeConsecutiveStatuses = (events: any[]): any[] => {
+    if (!Array.isArray(events) || events.length === 0) return [];
+    const sorted = [...events].sort(
+      (a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+    return sorted.filter((evt: any, idx: number, arr: any[]) => {
+      if (idx === 0) return true;
+      const prev = arr[idx - 1];
+      const curStatus = (evt.status || evt.title || '').toString().toLowerCase();
+      const prevStatus = (prev.status || prev.title || '').toString().toLowerCase();
+      // Keep only if status changed OR if it has a different location/note that
+      // adds information (still useful to show). Otherwise drop the duplicate.
+      if (curStatus !== prevStatus) return true;
+      const curLoc = (evt.location || evt.place || evt.city || '').toString().toLowerCase();
+      const prevLoc = (prev.location || prev.place || prev.city || '').toString().toLowerCase();
+      return curLoc !== prevLoc;
+    });
+  };
+
   // Group events by date
   const groupEventsByDate = (events: any[]) => {
     const grouped: { [key: string]: any[] } = {};
@@ -262,12 +285,12 @@ const PublicTracking = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-6">
-                  {/* Sort by timestamp descending and group by date */}
+                  {/* Sort by timestamp descending, dedupe consecutive same-status entries,
+                      and group by date — so the timeline shows one status update per
+                      actual change instead of the same label repeated multiple times. */}
                   {Object.entries(
                     groupEventsByDate(
-                      (trackingResult.events as any[]).sort(
-                        (a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-                      )
+                      dedupeConsecutiveStatuses(trackingResult.events as any[])
                     )
                   ).map(([date, events]: [string, any], dateIndex: number) => (
                     <div key={dateIndex} className="space-y-4">
