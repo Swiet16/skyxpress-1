@@ -1157,7 +1157,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
         try {
           const { data: rows, error: fetchErr } = await supabase
             .from("parcels")
-            .select("id, tracking_id, status_timeline")
+            .select("id, tracking_id, status_timeline, detailed_status")
             .in("tracking_id", trackingIds);
 
           if (fetchErr) {
@@ -1167,18 +1167,51 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
             await Promise.all(
               rows.map((r: any) => {
                 const existing = Array.isArray(r.status_timeline) ? r.status_timeline : [];
+                // Build the update payload. Always set current_status, updated_at,
+                // and append the timeline event. Conditionally also push the
+                // comment into admin_note/status_notes and the location into
+                // current_location/last_location/detailed_status so any
+                // tracking page (boarding pass OR PublicTracking.tsx) shows
+                // the fresh values.
+                const patch: Record<string, any> = {
+                  current_status: status,
+                  updated_at: nowIso,
+                  status_timeline: [...existing, newEvent],
+                };
+
+                // Mirror the staff comment into `admin_note` + `status_notes`
+                // so the public tracking page's prominent note callout stays
+                // current. If no comment was supplied, leave the existing
+                // admin_note untouched — we never blank it out from here.
+                if (comment && comment.trim()) {
+                  const c = comment.trim();
+                  patch.admin_note = c;
+                  patch.status_notes = c;
+                }
+
+                // Push the manifest's origin/destination hub into the
+                // `current_location` / `last_location` / `detailed_status.location`
+                // columns so tracking pages that read those (not just the
+                // timeline) see the fresh location.
+                if (location && String(location).trim()) {
+                  const loc = String(location).trim();
+                  patch.current_location = loc;
+                  patch.last_location = loc;
+                  const existingDetailed =
+                    r.detailed_status && typeof r.detailed_status === "object" && !Array.isArray(r.detailed_status)
+                      ? { ...r.detailed_status }
+                      : {};
+                  existingDetailed.location = loc;
+                  if (comment && comment.trim()) {
+                    existingDetailed.notes = comment.trim();
+                  }
+                  existingDetailed.updated_at = nowIso;
+                  patch.detailed_status = existingDetailed;
+                }
+
                 return supabase
                   .from("parcels")
-                  .update({
-                    current_status: status,
-                    updated_at: nowIso,
-                    status_timeline: [...existing, newEvent],
-                    // Mirror the staff comment into `admin_note` so the public
-                    // tracking page's prominent note callout stays current.
-                    // If no comment was supplied, leave the existing admin_note
-                    // untouched — we never blank it out from here.
-                    ...(comment && comment.trim() ? { admin_note: comment.trim() } : {}),
-                  })
+                  .update(patch)
                   .eq("id", r.id);
               })
             );
@@ -1226,7 +1259,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     try {
       const { data: rows, error: fetchErr } = await supabase
         .from("parcels")
-        .select("id, tracking_id, status_timeline, current_status")
+        .select("id, tracking_id, status_timeline, current_status, detailed_status")
         .in("tracking_id", trackingIds);
 
       if (fetchErr) {
@@ -1303,6 +1336,31 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
             // reflects what staff just wrote.
             if (latestEvent.notes && String(latestEvent.notes).trim()) {
               update.admin_note = String(latestEvent.notes).trim();
+              // Also mirror into status_notes for parity with the
+              // PublicTracking.tsx lookup path.
+              update.status_notes = String(latestEvent.notes).trim();
+            }
+            // FIX: also push the latest event's location into the
+            // `current_location` and `detailed_status.location` columns
+            // so any tracking page that reads those (instead of the
+            // timeline) shows the fresh value too. PublicTracking.tsx
+            // already reads these; the boarding pass now does as well.
+            if (latestEvent.location && String(latestEvent.location).trim()) {
+              const loc = String(latestEvent.location).trim();
+              update.current_location = loc;
+              update.last_location = loc;
+              // Merge into existing detailed_status (object form) without
+              // dropping any other keys that might already be there.
+              const existingDetailed =
+                r.detailed_status && typeof r.detailed_status === "object" && !Array.isArray(r.detailed_status)
+                  ? { ...r.detailed_status }
+                  : {};
+              existingDetailed.location = loc;
+              if (latestEvent.notes && String(latestEvent.notes).trim()) {
+                existingDetailed.notes = String(latestEvent.notes).trim();
+              }
+              existingDetailed.updated_at = new Date().toISOString();
+              update.detailed_status = existingDetailed;
             }
           }
 
