@@ -31,6 +31,18 @@ interface TrackingResult {
   live_route: boolean;
   route_checkpoints: any[];
   admin_note?: string | null;
+  // ── FIX: extra fields that the simpler PublicTracking.tsx reads and that
+  // the boarding-pass version was previously ignoring. When staff update a
+  // parcel from the manifest, some of these columns may be populated (e.g.
+  // `detailed_status.location`, `current_location`, `status_notes`) and we
+  // need to surface them — otherwise the boarding pass would silently hide
+  // the very update the staff member just made.
+  detailed_status?: any;
+  current_location?: string | null;
+  last_location?: string | null;
+  status_notes?: string | null;
+  service_type?: string | null;
+  estimated_delivery?: string | null;
 }
 
 // Helper function to group events by date
@@ -162,6 +174,7 @@ const formatStatusLabel = (status: string) =>
 // the first non-empty note regardless of which field it lives in.
 const NOTE_FIELDS = [
   "admin_note",
+  "admin_comment",   // FIX: PublicTracking.tsx reads event.admin_comment — we used to miss it.
   "staff_note",
   "internal_note",
   "note",
@@ -187,18 +200,25 @@ const getEventNote = (event: any): string | null => {
   return null;
 };
 
-// Decide whether a `place`-like value looks like a real place (city /
-// airport / hub name) rather than a free-form note that was mistakenly
-// stored in the location field. If it doesn't look like a place, we drop
-// it from the MapPin line so it doesn't visually merge with the note.
+// Decide whether a `place`-like value should be shown on the MapPin line.
+//
+// FIX: previously this helper was far too strict — it rejected any location
+// string that contained words like "we", "your", "parcel", "shipment", or
+// that had multiple sentences. But staff in the manifest editor often write
+// things like "Parcel held at Lahore hub for customs check", which trips
+// those filters and made the boarding pass hide the location entirely —
+// even though the simpler PublicTracking.tsx shows it just fine.
+//
+// The new rule is permissive: show the value as long as it's a non-empty
+// string of reasonable length. The only thing we drop is a value that
+// looks like a long paragraph (200+ chars) — that's almost certainly a
+// note that ended up in the wrong field, and the Note callout already
+// shows it below.
 const looksLikePlace = (value: string): boolean => {
   if (!value) return false;
   const s = value.trim();
-  if (s.length < 2 || s.length > 80) return false;
-  // Notes are usually full sentences with verbs; places aren't.
-  if (/\b(we|your|its|i am|please|kindly|note that|this is|the parcel|the shipment|your parcel)\b/i.test(s)) return false;
-  // Multiple full sentences = definitely a note, not a place.
-  if (/[.!?]\s+[A-Z]/.test(s)) return false;
+  if (s.length < 2) return false;
+  if (s.length > 200) return false; // long paragraph = treat as a note, not a place
   return true;
 };
 
@@ -262,17 +282,79 @@ export const TrackingSection = () => {
         //   1. The most recent event in `status_timeline` (if any) — this is
         //      what the manifest editor just wrote, so it's the freshest.
         //   2. `current_status` (what `cascadeStatusToParcels` writes).
-        //   3. `shipping_status` (kept for backwards-compat with any legacy
-        //      rows that only set this column).
-        //   4. "pending" as a last-resort default.
+        //   3. `status` (some legacy rows write to this column).
+        //   4. `shipping_status` (kept for backwards-compat).
+        //   5. "pending" as a last-resort default.
         const timeline: any[] = Array.isArray(parcelData.status_timeline) ? parcelData.status_timeline : [];
         const latestFromTimeline = [...timeline]
           .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
         const resolvedStatus =
           latestFromTimeline?.status ||
           parcelData.current_status ||
+          parcelData.status ||
           parcelData.shipping_status ||
+          parcelData.parcel_status ||
+          parcelData.manifest_status ||
           "pending";
+
+        // ── FIX: surface "current location" + "status notes" from every
+        // place the manifest / parcel-management workflow might have written
+        // them. PublicTracking.tsx already reads these; the boarding pass
+        // didn't, which is why a manifest update appeared there but not here.
+        //
+        // Resolution order for the "current location" string:
+        //   1. `detailed_status.location` (object form, written by some flows)
+        //   2. `current_location` (direct column)
+        //   3. `last_location`    (direct column)
+        //   4. The `location` of the most recent timeline event.
+        //
+        // Resolution order for the "status notes" string:
+        //   1. `detailed_status.notes`
+        //   2. `status_notes`
+        //   3. The `notes` of the most recent timeline event.
+        //   4. `admin_note` (top-level column).
+        const detailedStatus: any =
+          parcelData.detailed_status && typeof parcelData.detailed_status === "object"
+            ? parcelData.detailed_status
+            : null;
+
+        const latestEventLocation =
+          latestFromTimeline?.location ||
+          latestFromTimeline?.place ||
+          latestFromTimeline?.city ||
+          latestFromTimeline?.checkpoint ||
+          "";
+
+        const currentLocation =
+          detailedStatus?.location ||
+          parcelData.current_location ||
+          parcelData.last_location ||
+          latestEventLocation ||
+          null;
+
+        const statusNotes =
+          detailedStatus?.notes ||
+          detailedStatus?.note ||
+          parcelData.status_notes ||
+          latestFromTimeline?.notes ||
+          latestFromTimeline?.admin_comment ||
+          parcelData.admin_note ||
+          parcelData.staff_note ||
+          parcelData.internal_note ||
+          parcelData.notes ||
+          null;
+
+        // The top-of-pass "Note from SkyXpress" callout shows `admin_note`.
+        // If a top-level `admin_note` column exists, prefer it; otherwise
+        // fall back to the freshest staff comment we resolved above so the
+        // callout is never empty when staff have actually written something.
+        const adminNoteForCallout =
+          parcelData.admin_note ||
+          parcelData.staff_note ||
+          parcelData.internal_note ||
+          parcelData.notes ||
+          statusNotes ||
+          null;
 
         setTrackingResult({
           tracking_id: parcelData.tracking_id,
@@ -285,12 +367,13 @@ export const TrackingSection = () => {
           status_timeline: timeline,
           live_route: parcelData.live_route || false,
           route_checkpoints: parcelData.route_checkpoints || [],
-          admin_note:
-            parcelData.admin_note ||
-            parcelData.staff_note ||
-            parcelData.internal_note ||
-            parcelData.notes ||
-            null,
+          admin_note: adminNoteForCallout,
+          detailed_status: detailedStatus,
+          current_location: currentLocation,
+          last_location: parcelData.last_location || null,
+          status_notes: statusNotes,
+          service_type: parcelData.service_type || null,
+          estimated_delivery: parcelData.estimated_delivery || null,
         });
 
         toast({
@@ -498,6 +581,33 @@ export const TrackingSection = () => {
                   </div>
                 </div>
 
+                {/* ── FIX: "Current Location" callout ──
+                    Previously the boarding pass had no dedicated spot for the
+                    parcel's current location — it was only ever shown inline
+                    next to a timeline event, and even then only when the
+                    `looksLikePlace` filter agreed. Now we surface it here, in
+                    its own panel, reading from `current_location` /
+                    `detailed_status.location` / `last_location` / latest
+                    timeline event's location — exactly the same fields the
+                    simpler PublicTracking.tsx reads. */}
+                {trackingResult.current_location && (
+                  <div className="px-6 pb-4 sm:px-10">
+                    <div className="flex items-start gap-3 rounded-xl border border-[#2E86FF]/20 bg-[#F0F6FF] px-4 py-3">
+                      <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#2E86FF] text-white">
+                        <MapPin className="h-3.5 w-3.5" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="sx-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-[#2E86FF]">
+                          Current Location
+                        </p>
+                        <p className="mt-0.5 text-sm font-semibold leading-snug text-[#0B2545] break-words">
+                          {trackingResult.current_location}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {trackingResult.admin_note && (
                   <div className="px-6 pb-6 sm:px-10">
                     <div className="sx-display relative inline-block max-w-full rotate-[-1deg] rounded-lg border border-dashed border-[#FFB020]/60 bg-[#FFF7E8] px-4 py-3 text-sm text-[#8A5B00] shadow-sm transition-transform duration-200 hover:rotate-0">
@@ -635,11 +745,16 @@ export const TrackingSection = () => {
                         const isLatest = dateIndex === 0 && eventIndex === 0;
                         const rawPlace = event.location || event.place || event.city || event.checkpoint;
                         const eventNote = getEventNote(event);
-                        // Only show the MapPin line if the value actually
-                        // looks like a place AND isn't a duplicate of the
-                        // note (which sometimes gets stored in both fields).
+                        // FIX: previously we also required `rawPlace !== eventNote`
+                        // which dropped the MapPin line whenever the location
+                        // happened to match the note. But staff often write the
+                        // same text in both fields (or the backend mirrors it),
+                        // and that should NOT hide the location — the simpler
+                        // PublicTracking.tsx always shows it. Now we only drop
+                        // the place line if `looksLikePlace` rejects it (e.g.
+                        // empty or 200+ chars).
                         const place =
-                          rawPlace && looksLikePlace(rawPlace) && rawPlace !== eventNote
+                          rawPlace && looksLikePlace(rawPlace)
                             ? rawPlace
                             : "";
                         const eventStageIndex = getStageIndex(event.status);
