@@ -53,16 +53,29 @@ const PublicTracking = () => {
       if (error) throw error;
 
       if (data) {
+        // FIX: Check ALL possible status fields to ensure we get the latest status
+        // Priority: status > shipping_status > current_status > parcel_status > manifest_status
+        const status = 
+          data.status || 
+          data.shipping_status || 
+          data.current_status || 
+          data.parcel_status || 
+          data.manifest_status || 
+          'pending';
+
         // Map to TrackingResult format
         setTrackingResult({
           tracking_number: data.tracking_id,
-          current_status: data.shipping_status || data.current_status,
-          origin: data.from_country,
-          destination: data.to_country,
+          current_status: status,
+          origin: data.from_country || data.origin_country || 'Unknown',
+          destination: data.to_country || data.destination_country || 'Unknown',
           service_type: data.service_type || 'standard',
           estimated_delivery: data.estimated_delivery || '',
-          events: data.status_timeline || [],
-          detailed_status: data.detailed_status || {}
+          events: data.status_timeline || data.tracking_events || [],
+          detailed_status: data.detailed_status || {
+            location: data.current_location || data.last_location,
+            notes: data.status_notes || ''
+          }
         });
       } else {
         setTrackingResult(null);
@@ -85,7 +98,8 @@ const PublicTracking = () => {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
+    const normalizedStatus = (status || '').toLowerCase().replace(/\s+/g, '_');
+    switch (normalizedStatus) {
       case 'delivered': return 'bg-green-500 text-white';
       case 'in_transit': return 'bg-blue-500 text-white';
       case 'delayed': return 'bg-red-500 text-white';
@@ -101,7 +115,8 @@ const PublicTracking = () => {
   };
 
   const getStatusIcon = (status: string) => {
-    switch (status) {
+    const normalizedStatus = (status || '').toLowerCase().replace(/\s+/g, '_');
+    switch (normalizedStatus) {
       case 'delivered': return <CheckCircle2 className="h-5 w-5" />;
       case 'in_transit': return <Truck className="h-5 w-5" />;
       case 'out_for_delivery': return <Truck className="h-5 w-5" />;
@@ -115,7 +130,8 @@ const PublicTracking = () => {
   };
 
   const getStatusIconBg = (status: string) => {
-    switch (status) {
+    const normalizedStatus = (status || '').toLowerCase().replace(/\s+/g, '_');
+    switch (normalizedStatus) {
       case 'delivered': return 'bg-green-100';
       case 'in_transit': return 'bg-blue-100';
       case 'delayed': return 'bg-red-100';
@@ -180,39 +196,45 @@ const PublicTracking = () => {
             <Search className="h-6 w-6 text-blue-600" />
             Track Your Shipment
           </CardTitle>
-          <p className="text-gray-600 mt-2 text-sm">
-            Enter your Reference ID or Tracking ID to get real-time updates
-          </p>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSearch} className="flex gap-3 max-w-md mx-auto">
+          <form onSubmit={handleSearch} className="flex gap-2">
             <Input
-              type="text"
-              placeholder="Enter tracking number"
+              placeholder="Enter Tracking ID or Reference ID..."
               value={trackingId}
               onChange={(e) => setTrackingId(e.target.value)}
-              className="flex-1 h-12 text-base"
+              className="flex-1"
             />
-            <Button type="submit" disabled={loading} className="h-12 px-8">
+            <Button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white">
               {loading ? "Searching..." : "Track"}
             </Button>
           </form>
         </CardContent>
       </Card>
 
-      {/* Tracking Results */}
+      {/* Results */}
       {trackingResult && (
         <div className="space-y-6">
-          {/* Shipment Overview */}
-          <Card className="border-none shadow-lg">
-            <CardHeader className="pb-4">
-              <CardTitle className="flex items-center justify-between flex-wrap gap-3">
-                <span className="font-semibold text-lg text-gray-900">
-                  Tracking: {trackingResult.tracking_number}
-                </span>
-                <Badge className={`${getStatusColor(trackingResult.current_status)} px-4 py-1.5 rounded-full text-sm font-semibold`}>
+          {/* Status Badge */}
+          <Card className="border-none shadow-lg bg-gradient-to-r from-blue-50 to-indigo-50">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-gray-600 mb-2">Tracking Number</div>
+                  <div className="text-2xl font-bold text-gray-900">{trackingResult.tracking_number}</div>
+                </div>
+                <Badge className={`${getStatusColor(trackingResult.current_status)} px-4 py-2 text-sm font-bold`}>
                   {trackingResult.current_status.replace('_', ' ').toUpperCase()}
                 </Badge>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Shipment Details */}
+          <Card className="border-none shadow-lg">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-xl font-bold text-blue-600">
+                Shipment Details
               </CardTitle>
             </CardHeader>
             <CardContent>
