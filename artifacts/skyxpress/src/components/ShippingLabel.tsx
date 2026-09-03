@@ -196,24 +196,23 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     styleEl.textContent = styleContent;
     doc.head.appendChild(styleEl);
 
-    // ── A4 geometry ──
-    // A4 = 210 × 297 mm. With a 10 mm margin each side we get a usable
-    // printable area of 190 × 277 mm.
+    // ── A4 LANDSCAPE geometry ──
+    // A4 landscape = 297 × 210 mm. With a 10 mm margin each side we get a
+    // usable printable area of 277 × 190 mm — wide and short, which fits the
+    // label's natural aspect ratio far better than portrait did (the label
+    // is wider than it is tall, so portrait was leaving big empty bands at
+    // top & bottom).
     //
     // The label is designed at 560 px on screen. We scale it so its width
-    // maps to roughly 175 mm (≈ 660 px at 96 dpi) — that leaves a
-    // comfortable 7.5 mm of breathing room INSIDE the 190 mm usable area,
-    // so the label never touches the page margin and looks "a bit small"
-    // but proportionally correct, exactly as requested.
-    //
-    // We deliberately DO NOT stretch the label to the full usable height
-    // anymore — that produced an oversized, half-empty card. The label
-    // now renders at its natural height, vertically centered on the page.
+    // maps to roughly 250 mm of the 277 mm usable width — that leaves a
+    // comfortable breathing room on the sides and lets the label sit
+    // roughly centered on the landscape page. Vertical centring is handled
+    // by offsetting the absolutely-positioned label inside the usable area.
     const LABEL_W = 560;
-    const A4_SCALE = 1.15; // 560 × 1.15 ≈ 644 px ≈ 170 mm
+    const A4_SCALE = 1.18; // 560 × 1.18 ≈ 661 px ≈ 175 mm wide
     const PX_PER_MM = 96 / 25.4;
-    const USABLE_W_PX = (210 - 20) * PX_PER_MM; // ≈ 718 px
-    const USABLE_H_PX = (297 - 20) * PX_PER_MM; // ≈ 1046 px
+    const USABLE_W_PX = (297 - 20) * PX_PER_MM; // landscape: 277 mm ≈ 1046 px
+    const USABLE_H_PX = (210 - 20) * PX_PER_MM; // landscape: 190 mm ≈ 718 px
 
     const naturalHeight = labelEl.getBoundingClientRect().height || labelEl.scrollHeight;
     const scaledW = LABEL_W * A4_SCALE;
@@ -224,7 +223,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
     const printStyle = doc.createElement("style");
     printStyle.textContent = `
-      @page { margin: 10mm; size: A4 portrait; }
+      @page { margin: 10mm; size: A4 landscape; }
       html, body { margin: 0; padding: 0; background: #fff; }
       #print-wrapper {
         position: relative;
@@ -273,17 +272,19 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const { default: jsPDF } = await import("jspdf");
 
     // â”€â”€ constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // ── A4 layout ──
-    // Use a real A4 page (210 × 297 mm) with a 10 mm margin on every side,
-    // matching the print output. The label itself is drawn at its original
-    // 105 mm design width and then scaled to ~1.6× to occupy about 170 mm
-    // of the 190 mm usable area — same proportional size as the print
-    // preview, so PDF and printed page look the same.
-    const PAGE_W = 210;
-    const PAGE_H = 297;
+    // ── A4 LANDSCAPE layout ──
+    // Use a real A4 LANDSCAPE page (297 × 210 mm) with a 10 mm margin on
+    // every side, matching the print output exactly. The label itself is
+    // drawn at its original 105 mm design width and then scaled to fit the
+    // landscape usable area — sized by the SHORTER constraint (height) so
+    // the label's full body always fits inside the 190 mm tall usable area
+    // without overflowing top/bottom. PDF, on-screen preview, and printed
+    // page ALL look identical.
+    const PAGE_W = 297;   // landscape: long edge
+    const PAGE_H = 210;   // landscape: short edge
     const MARGIN = 10;
-    const USABLE_W = PAGE_W - 2 * MARGIN; // 190 mm
-    const USABLE_H = PAGE_H - 2 * MARGIN; // 277 mm
+    const USABLE_W = PAGE_W - 2 * MARGIN; // 277 mm
+    const USABLE_H = PAGE_H - 2 * MARGIN; // 190 mm
 
     // Original design width of the label drawing code (do not change —
     // all coordinates below assume this).
@@ -292,21 +293,23 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const CONTACT_W = 34;        // right panel width for contact
     const ORIGIN_W  = 22;        // right panel width for origin
     const addrMaxW  = W - CONTACT_W - pad - 3;  // max width for address lines
-    const PDF_SCALE = USABLE_W / W / 1.12; // ≈ 1.62 — leaves a small breathing margin
+    // (PDF_SCALE is recomputed below, after H is known, so the label fits BOTH
+    // the landscape width AND height constraints.)
+    const PDF_SCALE_GUESS = USABLE_W / W / 1.1; // initial guess for text wrapping only
 
     // â”€â”€ temp doc to measure text before we know final height â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Use the SCALED font size so splitTextToSize wraps at the same width
     // the real drawing will render at (otherwise wrapped lines overflow).
     const tmp = new jsPDF({ unit: "mm", format: [W, 300] });
-    tmp.setFont("helvetica", "normal"); tmp.setFontSize(7.5 * PDF_SCALE);
+    tmp.setFont("helvetica", "normal"); tmp.setFontSize(7.5 * PDF_SCALE_GUESS);
 
     // Pre-wrap address lines so we know how many rows each section needs.
     // Wrap widths are SCALED (real page mm) so wrapping matches what the
     // real doc renders at the scaled font size.
     const sndWrapped: string[] = sndLines.flatMap(ln =>
-      tmp.splitTextToSize(ln, (W - ORIGIN_W - pad - 3) * PDF_SCALE));
+      tmp.splitTextToSize(ln, (W - ORIGIN_W - pad - 3) * PDF_SCALE_GUESS));
     const rcvWrapped: string[] = rcvLines.flatMap(ln =>
-      tmp.splitTextToSize(ln, addrMaxW * PDF_SCALE));
+      tmp.splitTextToSize(ln, addrMaxW * PDF_SCALE_GUESS));
 
     const LINE_H = 3.6;
     const fromBodyH = Math.max(0, (sndWrapped.slice(0, 6).length) * LINE_H);
@@ -322,9 +325,18 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const bcH   = 17;   // barcode image height
     const H = hdrH + fromH + toH + barH + refH + wH + 4 + (bcH + 7) * 2 + 6;
 
+    // ── PDF_SCALE (final) ──
+    // Pick the LARGEST scale that lets the label fit BOTH the usable width
+    // (277 mm) AND the usable height (190 mm) of an A4 landscape page. Using
+    // min() here is what guarantees the label is never cropped on either axis
+    // — the height constraint is the tighter one in landscape, so the label
+    // ends up sized to fill the page height and leaves comfortable horizontal
+    // margins on the sides.
+    const PDF_SCALE = Math.min(USABLE_W / W / 1.05, USABLE_H / H / 1.05);
+
     // â”€â”€ real doc â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // A4 page, all drawing is offset by MARGIN and scaled to fit nicely.
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [PAGE_W, PAGE_H] });
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: [PAGE_W, PAGE_H] });
     // Translate the drawing origin to (MARGIN, MARGIN) and scale uniformly
     // around that new origin so all existing (x, y) coordinates keep
     // working unchanged.
@@ -845,14 +857,14 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
       {/* â”€â”€ Print styles â”€â”€ */}
       <style>{`
         @media print {
-          @page { margin: 10mm; size: A4 portrait; }
+          @page { margin: 10mm; size: A4 landscape; }
           body * { visibility: hidden !important; }
           #shipping-label-print,
           #shipping-label-print * { visibility: visible !important; }
-          /* Scale the 560px label so it sits nicely inside the 190mm
-             usable area with a 10mm page margin — matches the Save-PDF
-             output exactly. transform-origin top center keeps it
-             horizontally centered on the page. */
+          /* Scale the 560px label so it sits nicely inside the 277mm
+             usable area of an A4 LANDSCAPE sheet with a 10mm page margin —
+             matches the Save-PDF output exactly. transform-origin top
+             center keeps it horizontally centered on the page. */
           #shipping-label-print {
             position: relative !important;
             top: 0 !important;
@@ -862,7 +874,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
             border: 1px solid #000 !important;
             padding: 0 !important;
             margin: 0 auto !important;
-            transform: scale(1.15) !important;
+            transform: scale(1.18) !important;
             transform-origin: top center !important;
           }
         }
