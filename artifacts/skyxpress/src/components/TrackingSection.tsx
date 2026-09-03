@@ -252,15 +252,37 @@ export const TrackingSection = () => {
         .single();
 
       if (parcelData) {
+        // ── FIX: pick the most reliable "current status" ──
+        // Previously we used `shipping_status || current_status`, but the
+        // manifest editor only updates `current_status` (and pushes events
+        // into `status_timeline`). If `shipping_status` ever had a stale
+        // value, the OLD status was shown instead of the new one.
+        //
+        // New resolution order:
+        //   1. The most recent event in `status_timeline` (if any) — this is
+        //      what the manifest editor just wrote, so it's the freshest.
+        //   2. `current_status` (what `cascadeStatusToParcels` writes).
+        //   3. `shipping_status` (kept for backwards-compat with any legacy
+        //      rows that only set this column).
+        //   4. "pending" as a last-resort default.
+        const timeline: any[] = Array.isArray(parcelData.status_timeline) ? parcelData.status_timeline : [];
+        const latestFromTimeline = [...timeline]
+          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+        const resolvedStatus =
+          latestFromTimeline?.status ||
+          parcelData.current_status ||
+          parcelData.shipping_status ||
+          "pending";
+
         setTrackingResult({
           tracking_id: parcelData.tracking_id,
           reference_id: parcelData.reference_id,
           sender_name: parcelData.sender_name,
           receiver_name: parcelData.receiver_name,
-          current_status: parcelData.shipping_status || parcelData.current_status,
+          current_status: resolvedStatus,
           from_country: parcelData.from_country,
           to_country: parcelData.to_country,
-          status_timeline: parcelData.status_timeline || [],
+          status_timeline: timeline,
           live_route: parcelData.live_route || false,
           route_checkpoints: parcelData.route_checkpoints || [],
           admin_note:
@@ -273,7 +295,7 @@ export const TrackingSection = () => {
 
         toast({
           title: "Parcel found!",
-          description: `Status: ${parcelData.shipping_status || parcelData.current_status}`,
+          description: `Status: ${resolvedStatus}`,
         });
       } else {
         toast({
