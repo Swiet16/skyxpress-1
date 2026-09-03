@@ -793,12 +793,26 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     try {
       const userLabel = currentUser?.email || currentUser?.name || "admin";
       await updateManifestInStockDB(editing.manifestId, editing);
+
+      // FIX: push the manifest's "Tracking Events" tab down to the parcels
+      // table's status_timeline so the public tracking page picks them up.
+      // Without this, events staff add in the editor are saved only on the
+      // manifest record and never appear on the customer-facing tracking page.
+      await syncTrackingEventsToParcels(editing);
+
       // Save history snapshot (without parcels to keep it lightweight)
       const { parcels: _, trackingIds: __, ...snap } = editing;
       await saveManifestHistory(editing.manifestId, snap, userLabel);
       await reload();
       setSelected(editing);
-      toast({ title: "Manifest updated ✓", description: `Manifest ${editing.manifestId} saved.` });
+      toast({
+        title: "Manifest updated ✓",
+        description: `Manifest ${editing.manifestId} saved${
+          (editing.trackingEvents?.length || 0) > 0
+            ? ` · ${editing.trackingEvents.length} tracking event(s) synced to parcels`
+            : ""
+        }.`,
+      });
     } finally {
       setSaving(false);
     }
@@ -1112,6 +1126,11 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
   //   3. The standalone `parcels` table in Supabase — including appending a
   //      timeline event (status + comment) to `status_timeline`, which is what
   //      the public tracking page reads and displays to the customer.
+  //
+  // FIX: we now ALSO mirror the comment into `admin_note` on the parcels row
+  // so the stylish "Note from SkyXpress" callout at the top of the public
+  // tracking page shows the most recent staff comment — not just the inline
+  // note attached to the timeline dot.
   const cascadeStatusToParcels = async (manifestId: string, status: string, parcels: any[], comment?: string) => {
     const hasParcels = parcels && parcels.length > 0;
     const entry = entries.find((e) => e.manifestId === manifestId);
@@ -1129,6 +1148,9 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
 
     // 3. Push the same status + a timeline event (with the optional comment) into
     //    the shared `parcels` table (Parcel Management + Public Tracking backend).
+    //    Also mirror the comment into `admin_note` so the public tracking page's
+    //    top-of-pass "Note from SkyXpress" callout stays in sync with the latest
+    //    staff comment.
     if (hasParcels) {
       const trackingIds = updatedParcels.map((p) => p.tracking_id).filter(Boolean);
       if (trackingIds.length > 0) {
@@ -1151,6 +1173,11 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                     current_status: status,
                     updated_at: nowIso,
                     status_timeline: [...existing, newEvent],
+                    // Mirror the staff comment into `admin_note` so the public
+                    // tracking page's prominent note callout stays current.
+                    // If no comment was supplied, leave the existing admin_note
+                    // untouched — we never blank it out from here.
+                    ...(comment && comment.trim() ? { admin_note: comment.trim() } : {}),
                   })
                   .eq("id", r.id);
               })
@@ -1163,6 +1190,128 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     }
 
     return updatedParcels;
+  };
+
+  // ── Sync the manifest's "Tracking Events" tab down to the parcels table.
+  // This is the missing piece that previously left the public tracking page
+  // blank when staff added per-AWB tracking events from the manifest editor.
+  //
+  // Each tracking event in `editing.trackingEvents` has the shape:
+  //   { id, awb, event, location, timestamp, notes }
+  // We map it onto a parcels.status_timeline entry of the shape:
+  //   { status, timestamp, location, notes }
+  // and append it to the matching parcel's timeline (deduped by timestamp+status
+  // so re-saving the manifest doesn't duplicate entries). We also bump the
+  // parcel's `current_status` to the latest event's status (most recent by
+  // timestamp) so the boarding-pass status indicator on the public page
+  // reflects what staff just entered.
+  const syncTrackingEventsToParcels = async (manifestEntry: ManifestStockEntry) => {
+    const events = (manifestEntry.trackingEvents || []).filter(
+      (ev: any) => ev && ev.awb && (ev.event || ev.location || ev.notes)
+    );
+    if (events.length === 0) return;
+
+    // Group events by AWB so we issue one update per parcel, with all of its
+    // new events merged into a single deduped timeline.
+    const byAwb: Record<string, any[]> = {};
+    events.forEach((ev: any) => {
+      const key = String(ev.awb).trim();
+      if (!byAwb[key]) byAwb[key] = [];
+      byAwb[key].push(ev);
+    });
+
+    const trackingIds = Object.keys(byAwb);
+    if (trackingIds.length === 0) return;
+
+    try {
+      const { data: rows, error: fetchErr } = await supabase
+        .from("parcels")
+        .select("id, tracking_id, status_timeline, current_status")
+        .in("tracking_id", trackingIds);
+
+      if (fetchErr) {
+        console.warn("[ManifestStock] failed to fetch parcels for tracking-event sync:", fetchErr.message);
+        return;
+      }
+      if (!rows || rows.length === 0) return;
+
+      await Promise.all(
+        rows.map((r: any) => {
+          const incoming = byAwb[r.tracking_id] || [];
+          if (incoming.length === 0) return null;
+
+          const existing = Array.isArray(r.status_timeline) ? r.status_timeline : [];
+
+          // Dedupe key = `${timestamp}|${status}`. If the staff edited an
+          // existing event in place (same timestamp), we still overwrite the
+          // matching entry instead of appending a duplicate.
+          const merged = [...existing];
+          let latestEvent: any = null;
+
+          incoming.forEach((ev: any) => {
+            // Normalize timestamp: manifest stores local `datetime-local`
+            // strings ("YYYY-MM-DDTHH:mm") — convert to ISO so the public
+            // page's Date parsing works in every browser.
+            let ts = ev.timestamp;
+            try {
+              if (ts && !ts.endsWith("Z") && !/\.\d{3}/.test(ts)) {
+                ts = new Date(ts).toISOString();
+              }
+            } catch {
+              ts = new Date().toISOString();
+            }
+            const status = (ev.event || "").toString().trim().toLowerCase().replace(/\s+/g, "_") || "update";
+            const newEntry = {
+              status,
+              timestamp: ts,
+              location: ev.location || "",
+              notes: ev.notes || "",
+            };
+            const key = `${ts}|${status}`;
+            const idx = merged.findIndex(
+              (m: any) => `${m.timestamp}|${m.status}` === key
+            );
+            if (idx >= 0) merged[idx] = newEntry;
+            else merged.push(newEntry);
+
+            if (!latestEvent || new Date(ts) > new Date(latestEvent.timestamp)) {
+              latestEvent = newEntry;
+            }
+          });
+
+          // Sort timeline newest-first so the tracking page can render the
+          // "Latest" badge on the first item without re-sorting.
+          merged.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+          const update: Record<string, any> = {
+            status_timeline: merged,
+            updated_at: new Date().toISOString(),
+          };
+
+          // Bump current_status to the newest event's status, unless the
+          // parcel is already at a terminal state (delivered / cancelled /
+          // returned) — we don't want to accidentally regress a delivered
+          // parcel back to "in_transit" if a staff member edits an older
+          // event in the manifest's Tracking Events tab.
+          if (latestEvent) {
+            const terminal = ["delivered", "cancelled", "returned"];
+            if (!terminal.includes(String(r.current_status).toLowerCase())) {
+              update.current_status = latestEvent.status;
+            }
+            // Mirror the latest non-empty note into admin_note so the
+            // prominent "Note from SkyXpress" callout on the public page
+            // reflects what staff just wrote.
+            if (latestEvent.notes && String(latestEvent.notes).trim()) {
+              update.admin_note = String(latestEvent.notes).trim();
+            }
+          }
+
+          return supabase.from("parcels").update(update).eq("id", r.id);
+        })
+      );
+    } catch (err) {
+      console.warn("[ManifestStock] tracking-events sync error:", err);
+    }
   };
 
   const handleBulkStatusApply = async () => {
