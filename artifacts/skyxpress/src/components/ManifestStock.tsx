@@ -1542,12 +1542,15 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
         </CardContent>
       </Card>
 
-      {/* ── MANIFEST DETAIL — inline panel (no slide) ────────────────────────── */}
-      {selected && editing && (
-        <div className="rounded-xl border border-slate-200 bg-white shadow-md overflow-hidden">
+      {/* ── MANIFEST DETAIL — pop-up modal (Dialog) ───────────────────────── */}
+      {/* Was previously an inline panel rendered below the list, which pushed all */}
+      {/* the manifests down and was a poor UX. Now opens as a full-screen modal. */}
+      <Dialog open={!!selected && !!editing} onOpenChange={(o) => { if (!o) closeDetail(); }}>
+        <DialogContent className="max-w-[95vw] w-full max-h-[92vh] p-0 gap-0 overflow-hidden flex flex-col [&>button]:hidden">
+          <div className="flex flex-col flex-1 overflow-hidden">
           <>
             {/* Top header */}
-            <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+            <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 px-4 py-3 flex items-center justify-between flex-wrap gap-2 flex-shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2">
                     <ClipboardList className="h-4 w-4 text-orange-400" />
@@ -1622,8 +1625,8 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                     </div>
                   </div>
 
-                  {/* Scrollable content */}
-                  <div className="overflow-y-auto flex-1" style={{ maxHeight: "calc(100vh - 160px)" }}>
+                  {/* Scrollable content — maxHeight dropped; flex-1 fills the dialog instead */}
+                  <div className="overflow-y-auto flex-1">
 
                     {/* ══ ENTRY TAB ══════════════════════════════════════════ */}
                     <TabsContent value="entry" className="m-0 p-4 space-y-4">
@@ -2203,7 +2206,8 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
               </div>
             </>
           </div>
-        )}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Bagging Dialog ────────────────────────────────────────────────────── */}
       {editing && (
