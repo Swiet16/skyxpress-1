@@ -457,10 +457,29 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     };
     // Override addImage so existing barcode addImage calls get transformed
     // AND rotated 90° CCW to match the rest of the label.
+    //
+    // EMPIRICALLY VERIFIED jsPDF behaviour for `addImage(x, y, w, h, ..., rotation=90)`:
+    //   - jsPDF uses (x, y+h) — the BOTTOM-LEFT corner of the original image —
+    //     as the rotation anchor (NOT (x, y)).
+    //   - The rotation matrix output to the PDF is `0 1 -1 0 0 0`,
+    //     which is a 90° counter-clockwise (visual CCW) rotation.
+    //   - After rotation, the on-page rect (jsPDF Y-DOWN coords) becomes:
+    //       x ∈ [x - h, x]            (image extends LEFT of anchor by h)
+    //       y ∈ [y + h - w, y + h]   (image extends UP from y+h-w to y+h)
+    //     i.e. width = h, height = w (swapped from original).
+    //
+    // For our design rotation (visual CCW), we want the rotated image to
+    // occupy the page rect:
+    //       x ∈ [pdfPx(y), pdfPx(y+h)]       width = h * scale
+    //       y ∈ [pdfPy(x+w), pdfPy(x)]       height = w * scale
+    //
+    // Matching against jsPDF's behaviour (anchor = (x_param, y_param + h_param)):
+    //   x_param            = pdfPx(y + h)                       (right edge of desired rect)
+    //   y_param + h_param  = pdfPy(x)        → y_param = pdfPy(x) - h * scale  (bottom edge)
+    //   w_param            = w * scale                          (unrotated image width)
+    //   h_param            = h * scale                          (unrotated image height)
     doc.addImage = (data: any, format: string, x: number, y: number, w: number, h: number, alias?: any, compression?: any, _rotation?: any) => {
-      // design rect (x, y, w, h) → page rect at (pdfPx(y), pdfPy(x+w)),
-      // size (h*scale, w*scale), and rotate the image 90° CCW (rotation=90).
-      return _origAddImage(data, format, pdfPx(y), pdfPy(x + w), h * _scale, w * _scale, alias, compression, 90);
+      return _origAddImage(data, format, pdfPx(y + h), pdfPy(x) - h * _scale, w * _scale, h * _scale, alias, compression, 90);
     };
     // Override line() and rect() so any direct calls elsewhere in the code
     // (e.g. the vertical divider, outer border) also get transformed.
