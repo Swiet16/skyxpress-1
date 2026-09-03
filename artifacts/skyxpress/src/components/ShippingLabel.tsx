@@ -218,9 +218,10 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const naturalHeight = labelEl.getBoundingClientRect().height || labelEl.scrollHeight;
     const scaledW = LABEL_W * A4_SCALE;
     const scaledH = naturalHeight * A4_SCALE;
-    // Center the label both horizontally and vertically inside the usable area
+    // Center horizontally, but anchor the label to the BOTTOM of the usable
+    // area so the upper side of the portrait page stays free/empty.
     const offsetX = Math.max(0, (USABLE_W_PX - scaledW) / 2);
-    const offsetY = Math.max(0, (USABLE_H_PX - scaledH) / 2);
+    const offsetY = Math.max(0, USABLE_H_PX - scaledH);
 
     const printStyle = doc.createElement("style");
     printStyle.textContent = `
@@ -330,7 +331,9 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     // working unchanged.
     const _scale = PDF_SCALE;
     const _originX = (USABLE_W - W * _scale) / 2 + MARGIN;
-    const _originY = (USABLE_H - H * _scale) / 2 + MARGIN;
+    // Anchor label to the BOTTOM of the usable area so the upper side
+    // of the portrait page stays free/empty when saved/printed.
+    const _originY = USABLE_H - H * _scale + MARGIN;
     // Helper wrappers — every fillRect/hline/txt/addImage call below uses
     // these so coordinates are transformed consistently.
 
@@ -846,13 +849,23 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
       <style>{`
         @media print {
           @page { margin: 10mm; size: A4 portrait; }
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
+            width: 100%;
+            min-height: 100vh;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: flex-end !important; /* push label to the bottom */
+          }
           body * { visibility: hidden !important; }
           #shipping-label-print,
           #shipping-label-print * { visibility: visible !important; }
           /* Scale the 560px label so it sits nicely inside the 190mm
              usable area with a 10mm page margin — matches the Save-PDF
-             output exactly. transform-origin top center keeps it
-             horizontally centered on the page. */
+             output exactly. Anchored to the BOTTOM of the portrait page
+             so the upper side stays free/empty, as requested. */
           #shipping-label-print {
             position: relative !important;
             top: 0 !important;
@@ -863,7 +876,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
             padding: 0 !important;
             margin: 0 auto !important;
             transform: scale(1.15) !important;
-            transform-origin: top center !important;
+            transform-origin: bottom center !important;
           }
         }
       `}</style>
