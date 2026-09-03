@@ -664,6 +664,42 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
   const [singleStatusDialog, setSingleStatusDialog] = useState<{ open: boolean; manifestId: string; status: string; comment: string }>({
     open: false, manifestId: "", status: "", comment: "",
   });
+
+  // ── Multi-parcel "Create Manifest" workflow ──────────────────────────────
+  // Step 1: add one or more parcels by Reference ID / Tracking ID
+  // Step 2: fill in manifest-level fields (origin/dest hub, flight, service…)
+  // Step 3: generate the manifest and open it for editing
+  const [showCreateManifestDialog, setShowCreateManifestDialog] = useState(false);
+  const [refIdInput, setRefIdInput]                     = useState("");
+  const [pendingParcels, setPendingParcels]             = useState<any[]>([]);
+  const [searchingPending, setSearchingPending]         = useState(false);
+  const [showManifestFieldsDialog, setShowManifestFieldsDialog] = useState(false);
+  const [generating, setGenerating]                     = useState(false);
+  // Manifest draft fields captured in Step 2 — kept as a Partial so any field
+  // the user skips just falls back to the per-parcel value or the default.
+  const [manifestDraft, setManifestDraft] = useState<Record<string, any>>({
+    bookingFromDate: "",
+    bookingTillDate: "",
+    forwarder: "",
+    service: "",
+    masterNo: "",
+    masterEdiBagNo: "",
+    remark: "",
+    manifestDate: "",
+    manifestTime: "",
+    runNumber: "",
+    flightNo: "",
+    noOfBags: "",
+    arrivalDate: "",
+    arrivalTime: "",
+    company: "",
+    license: "",
+    vendorWeight: "",
+    totalVolumetricWt: "",
+    originHub: "",
+    destinationHub: "",
+  });
+
   const csvInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -957,6 +993,111 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     }
   };
 
+  // ── Multi-parcel Create Manifest workflow ───────────────────────────────
+  // Step 1 — add a parcel (or several) to the pending list using a Reference
+  // ID / Tracking ID lookup. Multiple parcels can be queued before generating.
+  const handleAddPendingParcel = async () => {
+    const q = refIdInput.trim();
+    if (!q) return;
+    setSearchingPending(true);
+    try {
+      const { data, error } = await supabase
+        .from("parcels")
+        .select("*")
+        .or(`reference_id.ilike.%${q}%,tracking_id.ilike.%${q}%`)
+        .limit(20);
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        toast({ title: "No parcels found", description: `Nothing matched "${q}"` });
+        return;
+      }
+      // De-dupe against what's already queued
+      const existingIds = new Set(pendingParcels.map((p) => p.tracking_id));
+      const additions = data.filter((p) => !existingIds.has(p.tracking_id));
+      if (additions.length === 0) {
+        toast({ title: "Already added", description: "All matched parcels are already in the list." });
+        return;
+      }
+      setPendingParcels((prev) => [...prev, ...additions]);
+      setRefIdInput("");
+      toast({
+        title: `${additions.length} parcel${additions.length > 1 ? "s" : ""} added ✓`,
+        description: "Add another, or click Generate Manifest to continue.",
+      });
+    } catch (e: any) {
+      toast({ title: "Search failed", description: e.message, variant: "destructive" });
+    } finally {
+      setSearchingPending(false);
+    }
+  };
+
+  const removePendingParcel = (trackingId: string) =>
+    setPendingParcels((prev) => prev.filter((p) => p.tracking_id !== trackingId));
+
+  const resetCreateManifest = () => {
+    setShowCreateManifestDialog(false);
+    setShowManifestFieldsDialog(false);
+    setPendingParcels([]);
+    setRefIdInput("");
+    setManifestDraft({
+      bookingFromDate: "", bookingTillDate: "", forwarder: "", service: "",
+      masterNo: "", masterEdiBagNo: "", remark: "", manifestDate: "", manifestTime: "",
+      runNumber: "", flightNo: "", noOfBags: "", arrivalDate: "", arrivalTime: "",
+      company: "", license: "", vendorWeight: "", totalVolumetricWt: "",
+      originHub: "", destinationHub: "",
+    });
+  };
+
+  // Step 3 — generate the manifest using the queued parcels + filled draft
+  const handleGenerateManifest = async () => {
+    if (pendingParcels.length === 0) {
+      toast({ title: "No parcels", description: "Add at least one parcel first.", variant: "destructive" });
+      return;
+    }
+    setGenerating(true);
+    try {
+      const manifestId = `SXM-${Date.now().toString().slice(-9)}`;
+      // Only keep non-empty draft values so per-parcel defaults take over for
+      // any field the user left blank.
+      const cleanDraft: Record<string, any> = {};
+      Object.entries(manifestDraft).forEach(([k, v]) => {
+        if (v !== "" && v !== null && v !== undefined) cleanDraft[k] = v;
+      });
+
+      const newEntry: any = {
+        manifestId,
+        createdAt: new Date().toISOString(),
+        parcels: pendingParcels,
+        parcelCount: pendingParcels.length,
+        trackingIds: pendingParcels.map((p) => p.tracking_id),
+        totalWeight: Math.round(pendingParcels.reduce((s, p) => s + Number(p.weight || 0), 0) * 100) / 100,
+        totalValue: Math.round(pendingParcels.reduce((s, p) => s + Number(p.total_price ?? p.value ?? 0), 0) * 100) / 100,
+        currency: pendingParcels[0]?.currency || "USD",
+        serviceType: cleanDraft.service || pendingParcels[0]?.service_type || "Standard",
+        fromCountry: pendingParcels[0]?.from_country || "",
+        toCountry: pendingParcels[0]?.to_country || "",
+        isLocked: false,
+        createdByUser: currentUser?.email || currentUser?.name || "",
+        manifestStatus: "created",
+        ...cleanDraft,
+      };
+      await saveManifestToStockDB(newEntry);
+      await reload();
+
+      const count = pendingParcels.length;
+      resetCreateManifest();
+      toast({
+        title: "Manifest created ✓",
+        description: `${manifestId} · ${count} parcel${count > 1 ? "s" : ""}`,
+      });
+      openDetail(newEntry);
+    } catch (e: any) {
+      toast({ title: "Failed to create manifest", description: e.message, variant: "destructive" });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   // ── Selection helpers ──────────────────────────────────────────────────────
   const toggleSelect = (id: string) =>
     setSelectedIds((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -1149,6 +1290,17 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
               )}
             </CardTitle>
             <div className="flex items-center gap-2">
+              <Button size="sm"
+                className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-sm border border-blue-700"
+                onClick={() => {
+                  // Open the multi-parcel Create Manifest wizard (default entry point).
+                  // The list of existing manifests stays visible behind the dialog.
+                  setShowCreateManifestDialog(true);
+                  setPendingParcels([]);
+                  setRefIdInput("");
+                }}>
+                <Plus className="h-3.5 w-3.5" /> Create Manifest
+              </Button>
               <Button variant="outline" size="sm"
                 className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
                 onClick={() => { setShowFindParcelDialog(true); setFindParcelQuery(""); setFindParcelResults([]); }}>
@@ -2209,6 +2361,270 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
               <Button variant="outline" size="sm" onClick={() => setShowBulkDialog(false)}>Cancel</Button>
               <Button size="sm" className="bg-blue-700 hover:bg-blue-800 text-white gap-1.5" onClick={handleBulkStatusApply}>
                 <CheckCircle2 className="h-3.5 w-3.5" /> Apply to {selectedIds.size} Manifest{selectedIds.size > 1 ? "s" : ""}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Create Manifest — Step 1: Add Parcels by Reference ID ──────────── */}
+      {/* Multi-add workflow: enter a Reference ID (or Tracking ID), click "Add" */}
+      {/* to queue it, then add another. Once done, click "Generate Manifest" */}
+      {/* to move to Step 2 where manifest-level fields are captured. */}
+      <Dialog open={showCreateManifestDialog} onOpenChange={(o) => { if (!o) resetCreateManifest(); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5 text-blue-600" />
+              Create Manifest — Add Parcels
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-slate-500">
+            Enter a <strong>Reference ID</strong> or <strong>Tracking ID</strong> and click <strong>Add</strong> to queue a parcel.
+            You can add multiple parcels at the same time before generating the manifest.
+          </p>
+
+          {/* Input + Add button */}
+          <div className="flex gap-2">
+            <Input
+              autoFocus
+              value={refIdInput}
+              onChange={(e) => setRefIdInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddPendingParcel(); } }}
+              placeholder="Reference ID or Tracking ID…"
+              className="h-9 text-sm"
+              disabled={searchingPending}
+            />
+            <Button
+              size="sm"
+              className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white gap-1.5 shrink-0"
+              disabled={searchingPending || !refIdInput.trim()}
+              onClick={handleAddPendingParcel}
+            >
+              {searchingPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+              Add
+            </Button>
+          </div>
+
+          {/* Pending parcels list */}
+          <div className="flex-1 overflow-y-auto space-y-2 min-h-[120px]">
+            {pendingParcels.length === 0 && !searchingPending && (
+              <div className="flex flex-col items-center justify-center py-8 text-center gap-1">
+                <Package className="h-8 w-8 text-slate-200" />
+                <p className="text-xs text-slate-400">No parcels added yet — enter a Reference ID above to start.</p>
+              </div>
+            )}
+            {pendingParcels.map((p) => (
+              <div key={p.id || p.tracking_id} className="border border-slate-200 rounded-lg p-3 flex items-center justify-between gap-3 bg-white">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono font-bold text-blue-600 text-sm">{p.tracking_id}</span>
+                    {p.reference_id && <Badge variant="outline" className="text-[10px]">Ref: {p.reference_id}</Badge>}
+                    <Badge variant="secondary" className="text-[10px] bg-orange-50 text-orange-700 border-orange-100">
+                      {p.weight ?? 0} kg
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-600 truncate mt-0.5">
+                    {p.sender_name || "—"} → {p.receiver_name || "—"} · {p.from_country || "—"} → {p.to_country || "—"}
+                  </p>
+                </div>
+                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
+                  onClick={() => removePendingParcel(p.tracking_id)}
+                  title="Remove from list">
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          {/* Summary + actions */}
+          <div className="border-t border-slate-100 pt-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Badge className="bg-blue-100 text-blue-700 border-blue-200">
+                {pendingParcels.length} parcel{pendingParcels.length !== 1 ? "s" : ""}
+              </Badge>
+              {pendingParcels.length > 0 && (
+                <Badge variant="outline" className="text-xs">
+                  {pendingParcels.reduce((s, p) => s + Number(p.weight || 0), 0).toFixed(2)} kg total
+                </Badge>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={resetCreateManifest}>Cancel</Button>
+              <Button
+                size="sm"
+                disabled={pendingParcels.length === 0}
+                onClick={() => setShowManifestFieldsDialog(true)}
+                className="gap-1.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Generate Manifest
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Create Manifest — Step 2: Manifest Details (other features) ─────── */}
+      {/* After "Generate Manifest" is clicked in Step 1, this dialog asks for the */}
+      {/* remaining manifest-level fields (origin/dest hub, flight, service, …) */}
+      {/* before the manifest is actually created. */}
+      <Dialog open={showManifestFieldsDialog} onOpenChange={(o) => { if (!o) setShowManifestFieldsDialog(false); }}>
+        <DialogContent className="max-w-4xl max-h-[88vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-blue-600" />
+              Manifest Details
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-slate-500">
+            Fill in the manifest-level details below. The {pendingParcels.length} parcel{pendingParcels.length !== 1 ? "s" : ""} you added
+            will be attached automatically. Click <strong>Create Manifest</strong> when done.
+          </p>
+
+          <div className="flex-1 overflow-y-auto pr-1">
+            <div className="grid md:grid-cols-3 gap-4">
+              {/* LEFT — Manifest Info */}
+              <div className="space-y-3 bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1.5">Manifest Info</p>
+                <Field label="Booking From Date" type="date" value={manifestDraft.bookingFromDate}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, bookingFromDate: v }))} />
+                <Field label="Booking Till Date" type="date" value={manifestDraft.bookingTillDate}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, bookingTillDate: v }))} />
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Forwarder</Label>
+                  <Input value={manifestDraft.forwarder} onChange={(e) => setManifestDraft((d) => ({ ...d, forwarder: e.target.value }))}
+                    placeholder="Forwarder name" className="h-8 text-sm border-slate-200" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Service</Label>
+                  <Select value={manifestDraft.service} onValueChange={(v) => setManifestDraft((d) => ({ ...d, service: v }))}>
+                    <SelectTrigger className="h-8 text-sm border-slate-200">
+                      <SelectValue placeholder="Select service" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SERVICES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Field label="Master No." value={manifestDraft.masterNo}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, masterNo: v }))} />
+                <Field label="Master EDI Bag No" value={manifestDraft.masterEdiBagNo}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, masterEdiBagNo: v }))} />
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Remark</Label>
+                  <Textarea value={manifestDraft.remark} onChange={(e) => setManifestDraft((d) => ({ ...d, remark: e.target.value }))}
+                    placeholder="Any remarks…" rows={2} className="text-sm border-slate-200 resize-none" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">License</Label>
+                  <select
+                    value={manifestDraft.license}
+                    onChange={(e) => setManifestDraft((d) => ({ ...d, license: e.target.value }))}
+                    className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">— Select license —</option>
+                    {licenses.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* MIDDLE — Flight & Shipment */}
+              <div className="space-y-3 bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1.5">Flight & Shipment</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Date" type="date" value={manifestDraft.manifestDate}
+                    onChange={(v) => setManifestDraft((d) => ({ ...d, manifestDate: v }))} />
+                  <Field label="Time" type="time" value={manifestDraft.manifestTime}
+                    onChange={(v) => setManifestDraft((d) => ({ ...d, manifestTime: v }))} />
+                </div>
+                <Field label="Run Number" value={manifestDraft.runNumber}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, runNumber: v }))} />
+                <Field label="Flight No" value={manifestDraft.flightNo} placeholder="e.g. PK-301"
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, flightNo: v }))} />
+                <Field label="No. of Bags" type="number" value={manifestDraft.noOfBags}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, noOfBags: v ? Number(v) : "" }))} />
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Arrival Date" type="date" value={manifestDraft.arrivalDate}
+                    onChange={(v) => setManifestDraft((d) => ({ ...d, arrivalDate: v }))} />
+                  <Field label="Arrival Time" type="time" value={manifestDraft.arrivalTime}
+                    onChange={(v) => setManifestDraft((d) => ({ ...d, arrivalTime: v }))} />
+                </div>
+                <Field label="Company" value={manifestDraft.company}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, company: v }))} />
+                <Separator className="my-1" />
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Weight Summary</p>
+                <Field label="Vendor Weight (kg)" type="number" value={manifestDraft.vendorWeight}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, vendorWeight: v ? Number(v) : "" }))} />
+                <Field label="Total Volumetric Wt (kg)" type="number" value={manifestDraft.totalVolumetricWt}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, totalVolumetricWt: v ? Number(v) : "" }))} />
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="No. of AWB" value={pendingParcels.length} readOnly />
+                  <Field label="Total Weight (kg)"
+                    value={pendingParcels.reduce((s, p) => s + Number(p.weight || 0), 0).toFixed(2)} readOnly />
+                </div>
+              </div>
+
+              {/* RIGHT — Hubs & Route */}
+              <div className="space-y-3 bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1.5">Hubs & Route</p>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
+                    Origin Hub <span className="text-red-500">*</span>
+                  </Label>
+                  <SearchableSelect
+                    value={manifestDraft.originHub}
+                    onChange={(v) => setManifestDraft((d) => ({ ...d, originHub: v }))}
+                    options={ORIGIN_HUBS}
+                    placeholder="Search origin hub…"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
+                    Destination Hub <span className="text-slate-400 font-normal normal-case">(worldwide)</span>
+                  </Label>
+                  <SearchableSelect
+                    value={manifestDraft.destinationHub}
+                    onChange={(v) => setManifestDraft((d) => ({ ...d, destinationHub: v }))}
+                    options={DEST_HUBS}
+                    placeholder="Search destination worldwide…"
+                  />
+                </div>
+
+                {/* Route summary */}
+                <div className="bg-gradient-to-br from-blue-50 to-slate-50 rounded-xl border border-blue-100 p-3 space-y-2">
+                  <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Route Preview</p>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-slate-500">FROM</p>
+                      <p className="text-sm font-bold text-slate-800 truncate">{manifestDraft.originHub || "—"}</p>
+                    </div>
+                    <Plane className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                    <div className="flex-1 min-w-0 text-right">
+                      <p className="text-[10px] text-slate-500">TO</p>
+                      <p className="text-sm font-bold text-slate-800 truncate">{manifestDraft.destinationHub || "—"}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 pt-3 flex items-center justify-between gap-3">
+            <p className="text-xs text-slate-500">
+              {pendingParcels.length} parcel{pendingParcels.length !== 1 ? "s" : ""} queued ·
+              {" "}{pendingParcels.reduce((s, p) => s + Number(p.weight || 0), 0).toFixed(2)} kg total
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowManifestFieldsDialog(false)}>Back</Button>
+              <Button
+                size="sm"
+                disabled={generating}
+                onClick={handleGenerateManifest}
+                className="gap-1.5 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white"
+              >
+                {generating ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                Create Manifest
               </Button>
             </div>
           </div>
