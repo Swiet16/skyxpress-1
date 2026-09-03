@@ -196,21 +196,21 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     styleEl.textContent = styleContent;
     doc.head.appendChild(styleEl);
 
-    // ── A4 LANDSCAPE geometry ──
-    // A4 landscape = 297 × 210 mm. With a 10 mm margin each side we get a
-    // usable printable area of 277 × 190 mm.
+    // ── A4 PORTRAIT geometry ──
+    // A4 portrait = 210 × 297 mm. With a 10 mm margin each side we get a
+    // usable printable area of 190 × 277 mm — tall and narrow.
     //
     // The label is designed at 560 px on screen. We scale it so its width
-    // maps to roughly 175 mm of the 277 mm usable width.
+    // maps to roughly 175 mm of the 190 mm usable width.
     //
-    // The label is positioned at the BOTTOM of the landscape page (not
+    // The label is positioned at the BOTTOM of the portrait page (not
     // centered) per the user's explicit request — "the label will be set
     // at the lower side of paper, not the mid of paper".
     const LABEL_W = 560;
     const A4_SCALE = 1.18;
     const PX_PER_MM = 96 / 25.4;
-    const USABLE_W_PX = (297 - 20) * PX_PER_MM; // landscape: 277 mm ≈ 1046 px
-    const USABLE_H_PX = (210 - 20) * PX_PER_MM; // landscape: 190 mm ≈ 718 px
+    const USABLE_W_PX = (210 - 20) * PX_PER_MM; // portrait: 190 mm ≈ 718 px
+    const USABLE_H_PX = (297 - 20) * PX_PER_MM; // portrait: 277 mm ≈ 1046 px
 
     const naturalHeight = labelEl.getBoundingClientRect().height || labelEl.scrollHeight;
     const scaledW = LABEL_W * A4_SCALE;
@@ -222,7 +222,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
     const printStyle = doc.createElement("style");
     printStyle.textContent = `
-      @page { margin: 10mm; size: A4 landscape; }
+      @page { margin: 10mm; size: A4 portrait; }
       html, body { margin: 0; padding: 0; background: #fff; }
       #print-wrapper {
         position: relative;
@@ -277,38 +277,65 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     ]);
     const html2canvas = html2canvasMod?.default;
 
-    // ── A4 LANDSCAPE page ──
-    // 297 × 210 mm with a 10 mm margin on every side → usable 277 × 190 mm.
+    // ── A4 PORTRAIT page ──
+    // 210 × 297 mm with a 10 mm margin on every side → usable 190 × 277 mm.
     // The label image is placed at the BOTTOM of the page (not centered)
-    // per the user's explicit request — "the label will be set at the lower
-    // side of paper, not the mid of paper".
-    const PAGE_W = 297;
-    const PAGE_H = 210;
+    // per the user's explicit request — "the label will be set at the
+    // lower side of paper, not the mid of paper".
+    const PAGE_W = 210;
+    const PAGE_H = 297;
     const MARGIN = 10;
-    const USABLE_W = PAGE_W - 2 * MARGIN; // 277 mm
-    const USABLE_H = PAGE_H - 2 * MARGIN; // 190 mm
+    const USABLE_W = PAGE_W - 2 * MARGIN; // 190 mm
+    const USABLE_H = PAGE_H - 2 * MARGIN; // 277 mm
 
-    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: [PAGE_W, PAGE_H] });
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [PAGE_W, PAGE_H] });
 
     if (html2canvas) {
-      // ── html2canvas path (PRIMARY) ──
-      // Screenshot the on-screen JSX DOM (#shipping-label-print) at 2× DPI,
-      // convert to PNG, and place it at the bottom of the landscape page.
-      // This guarantees PDF = on-screen preview = print output — ALL three
-      // use the same JSX rendering as the single source of truth.
-      const canvas = await html2canvas(labelEl, {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        logging: false,
-        useCORS: true,
-        allowTaint: false,
-      });
+      // ── OFF-SCREEN CLONE (hide from screen) ──
+      // Clone the label into a hidden off-screen container so html2canvas
+      // renders it without any visual flash on the user's screen, and so
+      // the screenshot is consistent regardless of scroll position or
+      // whether the popup is partially visible. The clone is removed
+      // immediately after the canvas is captured.
+      const offscreen = document.createElement("div");
+      offscreen.style.position = "fixed";
+      offscreen.style.left = "-99999px";
+      offscreen.style.top = "0";
+      offscreen.style.width = "560px";
+      offscreen.style.background = "#ffffff";
+      offscreen.style.opacity = "1";
+      offscreen.style.pointerEvents = "none";
+      offscreen.style.zIndex = "-1";
+      const clone = labelEl.cloneNode(true) as HTMLElement;
+      offscreen.appendChild(clone);
+      document.body.appendChild(offscreen);
+
+      // Small delay to let the browser lay out the off-screen clone
+      // (images, SVGs, fonts) before html2canvas snapshots it.
+      await new Promise((r) => setTimeout(r, 50));
+
+      let canvas: HTMLCanvasElement;
+      try {
+        canvas = await html2canvas(offscreen, {
+          scale: 2,
+          backgroundColor: "#ffffff",
+          logging: false,
+          useCORS: true,
+          allowTaint: false,
+          width: 560,
+          windowWidth: 560,
+        });
+      } finally {
+        // Always clean up the off-screen clone, even on error
+        document.body.removeChild(offscreen);
+      }
+
       const imgData = canvas.toDataURL("image/png");
 
       // Fit the image inside the usable area, preserving aspect ratio.
-      // The label is taller than wide, so in landscape the HEIGHT is the
-      // binding constraint — the image fills the page height and leaves
-      // comfortable horizontal margins on the sides.
+      // The label is wider than tall, so in portrait the WIDTH is usually
+      // the binding constraint — the image fills the page width and sits
+      // at the bottom, leaving empty space at the top.
       const imgAspect = canvas.width / canvas.height;
       let drawW = USABLE_W;
       let drawH = drawW / imgAspect;
@@ -581,12 +608,12 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
       {/* ── Print styles — Ctrl+P on the page (not the Print button) ── */}
       <style>{`
         @media print {
-          @page { margin: 10mm; size: A4 landscape; }
+          @page { margin: 10mm; size: A4 portrait; }
           html, body { margin: 0; padding: 0; background: #fff !important; }
           body * { visibility: hidden !important; }
           #shipping-label-print,
           #shipping-label-print * { visibility: visible !important; }
-          /* Position the label at the BOTTOM of the landscape page.
+          /* Position the label at the BOTTOM of the portrait page.
              Uses flexbox on body to push the label down, and transforms
              the 560px label to fit the page width. transform-origin bottom
              center keeps the label anchored to the bottom edge. */
