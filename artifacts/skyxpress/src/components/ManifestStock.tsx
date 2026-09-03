@@ -1545,8 +1545,14 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
       {/* ── MANIFEST DETAIL — pop-up modal (Dialog) ───────────────────────── */}
       {/* Was previously an inline panel rendered below the list, which pushed all */}
       {/* the manifests down and was a poor UX. Now opens as a full-screen modal. */}
+      {/* The inner content is gated with `{selected && editing && (...)}` (NOT just */}
+      {/* the Dialog's `open` prop) because Radix keeps DialogContent mounted during */}
+      {/* the exit animation. Without this inner gate, `editing` is null by the time */}
+      {/* the close animation runs, and the inner JSX crashes accessing editing.* — */}
+      {/* which was what was crashing the website. */}
       <Dialog open={!!selected && !!editing} onOpenChange={(o) => { if (!o) closeDetail(); }}>
         <DialogContent className="max-w-[95vw] w-full max-h-[92vh] p-0 gap-0 overflow-hidden flex flex-col [&>button]:hidden">
+          {selected && editing && (
           <div className="flex flex-col flex-1 overflow-hidden">
           <>
             {/* Top header */}
@@ -2206,6 +2212,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
               </div>
             </>
           </div>
+          )}
         </DialogContent>
       </Dialog>
 
