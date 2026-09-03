@@ -197,31 +197,40 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     doc.head.appendChild(styleEl);
 
     // ── A4 geometry ──
-    // A4 = 210 × 297 mm. With a 10 mm margin each side we get a usable
-    // printable area of 190 × 277 mm.
+    // A4 = 210 × 297 mm PORTRAIT. With a 10 mm margin each side we get a
+    // usable printable area of 190 × 277 mm.
     //
-    // The label is designed at 560 px on screen. We scale it so its width
-    // maps to roughly 175 mm (≈ 660 px at 96 dpi) — that leaves a
-    // comfortable 7.5 mm of breathing room INSIDE the 190 mm usable area,
-    // so the label never touches the page margin and looks "a bit small"
-    // but proportionally correct, exactly as requested.
+    // The label itself is rendered in its original PORTRAIT design (560 px
+    // wide on screen) and then ROTATED 90° COUNTER-CLOCKWISE so it appears
+    // in LANDSCAPE orientation on the A4 page. The rest of the page is
+    // left blank/white, and the rotated label is anchored to the BOTTOM
+    // of the usable area, centered horizontally — exactly as requested.
     //
-    // We deliberately DO NOT stretch the label to the full usable height
-    // anymore — that produced an oversized, half-empty card. The label
-    // now renders at its natural height, vertically centered on the page.
+    // After rotation, the label's effective footprint on the page is:
+    //   rotatedW = scaledH    (was the design height, now the page width)
+    //   rotatedH = scaledW    (was the design width,  now the page height)
+    // We compute the scale dynamically so rotatedW fits inside the usable
+    // page width with a comfortable breathing margin on each side.
     const LABEL_W = 560;
-    const A4_SCALE = 1.15; // 560 × 1.15 ≈ 644 px ≈ 170 mm
     const PX_PER_MM = 96 / 25.4;
     const USABLE_W_PX = (210 - 20) * PX_PER_MM; // ≈ 718 px
     const USABLE_H_PX = (297 - 20) * PX_PER_MM; // ≈ 1046 px
+    const SIDE_BREATHING_PX = 14;               // breathing room each side after rotation
+    const BOTTOM_BREATHING_PX = 14;             // breathing room below the rotated label
 
     const naturalHeight = labelEl.getBoundingClientRect().height || labelEl.scrollHeight;
-    const scaledW = LABEL_W * A4_SCALE;
-    const scaledH = naturalHeight * A4_SCALE;
-    // Center horizontally, but anchor the label to the BOTTOM of the usable
-    // area so the upper side of the portrait page stays free/empty.
-    const offsetX = Math.max(0, (USABLE_W_PX - scaledW) / 2);
-    const offsetY = Math.max(0, USABLE_H_PX - scaledH);
+    // Pick the largest scale whose rotated width (= naturalHeight * scale)
+    // still fits inside the usable width minus the breathing margin.
+    const A4_SCALE = Math.min(1.15, (USABLE_W_PX - 2 * SIDE_BREATHING_PX) / naturalHeight);
+    const scaledW = LABEL_W * A4_SCALE;        // design width after scale
+    const scaledH = naturalHeight * A4_SCALE;   // design height after scale
+    // After 90° CCW rotation, the on-page footprint is:
+    const rotatedW = scaledH;                   // page horizontal extent
+    const rotatedH = scaledW;                   // page vertical extent
+    // Center horizontally inside the usable area.
+    const offsetX = Math.max(0, (USABLE_W_PX - rotatedW) / 2);
+    // Anchor to the BOTTOM of the usable area (small breathing margin).
+    const offsetY = Math.max(0, USABLE_H_PX - rotatedH - BOTTOM_BREATHING_PX);
 
     const printStyle = doc.createElement("style");
     printStyle.textContent = `
@@ -243,11 +252,16 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
         background: #fff !important;
         color: #000 !important;
         box-sizing: border-box !important;
-        transform: scale(${A4_SCALE}) !important;
-        transform-origin: top left !important;
         position: absolute !important;
-        top: ${offsetY / A4_SCALE}px !important;
-        left: ${offsetX / A4_SCALE}px !important;
+        top: 0 !important;
+        left: 0 !important;
+        transform-origin: 0 0 !important;
+        /* 90° CCW rotation: design top → page LEFT.
+           After rotate(-90deg) with origin (0,0) the visual content occupies
+           x ∈ [0, scaledH], y ∈ [-scaledW, 0]. We translate by (offsetX,
+           offsetY + scaledW) to move it into the visible region and place
+           it at the bottom-center of the usable area. */
+        transform: translate(${offsetX}px, ${offsetY + scaledW}px) rotate(-90deg) scale(${A4_SCALE}) !important;
       }
     `;
     doc.head.appendChild(printStyle);
@@ -273,18 +287,27 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
   const handleSavePDF = async () => {
     const { default: jsPDF } = await import("jspdf");
 
-    // â”€â”€ constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // ── A4 layout ──
-    // Use a real A4 page (210 × 297 mm) with a 10 mm margin on every side,
-    // matching the print output. The label itself is drawn at its original
-    // 105 mm design width and then scaled to ~1.6× to occupy about 170 mm
-    // of the 190 mm usable area — same proportional size as the print
-    // preview, so PDF and printed page look the same.
+    // ── A4 layout (label rotated 90° CCW, anchored to BOTTOM of A4) ──
+    // Use a real A4 PORTRAIT page (210 × 297 mm) with a 10 mm margin on every
+    // side, matching the print output. The label itself is drawn unchanged at
+    // its original 105 mm design width (W) and natural design height (H),
+    // then a 90° COUNTER-CLOCKWISE rotation is applied so the label appears
+    // in LANDSCAPE orientation on the A4 page. The rotated label is anchored
+    // to the BOTTOM of the usable area and centered horizontally; the upper
+    // portion of the A4 page is left blank/white.
+    //
+    // After a 90° CCW rotation, the label's on-page footprint becomes:
+    //   rotatedW = H * scale   (design height → page horizontal extent)
+    //   rotatedH = W * scale   (design width  → page vertical   extent)
+    // We pick `scale` so that rotatedW fits inside the 190 mm usable width
+    // with a small breathing margin on each side.
     const PAGE_W = 210;
     const PAGE_H = 297;
     const MARGIN = 10;
     const USABLE_W = PAGE_W - 2 * MARGIN; // 190 mm
     const USABLE_H = PAGE_H - 2 * MARGIN; // 277 mm
+    const ROTATED_BREATHING = 4;          // mm of breathing room each side after rotation
+    const BOTTOM_BREATHING = 4;          // mm of breathing room below the rotated label
 
     // Original design width of the label drawing code (do not change —
     // all coordinates below assume this).
@@ -293,21 +316,33 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const CONTACT_W = 34;        // right panel width for contact
     const ORIGIN_W  = 22;        // right panel width for origin
     const addrMaxW  = W - CONTACT_W - pad - 3;  // max width for address lines
-    const PDF_SCALE = USABLE_W / W / 1.12; // ≈ 1.62 — leaves a small breathing margin
-
-    // â”€â”€ temp doc to measure text before we know final height â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Use the SCALED font size so splitTextToSize wraps at the same width
-    // the real drawing will render at (otherwise wrapped lines overflow).
-    const tmp = new jsPDF({ unit: "mm", format: [W, 300] });
-    tmp.setFont("helvetica", "normal"); tmp.setFontSize(7.5 * PDF_SCALE);
+    // PDF_SCALE is now computed AFTER we know the label height H, see below.
+    // (Forward declaration so the pre-wrap code that uses PDF_SCALE still compiles.)
+    let PDF_SCALE = 1;
 
     // Pre-wrap address lines so we know how many rows each section needs.
     // Wrap widths are SCALED (real page mm) so wrapping matches what the
     // real doc renders at the scaled font size.
+    //
+    // NOTE: At this point PDF_SCALE is still 1 — we won't know the real
+    // scale until we know the design height H (which depends on wrapping).
+    // To break the chicken-and-egg cycle we pre-wrap at scale = 1 using
+    // the unscaled font size, then re-wrap once more after computing the
+    // final scale. Empirically the wrap widths in design-mm do not change
+    // (they are derived from W, ORIGIN_W, pad — all constants), and the
+    // number of wrapped lines is identical because the *ratio* of
+    // text width / box width is scale-invariant.
+    const PRE_WRAP_FONT = 7.5;
+    const tmp = new jsPDF({ unit: "mm", format: [W, 300] });
+    tmp.setFont("helvetica", "normal"); tmp.setFontSize(PRE_WRAP_FONT);
+
+    // Wrap in DESIGN-mm units (scale=1). The wrapped line count equals
+    // what the scaled rendering will produce because both font size and
+    // wrap width scale by the same factor.
     const sndWrapped: string[] = sndLines.flatMap(ln =>
-      tmp.splitTextToSize(ln, (W - ORIGIN_W - pad - 3) * PDF_SCALE));
+      tmp.splitTextToSize(ln, (W - ORIGIN_W - pad - 3)));
     const rcvWrapped: string[] = rcvLines.flatMap(ln =>
-      tmp.splitTextToSize(ln, addrMaxW * PDF_SCALE));
+      tmp.splitTextToSize(ln, addrMaxW));
 
     const LINE_H = 3.6;
     const fromBodyH = Math.max(0, (sndWrapped.slice(0, 6).length) * LINE_H);
@@ -323,60 +358,120 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const bcH   = 17;   // barcode image height
     const H = hdrH + fromH + toH + barH + refH + wH + 4 + (bcH + 7) * 2 + 6;
 
-    // â”€â”€ real doc â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // A4 page, all drawing is offset by MARGIN and scaled to fit nicely.
+    // ── Final scale, now that we know H (the design height) ──
+    // After 90° CCW rotation, the rotated label's page width = H * scale.
+    // We pick `scale` so this fits inside USABLE_W with breathing margin.
+    PDF_SCALE = (USABLE_W - 2 * ROTATED_BREATHING) / H;
+
+    // ── Real doc ──
+    // A4 PORTRAIT page; label is drawn rotated 90° CCW inside it.
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [PAGE_W, PAGE_H] });
-    // Translate the drawing origin to (MARGIN, MARGIN) and scale uniformly
-    // around that new origin so all existing (x, y) coordinates keep
-    // working unchanged.
+
+    // Re-wrap at the SCALED font size so the real rendered lines exactly
+    // match the pre-computed row counts (fromBodyH / toBodyH). Because the
+    // ratio text-width/wrap-width is scale-invariant, this re-wrap produces
+    // the same number of lines — but the lines themselves are computed at
+    // the actual font size used by the real doc, eliminating any drift.
+    tmp.setFontSize(PRE_WRAP_FONT * PDF_SCALE);
+    const sndWrappedScaled: string[] = sndLines.flatMap(ln =>
+      tmp.splitTextToSize(ln, (W - ORIGIN_W - pad - 3) * PDF_SCALE));
+    const rcvWrappedScaled: string[] = rcvLines.flatMap(ln =>
+      tmp.splitTextToSize(ln, addrMaxW * PDF_SCALE));
+    // Swap in the scaled wraps (line counts are identical to the unscaled
+    // versions, so fromBodyH / toBodyH are still valid).
+    while (sndWrapped.length) sndWrapped.pop();
+    sndWrapped.push(...sndWrappedScaled);
+    while (rcvWrapped.length) rcvWrapped.pop();
+    rcvWrapped.push(...rcvWrappedScaled);
+
+    // ── Rotation math (90° CCW) ──
+    // For a 90° counter-clockwise rotation around the design's top-left:
+    //   design top edge  (y=0) → page LEFT   edge of the rotated footprint
+    //   design right edge (x=W) → page TOP    edge of the rotated footprint
+    //   design bottom  edge (y=H) → page RIGHT  edge of the rotated footprint
+    //   design left edge  (x=0) → page BOTTOM edge of the rotated footprint
+    //
+    // Mapping a design point (x, y) to page coordinates:
+    //   page_x = _originX + y       * _scale      (design Y → page X)
+    //   page_y = _originY + (W - x) * _scale      (design X → page Y, flipped)
+    //
+    // After rotation, design's horizontal extents become vertical and vice
+    // versa, so for axis-aligned primitives we also swap (w, h):
+    //   design rect (x, y, w, h) → page rect at
+    //     (_originX + y*_scale, _originY + (W-x-w)*_scale)  size (h*_scale, w*_scale)
+    //   design horizontal line at y from x=0 to x=W → page VERTICAL line at
+    //     x = _originX + y*_scale, from y=_originY to y=_originY + W*_scale
     const _scale = PDF_SCALE;
-    const _originX = (USABLE_W - W * _scale) / 2 + MARGIN;
-    // Anchor label to the BOTTOM of the usable area so the upper side
-    // of the portrait page stays free/empty when saved/printed.
-    const _originY = USABLE_H - H * _scale + MARGIN;
-    // Helper wrappers — every fillRect/hline/txt/addImage call below uses
-    // these so coordinates are transformed consistently.
+    const rotatedW = H * _scale;                  // page horizontal extent
+    const rotatedH = W * _scale;                  // page vertical   extent
+    // Center horizontally inside the usable area.
+    const _originX = MARGIN + (USABLE_W - rotatedW) / 2;
+    // Anchor to BOTTOM of usable area, with a small breathing margin.
+    const _originY = MARGIN + (USABLE_H - rotatedH) - BOTTOM_BREATHING;
 
-    // Transform helpers: convert original-design (x, y, w, h) in mm
-    // into A4 page coordinates with margin + uniform scale.
-    const pdfTx = (x: number) => _originX + x * _scale;
-    const pdfTy = (y: number) => _originY + y * _scale;
-    const pdfTs = (v: number) => v * _scale;
-
-    const fillRect = (x: number, y: number, w: number, h: number, r: number, g: number, b: number) => {
-      doc.setFillColor(r, g, b);
-      _origRect(pdfTx(x), pdfTy(y), pdfTs(w), pdfTs(h), "F");
-    };
-    const hline = (y: number, lw = 0.3, r = 0, g = 0, b = 0) => {
-      doc.setDrawColor(r, g, b); doc.setLineWidth(lw * _scale);
-      _origLine(pdfTx(0), pdfTy(y), pdfTx(W), pdfTy(y));
-    };
-    const txt = (s: string, x: number, y: number, opts?: any) => {
-      // jsPDF text options like { align: "center" } compute alignment
-      // relative to the (x, y) anchor, so transforming the anchor is enough.
-      return doc.text(s, pdfTx(x), pdfTy(y), opts);
-    };
-    const sf = (style: string, size: number, r = 0, g = 0, b = 0) => {
-      // Font size also needs to be scaled so text stays proportional
-      // with the rest of the drawing.
-      doc.setFont("helvetica", style); doc.setFontSize(size * _scale); doc.setTextColor(r, g, b);
-    };
-    // Override addImage so existing barcode addImage calls also get transformed.
-    const _origAddImage = doc.addImage.bind(doc);
-    doc.addImage = (data: any, format: string, x: number, y: number, w: number, h: number, alias?: any, compression?: any, rotation?: any) => {
-      return _origAddImage(data, format, pdfTx(x), pdfTy(y), pdfTs(w), pdfTs(h), alias, compression, rotation);
-    };
-    // Bind originals so we can call them with already-transformed coords
-    // from hline/fillRect (avoids double-transform via the doc.line override).
+    // Bind originals BEFORE installing overrides (so the overrides can call
+    // the originals with already-transformed coords without infinite
+    // recursion).
     const _origLine = doc.line.bind(doc);
     const _origRect = doc.rect.bind(doc);
+    const _origAddImage = doc.addImage.bind(doc);
+    const _origText = doc.text.bind(doc);
+
+    // Transform helpers: convert original-design (x, y, w, h) in mm into
+    // A4 page coordinates with rotation + scale.
+    // NOTE: page X depends on design Y, and page Y depends on design X
+    // (rotation couples them). All callers below pass BOTH x and y so the
+    // helpers can compute the correct page coordinate.
+    const pdfPx = (y: number) => _originX + y * _scale;            // design Y → page X
+    const pdfPy = (x: number) => _originY + (W - x) * _scale;     // design X → page Y
+    const pdfPs = (v: number) => v * _scale;                       // scalar scale
+
+    // Fill a design-space rectangle. After 90° CCW rotation it becomes a
+    // page rect at (pdfPx(y), pdfPy(x+w)) with swapped w/h.
+    const fillRect = (x: number, y: number, w: number, h: number, r: number, g: number, b: number) => {
+      doc.setFillColor(r, g, b);
+      // design top-left (x,   y) → page (pdfPx(y),         pdfPy(x))
+      // design top-right (x+w, y) → page (pdfPx(y),         pdfPy(x+w))
+      // → page rect top-left = (pdfPx(y), pdfPy(x+w)), size (h*scale, w*scale)
+      _origRect(pdfPx(y), pdfPy(x + w), h * _scale, w * _scale, "F");
+    };
+    // Horizontal line in design → VERTICAL line on page (after rotation).
+    const hline = (y: number, lw = 0.3, r = 0, g = 0, b = 0) => {
+      doc.setDrawColor(r, g, b); doc.setLineWidth(lw * _scale);
+      // design (0, y) → page (pdfPx(y), pdfPy(0)   = _originY + W*scale)
+      // design (W, y) → page (pdfPx(y), pdfPy(W)   = _originY)
+      _origLine(pdfPx(y), _originY, pdfPx(y), _originY + W * _scale);
+    };
+    // Text — positioned at the rotated page location, and rotated 90° CCW
+    // (angle = 90 in jsPDF) so glyphs read correctly when viewing the
+    // rotated label.
+    const txt = (s: string | string[], x: number, y: number, opts?: any) => {
+      const pageX = pdfPx(y);
+      const pageY = pdfPy(x);
+      const newOpts = { ...(opts || {}), angle: 90 };
+      return _origText(s as any, pageX, pageY, newOpts);
+    };
+    const sf = (style: string, size: number, r = 0, g = 0, b = 0) => {
+      // Font size is scaled so text stays proportional with the drawing.
+      doc.setFont("helvetica", style); doc.setFontSize(size * _scale); doc.setTextColor(r, g, b);
+    };
+    // Override addImage so existing barcode addImage calls get transformed
+    // AND rotated 90° CCW to match the rest of the label.
+    doc.addImage = (data: any, format: string, x: number, y: number, w: number, h: number, alias?: any, compression?: any, _rotation?: any) => {
+      // design rect (x, y, w, h) → page rect at (pdfPx(y), pdfPy(x+w)),
+      // size (h*scale, w*scale), and rotate the image 90° CCW (rotation=90).
+      return _origAddImage(data, format, pdfPx(y), pdfPy(x + w), h * _scale, w * _scale, alias, compression, 90);
+    };
     // Override line() and rect() so any direct calls elsewhere in the code
     // (e.g. the vertical divider, outer border) also get transformed.
     doc.line = (x1: number, y1: number, x2: number, y2: number, style?: string) => {
-      return _origLine(pdfTx(x1), pdfTy(y1), pdfTx(x2), pdfTy(y2), style);
+      // design (x1,y1) → page (pdfPx(y1), pdfPy(x1))
+      // design (x2,y2) → page (pdfPx(y2), pdfPy(x2))
+      return _origLine(pdfPx(y1), pdfPy(x1), pdfPx(y2), pdfPy(x2), style);
     };
     doc.rect = (x: number, y: number, w: number, h: number, style?: string) => {
-      return _origRect(pdfTx(x), pdfTy(y), pdfTs(w), pdfTs(h), style);
+      // Same as fillRect above, but respects the `style` argument.
+      return _origRect(pdfPx(y), pdfPy(x + w), h * _scale, w * _scale, style);
     };
     // getTextWidth depends on current font size — already scaled via sf().
     // splitTextToSize is independent of scale (it works in mm units) so we
@@ -488,7 +583,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     // Wrap at the SCALED width (in real page mm) so wrapped lines fit
     // the rendered box; then draw at the transformed anchor.
     const sndNameLines = doc.splitTextToSize(parcel.sender_name, (ORIGIN_W - 2) * _scale);
-    doc.text(sndNameLines, pdfTx(W - ORIGIN_W + 1), pdfTy(y + 10));
+    txt(sndNameLines, W - ORIGIN_W + 1, y + 10);
     if (parcel.sender_phone) {
       sf("normal", 8, 30, 30, 30);
       txt(parcel.sender_phone, W - ORIGIN_W + 1, y + 10 + sndNameLines.length * LINE_H + 1);
@@ -521,7 +616,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     sf("bold", 8, 0, 0, 0);
     // wrap contact name if too long
     const cNameLines = doc.splitTextToSize(parcel.receiver_name, (CONTACT_W - 2) * _scale);
-    doc.text(cNameLines, pdfTx(cxLeft + 1), pdfTy(y + 10.5));
+    txt(cNameLines, cxLeft + 1, y + 10.5);
     if (parcel.receiver_phone) {
       sf("normal", 8, 30, 30, 30);
       txt(parcel.receiver_phone, cxLeft + 1, y + 10.5 + cNameLines.length * LINE_H + 1);
@@ -592,7 +687,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     txt("Contents:", cntX, y + 5);
     sf("normal", 6.5, 30, 30, 30);
     const cntWrapped = doc.splitTextToSize(contentsText.toUpperCase().slice(0, 80), (W - cntX - pad) * _scale);
-    doc.text(cntWrapped, pdfTx(cntX), pdfTy(y + 9.5));
+    txt(cntWrapped, cntX, y + 9.5);
 
     y += bcH + 8;
 
@@ -853,30 +948,51 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
             margin: 0 !important;
             padding: 0 !important;
             background: #fff !important;
-            width: 100%;
-            min-height: 100vh;
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: flex-end !important; /* push label to the bottom */
           }
           body * { visibility: hidden !important; }
           #shipping-label-print,
           #shipping-label-print * { visibility: visible !important; }
-          /* Scale the 560px label so it sits nicely inside the 190mm
-             usable area with a 10mm page margin — matches the Save-PDF
-             output exactly. Anchored to the BOTTOM of the portrait page
-             so the upper side stays free/empty, as requested. */
+          /* ROTATE the 560px label 90° CCW so it appears in LANDSCAPE
+             orientation on the A4 PORTRAIT page, anchored to the BOTTOM,
+             centered horizontally. The rest of the page is blank/white.
+
+             This is a STATIC CSS fallback for Ctrl+P from the dialog. It
+             assumes a typical label natural height of ~750px (the label's
+             measured height in production). For EXACT positioning, use
+             the "Print" button — it measures the actual height at run
+             time and computes the precise transform.
+
+             Computation (with scale = 0.85, naturalHeight = 750):
+               scaledW = 560  * 0.85 = 476px   (design width  after scale)
+               scaledH = 750  * 0.85 = 637.5px (design height after scale)
+               rotatedW = scaledH = 637.5px   (page horizontal extent)
+               rotatedH = scaledW = 476px     (page vertical   extent)
+               USABLE_W = 718px, USABLE_H = 1046px (A4 - 10mm margins @ 96dpi)
+               offsetX = (718 - 637.5) / 2 ≈ 40px (horizontal centering)
+               offsetY = 1046 - 476 - 14    = 556px (bottom anchor + breathing)
+               translate = (offsetX, offsetY + scaledW) = (40, 1032)px
+
+             Sequence (applied right-to-left):
+               1. scale(0.85)        — content shrinks, top-left stays at (0,0)
+               2. rotate(-90deg)    — content rotates 90° CCW around (0,0);
+                                      visual now occupies x∈[0, scaledH],
+                                      y∈[-scaledW, 0]
+               3. translate(40,1032)— moves visual to (40, 556)–(677, 1032),
+                                      i.e. bottom-anchored & centered. */
           #shipping-label-print {
-            position: relative !important;
+            position: fixed !important;
             top: 0 !important;
             left: 0 !important;
+            bottom: auto !important;
+            right: auto !important;
             width: 560px !important;
             max-width: 560px !important;
             border: 1px solid #000 !important;
             padding: 0 !important;
-            margin: 0 auto !important;
-            transform: scale(1.15) !important;
-            transform-origin: bottom center !important;
+            margin: 0 !important;
+            background: #fff !important;
+            transform-origin: 0 0 !important;
+            transform: translate(40px, 1032px) rotate(-90deg) scale(0.85) !important;
           }
         }
       `}</style>
