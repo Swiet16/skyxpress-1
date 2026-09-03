@@ -1337,18 +1337,26 @@ export const generateAirwayBillWithPayment = async (parcel: any, mode: OutputMod
     //    in their column. Growing these blocks prevents text from spilling into
     //    the Sender's Authorization / POD sections below.
     const accountH   = s(7);
-    const shipperH   = s(40);   // fits 3.4 top-pad + name(3.4) + 11 lines × 3mm = 39.8mm (added Email line)
+    // Grown from s(40) → s(46) to give room for the now-included City + Country
+    // lines (previously missing from this bill entirely). Without this growth,
+    // adding those two lines overflowed the block and cropped the bottom fields
+    // (Email, CNIC, VAT/EORI/Tax ID). 46mm fits the worst case: top-pad + name +
+    // company + 3 address parts (1-2 wrap each) + city + country + phone + email +
+    // CNIC + VAT + EORI + Tax ID, all capped at 2 wrap lines per field.
+    const shipperH   = s(46);
     const authH      = s(17);
     const podH       = s(14);
     const gridH      = accountH + shipperH + authH + podH;   // column A drives the total height
 
     const trackH     = s(6.5);
-    // Consignee block grown from 36 → 40mm to match the SHIPPER block height, so
-    // long consignee names/addresses (e.g. "GOVT OF PAKISTAN MINISTRY OF COMMERCE")
-    // and the full set of optional fields (company + 2 address lines + city +
-    // state+postal + country + phone + email + VAT/EORI/Tax ID) all fit without
-    // cropping or overflowing into the DAP / barcode blocks below.
-    const consigneeH = s(40);
+    // Consignee block grown from s(40) → s(46) to MATCH the new shipperH, so the
+    // two columns balance and the barcode block in column B doesn't end up
+    // taller than its sibling. Also gives long consignee names/addresses (e.g.
+    // "GOVT OF PAKISTAN MINISTRY OF COMMERCE") and the full set of optional
+    // fields (company + 2 address lines + city + state+postal + country + phone
+    // + email + VAT/EORI/Tax ID) room to all fit without cropping or
+    // overflowing into the DAP / barcode blocks below.
+    const consigneeH = s(46);
     const dapH       = s(9);
     const barcodeH   = gridH - trackH - s(5.6) - consigneeH - dapH; // column B fills the rest (s(5.6) accounts for badge-2 gap above consignee)
 
@@ -1470,6 +1478,26 @@ const sw = wA - s(12);
       // everything else off the page — but every part now gets its 1–2 lines.
       wrapped.slice(0, 2).forEach((ln) => { pdf.text(ln, sx, sy, { maxWidth: sw }); sy += s(3); });
     });
+    // ── City + Country — were MISSING from this bill entirely before. They now
+    // print on their own lines right after the address, mirroring the consignee
+    // block's layout so the two columns read symmetrically. Without them the
+    // sender's location was unreadable on the printout (the address line often
+    // doesn't include the city/country).
+    const senderCityVal = safeText(parcel.sender_city, '');
+    if (senderCityVal) {
+      TF(Math.max(5, s(5.6)), 'bold'); TX(INK);
+      const cityLines = pdf.splitTextToSize(senderCityVal, sw) as string[];
+      cityLines.slice(0, 2).forEach((ln) => { pdf.text(ln, sx, sy, { maxWidth: sw }); sy += s(3); });
+    }
+    const senderCountryVal = safeText(parcel.sender_country, '');
+    if (senderCountryVal) {
+      TF(Math.max(5, s(5.6)), 'bold'); TX(INK);
+      const countryLines = pdf.splitTextToSize(
+        codeToCountryName(senderCountryVal).toUpperCase(),
+        sw
+      ) as string[];
+      countryLines.slice(0, 2).forEach((ln) => { pdf.text(ln, sx, sy, { maxWidth: sw }); sy += s(3); });
+    }
     // Phone, Email, CNIC — normal weight (only name & address are bold)
     TF(Math.max(4.4, s(5)), 'normal'); TX(INK);
     if (safeText(parcel.sender_phone, '')) { pdf.text(safeText(parcel.sender_phone, ''), sx, sy, { maxWidth: sw }); sy += s(3); }
@@ -1727,7 +1755,10 @@ const cw = wB - s(12);
   const computeHeaderPlusGridHeight = (scale: number, showWebsite: boolean): number => {
     const s = (mm: number) => mm * scale;
     const headerH = s(30);                        // was s(24) — keep in sync with drawAwbGrid
-    const gridH = s(7) + s(40) + s(17) + s(14); // accountH + shipperH + authH + podH (must match drawAwbGrid)
+    // gridH = accountH + shipperH + authH + podH. Must match drawAwbGrid's
+    // values exactly (shipperH and consigneeH are both s(46) now — grown from
+    // s(40) to fit City + Country lines without cropping).
+    const gridH = s(7) + s(46) + s(17) + s(14);
     return headerH + s(1.5) + (showWebsite ? s(5.4) : 0) + gridH;
   };
 
@@ -1858,11 +1889,12 @@ const cw = wB - s(12);
   const topMargin = 6;
   const bottomMargin = 6;
   const cutAreaH = 16; // gap between cards (9 above cut line + 7 below cut line)
-  // Base block height at scale 1: header(30) + gap(1.5) + website(5.4) + grid(7+40+17+14=78) = 114.9mm
-  // (header grew from 24→30 to accommodate the bigger logo, and shipperH grew from
-  // 37→40 to fit the Email line, so this must stay in sync with computeHeaderPlusGridHeight
-  // or the page-2 LABEL_SCALE calculation would size the cards incorrectly.)
-  const baseBlockH = 114.9;
+  // Base block height at scale 1: header(30) + gap(1.5) + website(5.4) + grid(7+46+17+14=84) = 120.9mm
+  // (header grew from 24→30 to accommodate the bigger logo, shipperH grew from
+  // 40→46 to fit the new City + Country lines without cropping, and the page-2
+  // baseBlockH here MUST stay in sync with computeHeaderPlusGridHeight or the
+  // page-2 LABEL_SCALE calculation would size the cards incorrectly.)
+  const baseBlockH = 120.9;
   const LABEL_SCALE = (PH - 2 * (captionH + cardPad * 2) - cutAreaH - topMargin - bottomMargin) / (2 * baseBlockH);
 
   // Draws one label (header+grid) inside a white "card" with a soft shadow and an
