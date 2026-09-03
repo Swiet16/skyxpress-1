@@ -291,45 +291,22 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [PAGE_W, PAGE_H] });
 
     if (html2canvas) {
-      // ── OFF-SCREEN CLONE (hide from screen) ──
-      // Clone the label into a hidden off-screen container so html2canvas
-      // renders it without any visual flash on the user's screen, and so
-      // the screenshot is consistent regardless of scroll position or
-      // whether the popup is partially visible. The clone is removed
-      // immediately after the canvas is captured.
-      const offscreen = document.createElement("div");
-      offscreen.style.position = "fixed";
-      offscreen.style.left = "-99999px";
-      offscreen.style.top = "0";
-      offscreen.style.width = "560px";
-      offscreen.style.background = "#ffffff";
-      offscreen.style.opacity = "1";
-      offscreen.style.pointerEvents = "none";
-      offscreen.style.zIndex = "-1";
-      const clone = labelEl.cloneNode(true) as HTMLElement;
-      offscreen.appendChild(clone);
-      document.body.appendChild(offscreen);
-
-      // Small delay to let the browser lay out the off-screen clone
-      // (images, SVGs, fonts) before html2canvas snapshots it.
-      await new Promise((r) => setTimeout(r, 50));
-
-      let canvas: HTMLCanvasElement;
-      try {
-        canvas = await html2canvas(offscreen, {
-          scale: 2,
-          backgroundColor: "#ffffff",
-          logging: false,
-          useCORS: true,
-          allowTaint: false,
-          width: 560,
-          windowWidth: 560,
-        });
-      } finally {
-        // Always clean up the off-screen clone, even on error
-        document.body.removeChild(offscreen);
-      }
-
+      // ── html2canvas path (PRIMARY) ──
+      // Screenshot the on-screen JSX DOM (#shipping-label-print) directly.
+      // We render the VISIBLE element (not an off-screen clone) because
+      // html2canvas needs the element's computed styles, layout, and SVG
+      // barcodes to be fully rendered — an off-screen clone produces a
+      // blank canvas because SVGs and computed styles don't transfer
+      // properly when cloned.
+      const canvas = await html2canvas(labelEl, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        logging: false,
+        useCORS: true,
+        allowTaint: false,
+        width: labelEl.offsetWidth,
+        height: labelEl.offsetHeight,
+      });
       const imgData = canvas.toDataURL("image/png");
 
       // Fit the image inside the usable area, preserving aspect ratio.
