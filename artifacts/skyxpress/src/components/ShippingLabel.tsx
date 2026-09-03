@@ -118,6 +118,79 @@ interface ShippingLabelProps {
 const WEBSITE = "www.skyxpress.site";
 
 export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: ShippingLabelProps) {
+  // ── Robust print positioning ──────────────────────────────────────────
+  // FIX (overlapping / misaligned print): the static `@media print` CSS
+  // fallback below (used whenever the browser's own Print/Ctrl+P is used
+  // instead of the in-app "Print" button) rotates + scales + translates the
+  // label using a HARD-CODED assumed natural height (750px). Real labels
+  // vary in height — longer addresses wrap onto extra lines, phone numbers
+  // wrap, contents text wraps, etc. — so the assumed height is very often
+  // wrong. Because the translate/scale math is derived FROM that assumed
+  // height, any mismatch causes the rotated label to land at the wrong
+  // scale/position on the page, which is what makes rows and columns
+  // print on top of one another.
+  //
+  // The fix: measure the label's REAL rendered height right before the
+  // browser prints (the `beforeprint` event fires synchronously for both
+  // the native browser print UI and window.print()), recompute the exact
+  // same transform the in-app "Print" button already computes correctly,
+  // and apply it directly as an inline style. Inline styles win over the
+  // stylesheet fallback (same !important, higher specificity), so this
+  // takes effect no matter how printing was triggered. `afterprint`
+  // restores the element so the on-screen preview is unaffected.
+  useEffect(() => {
+    const LABEL_ID = "shipping-label-print";
+    const LABEL_W = 560;
+    const PX_PER_MM = 96 / 25.4;
+    const USABLE_W_PX = (210 - 20) * PX_PER_MM; // A4 width minus 10mm margins
+    const USABLE_H_PX = (297 - 20) * PX_PER_MM; // A4 height minus 10mm margins
+    const SIDE_BREATHING_PX = 14;
+    const BOTTOM_BREATHING_PX = 14;
+
+    const applyPrintTransform = () => {
+      const el = document.getElementById(LABEL_ID);
+      if (!el) return;
+      // Reset any previous transform first so we measure the label's true
+      // un-rotated, un-scaled height, not a stale transformed one.
+      el.style.setProperty("transform", "none", "important");
+      const naturalHeight = el.getBoundingClientRect().height || el.scrollHeight;
+      if (!naturalHeight) return;
+      const scale = Math.min(1.15, (USABLE_W_PX - 2 * SIDE_BREATHING_PX) / naturalHeight);
+      const scaledW = LABEL_W * scale;
+      const scaledH = naturalHeight * scale;
+      const rotatedW = scaledH; // page horizontal extent after 90° rotation
+      const rotatedH = scaledW; // page vertical extent after 90° rotation
+      const offsetX = Math.max(0, (USABLE_W_PX - rotatedW) / 2);
+      const offsetY = Math.max(0, USABLE_H_PX - rotatedH - BOTTOM_BREATHING_PX);
+      el.style.setProperty("transform-origin", "0 0", "important");
+      el.style.setProperty(
+        "transform",
+        `translate(${offsetX}px, ${offsetY + scaledW}px) rotate(-90deg) scale(${scale})`,
+        "important"
+      );
+      el.style.setProperty("position", "fixed", "important");
+      el.style.setProperty("top", "0", "important");
+      el.style.setProperty("left", "0", "important");
+    };
+
+    const clearPrintTransform = () => {
+      const el = document.getElementById(LABEL_ID);
+      if (!el) return;
+      el.style.removeProperty("transform");
+      el.style.removeProperty("transform-origin");
+      el.style.removeProperty("position");
+      el.style.removeProperty("top");
+      el.style.removeProperty("left");
+    };
+
+    window.addEventListener("beforeprint", applyPrintTransform);
+    window.addEventListener("afterprint", clearPrintTransform);
+    return () => {
+      window.removeEventListener("beforeprint", applyPrintTransform);
+      window.removeEventListener("afterprint", clearPrintTransform);
+    };
+  }, []);
+
   if (!parcel) return null;
 
   // FIX: DOX/NON DOX must come from `document_type` (the Document / Non-Document
@@ -896,10 +969,14 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
           {/* â”€â”€ Ref / Day / Time row â”€â”€ */}
           <div style={{ display: "flex", alignItems: "center", padding: "4px 10px", borderBottom: "1px solid #ccc" }}>
-            <div style={{ flex: 1, fontSize: 10 }}>
+            <div style={{
+              flex: 1, minWidth: 0, fontSize: 10,
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              paddingRight: 8,
+            }}>
               CNIC Shipper: {cnicCode}
             </div>
-            <div style={{ display: "flex", gap: 20, fontSize: 9, color: "#555" }}>
+            <div style={{ display: "flex", flexShrink: 0, gap: 20, fontSize: 9, color: "#555" }}>
               <div style={{ textAlign: "center" }}>
                 <div style={{ fontWeight: 700 }}>Day</div>
                 <div style={{ fontSize: 9, marginTop: 2, whiteSpace: "nowrap" }}>{dayStr}</div>
@@ -916,14 +993,14 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
             display: "flex", alignItems: "center", justifyContent: "flex-end",
             padding: "4px 10px 6px", gap: 24, borderBottom: "1px solid #aaa",
           }}>
-            <div style={{ fontSize: 9, color: "#555" }}>Pce/Shpt</div>
-            <div>
+            <div style={{ flexShrink: 0, fontSize: 9, color: "#555" }}>Pce/Shpt</div>
+            <div style={{ flexShrink: 0, textAlign: "center" }}>
               <div style={{ fontSize: 9, color: "#555" }}>Weight</div>
-              <div style={{ fontSize: 20, fontWeight: 900 }}>{weightKg} kg</div>
+              <div style={{ fontSize: 20, fontWeight: 900, whiteSpace: "nowrap" }}>{weightKg} kg</div>
             </div>
-            <div>
+            <div style={{ flexShrink: 0, textAlign: "center" }}>
               <div style={{ fontSize: 9, color: "#555" }}>Piece</div>
-              <div style={{ fontSize: 20, fontWeight: 900 }}>1/{pieces}</div>
+              <div style={{ fontSize: 20, fontWeight: 900, whiteSpace: "nowrap" }}>1/{pieces}</div>
             </div>
           </div>
 
@@ -937,7 +1014,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
                   {parcel.reference_id || parcel.tracking_id}
                 </div>
               </div>
-              <div style={{ minWidth: 110, textAlign: "right", fontSize: 9, paddingTop: 4 }}>
+              <div style={{ flexShrink: 0, width: 110, maxWidth: 110, textAlign: "right", fontSize: 9, paddingTop: 4 }}>
                 <div style={{ fontWeight: 700, marginBottom: 2 }}>Contents:</div>
                 <div style={{ color: "#333", wordBreak: "break-word", textTransform: "uppercase" }}>
                   {contentsText.slice(0, 80)}
