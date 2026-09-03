@@ -69,17 +69,23 @@ const groupEventsByDate = (timeline: any[]) => {
   return grouped;
 };
 
-// Collapse duplicate-status events on the SAME day so the Flight Log
-// never shows the same status label twice within one date group. This
-// fixes the "double showing" bug where the backend writes two events
-// with the same status (e.g. two "Delivered", two "In Transit", two
-// "Flight Arrived") on the same day with slightly different timestamps
-// or locations — we now keep only the most recent one per (status, day)
-// pair, which is the one with the richest info.
+// Collapse duplicate-status events so the Flight Log never shows the same
+// status label twice in a row with the SAME location.
 //
-// This is safe for a shipping timeline because statuses are monotonic
-// (a parcel never goes back from "Delivered" to "In Transit"), so any
-// two same-status-same-day events are genuinely redundant.
+// FIX: previously this collapsed by `(status, day)` — keeping only the
+// newest event per status per day. But the manifest sync writes TWO events
+// for every tracking update — one bare event (status + timestamp) and one
+// rich event (status + timestamp + location + notes). If they share the
+// same timestamp, the (status, day) dedupe would keep only ONE of them,
+// and the kept one was often the EMPTY one — which is why the boarding
+// pass showed the Flight Departure / Flight Arrived events without any
+// location or note, even though `PublicTracking.tsx` (which dedupes by
+// status+location, NOT status+day) showed them fine.
+//
+// New rule: only collapse when BOTH status AND location (or notes) match.
+// That way, if the backend writes one bare event + one rich event with the
+// same status, both are preserved — but a true duplicate (same status AND
+// same location AND same notes AND near-identical timestamp) still collapses.
 const dedupeConsecutiveStatuses = (timeline: any[]): any[] => {
   if (!Array.isArray(timeline) || timeline.length === 0) return [];
   const sorted = [...timeline].sort(
@@ -88,12 +94,15 @@ const dedupeConsecutiveStatuses = (timeline: any[]): any[] => {
   const seen = new Set<string>();
   return sorted.filter((evt: any) => {
     const status = (evt.status || evt.title || "update").toString().toLowerCase();
-    const ts = evt.timestamp ? new Date(evt.timestamp) : new Date(0);
-    // Use the calendar day as the grouping key so events on different days
-    // with the same status are preserved (e.g. "In Transit" on Monday AND
-    // Tuesday should still show both — only same-day duplicates collapse).
-    const dayKey = ts.toDateString();
-    const key = `${status}|${dayKey}`;
+    const loc = (evt.location || evt.place || evt.city || evt.checkpoint || "")
+      .toString().trim().toLowerCase();
+    const note = (evt.notes || evt.note || evt.admin_comment || evt.comment || "")
+      .toString().trim().toLowerCase();
+    // Dedupe key: status + location + first 30 chars of note.
+    // Two events with the SAME status but DIFFERENT location or note are
+    // treated as distinct and both are kept — so the rich event (with
+    // location + note) is never dropped in favour of the bare one.
+    const key = `${status}|${loc}|${note.slice(0, 30)}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
