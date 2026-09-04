@@ -118,6 +118,79 @@ interface ShippingLabelProps {
 const WEBSITE = "www.skyxpress.site";
 
 export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: ShippingLabelProps) {
+  // ── Robust print positioning ──────────────────────────────────────────
+  // FIX (overlapping / misaligned print): the static `@media print` CSS
+  // fallback below (used whenever the browser's own Print/Ctrl+P is used
+  // instead of the in-app "Print" button) rotates + scales + translates the
+  // label using a HARD-CODED assumed natural height (750px). Real labels
+  // vary in height — longer addresses wrap onto extra lines, phone numbers
+  // wrap, contents text wraps, etc. — so the assumed height is very often
+  // wrong. Because the translate/scale math is derived FROM that assumed
+  // height, any mismatch causes the rotated label to land at the wrong
+  // scale/position on the page, which is what makes rows and columns
+  // print on top of one another.
+  //
+  // The fix: measure the label's REAL rendered height right before the
+  // browser prints (the `beforeprint` event fires synchronously for both
+  // the native browser print UI and window.print()), recompute the exact
+  // same transform the in-app "Print" button already computes correctly,
+  // and apply it directly as an inline style. Inline styles win over the
+  // stylesheet fallback (same !important, higher specificity), so this
+  // takes effect no matter how printing was triggered. `afterprint`
+  // restores the element so the on-screen preview is unaffected.
+  useEffect(() => {
+    const LABEL_ID = "shipping-label-print";
+    const LABEL_W = 560;
+    const PX_PER_MM = 96 / 25.4;
+    const USABLE_W_PX = (210 - 20) * PX_PER_MM; // A4 width minus 10mm margins
+    const USABLE_H_PX = (297 - 20) * PX_PER_MM; // A4 height minus 10mm margins
+    const SIDE_BREATHING_PX = 14;
+    const BOTTOM_BREATHING_PX = 14;
+
+    const applyPrintTransform = () => {
+      const el = document.getElementById(LABEL_ID);
+      if (!el) return;
+      // Reset any previous transform first so we measure the label's true
+      // un-rotated, un-scaled height, not a stale transformed one.
+      el.style.setProperty("transform", "none", "important");
+      const naturalHeight = el.getBoundingClientRect().height || el.scrollHeight;
+      if (!naturalHeight) return;
+      const scale = Math.min(1.15, (USABLE_W_PX - 2 * SIDE_BREATHING_PX) / naturalHeight);
+      const scaledW = LABEL_W * scale;
+      const scaledH = naturalHeight * scale;
+      const rotatedW = scaledH; // page horizontal extent after 90° rotation
+      const rotatedH = scaledW; // page vertical extent after 90° rotation
+      const offsetX = Math.max(0, (USABLE_W_PX - rotatedW) / 2);
+      const offsetY = Math.max(0, USABLE_H_PX - rotatedH - BOTTOM_BREATHING_PX);
+      el.style.setProperty("transform-origin", "0 0", "important");
+      el.style.setProperty(
+        "transform",
+        `translate(${offsetX}px, ${offsetY + scaledW}px) rotate(-90deg) scale(${scale})`,
+        "important"
+      );
+      el.style.setProperty("position", "fixed", "important");
+      el.style.setProperty("top", "0", "important");
+      el.style.setProperty("left", "0", "important");
+    };
+
+    const clearPrintTransform = () => {
+      const el = document.getElementById(LABEL_ID);
+      if (!el) return;
+      el.style.removeProperty("transform");
+      el.style.removeProperty("transform-origin");
+      el.style.removeProperty("position");
+      el.style.removeProperty("top");
+      el.style.removeProperty("left");
+    };
+
+    window.addEventListener("beforeprint", applyPrintTransform);
+    window.addEventListener("afterprint", clearPrintTransform);
+    return () => {
+      window.removeEventListener("beforeprint", applyPrintTransform);
+      window.removeEventListener("afterprint", clearPrintTransform);
+    };
+  }, []);
+
   if (!parcel) return null;
 
   // FIX: DOX/NON DOX must come from `document_type` (the Document / Non-Document
@@ -287,151 +360,262 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
   const handleSavePDF = async () => {
     const { default: jsPDF } = await import("jspdf");
 
-    // ── Label dimensions (unchanged from original design) ──
+    // ── A4 layout (label rotated 90° CCW, anchored to BOTTOM of A4) ──
+    // Use a real A4 PORTRAIT page (210 × 297 mm) with a 10 mm margin on every
+    // side, matching the print output. The label itself is drawn unchanged at
+    // its original 105 mm design width (W) and natural design height (H),
+    // then a 90° COUNTER-CLOCKWISE rotation is applied so the label appears
+    // in LANDSCAPE orientation on the A4 page. The rotated label is anchored
+    // to the BOTTOM of the usable area and centered horizontally; the upper
+    // portion of the A4 page is left blank/white.
+    //
+    // After a 90° CCW rotation, the label's on-page footprint becomes:
+    //   rotatedW = H * scale   (design height → page horizontal extent)
+    //   rotatedH = W * scale   (design width  → page vertical   extent)
+    // We pick `scale` so that rotatedW fits inside the 190 mm usable width
+    // with a small breathing margin on each side.
+    const PAGE_W = 210;
+    const PAGE_H = 297;
+    const MARGIN = 10;
+    const USABLE_W = PAGE_W - 2 * MARGIN; // 190 mm
+    const USABLE_H = PAGE_H - 2 * MARGIN; // 277 mm
+    const ROTATED_BREATHING = 4;          // mm of breathing room each side after rotation
+    const BOTTOM_BREATHING = 4;          // mm of breathing room below the rotated label
+
+    // Original design width of the label drawing code (do not change —
+    // all coordinates below assume this).
     const W = 105;
     const pad = 4;
-    const CONTACT_W = 34;
-    const ORIGIN_W = 22;
-    const addrMaxW = W - CONTACT_W - pad - 3;
+    const CONTACT_W = 34;        // right panel width for contact
+    const ORIGIN_W  = 22;        // right panel width for origin
+    const addrMaxW  = W - CONTACT_W - pad - 3;  // max width for address lines
+    // PDF_SCALE is now computed AFTER we know the label height H, see below.
+    // (Forward declaration so the pre-wrap code that uses PDF_SCALE still compiles.)
+    let PDF_SCALE = 1;
 
-    // Pre-wrap address lines using a temporary canvas for text measurement.
-    // Font sizes in jsPDF are in POINTS. Our canvas uses ctx.scale(PX_PER_MM)
-    // so 1 unit = 1mm. To convert pt→mm: multiply by 0.3528 (1pt = 0.3528mm).
-    const PT_TO_MM = 0.3528;
-    const tmpCanvas = document.createElement("canvas");
-    const tmpCtx = tmpCanvas.getContext("2d")!;
-    const measureWrap = (text: string, maxWidthMm: number, fontMm: string): string[] => {
-      tmpCtx.font = fontMm;
-      const words = text.split(/\s+/);
-      const lines: string[] = [];
-      let current = "";
-      for (const word of words) {
-        const test = current ? current + " " + word : word;
-        if (tmpCtx.measureText(test).width <= maxWidthMm) {
-          current = test;
-        } else {
-          if (current) lines.push(current);
-          current = word;
-        }
-      }
-      if (current) lines.push(current);
-      return lines;
-    };
+    // Pre-wrap address lines so we know how many rows each section needs.
+    // Wrap widths are SCALED (real page mm) so wrapping matches what the
+    // real doc renders at the scaled font size.
+    //
+    // NOTE: At this point PDF_SCALE is still 1 — we won't know the real
+    // scale until we know the design height H (which depends on wrapping).
+    // To break the chicken-and-egg cycle we pre-wrap at scale = 1 using
+    // the unscaled font size, then re-wrap once more after computing the
+    // final scale. Empirically the wrap widths in design-mm do not change
+    // (they are derived from W, ORIGIN_W, pad — all constants), and the
+    // number of wrapped lines is identical because the *ratio* of
+    // text width / box width is scale-invariant.
+    const PRE_WRAP_FONT = 7.5;
+    const tmp = new jsPDF({ unit: "mm", format: [W, 300] });
+    tmp.setFont("helvetica", "normal"); tmp.setFontSize(PRE_WRAP_FONT);
 
-    const WRAP_FONT = `normal ${7.5 * PT_TO_MM}px Arial`;
+    // Wrap in DESIGN-mm units (scale=1). The wrapped line count equals
+    // what the scaled rendering will produce because both font size and
+    // wrap width scale by the same factor.
     const sndWrapped: string[] = sndLines.flatMap(ln =>
-      measureWrap(ln, (W - ORIGIN_W - pad - 3), WRAP_FONT));
+      tmp.splitTextToSize(ln, (W - ORIGIN_W - pad - 3)));
     const rcvWrapped: string[] = rcvLines.flatMap(ln =>
-      measureWrap(ln, addrMaxW, WRAP_FONT));
+      tmp.splitTextToSize(ln, addrMaxW));
 
     const LINE_H = 3.6;
-    const fromBodyH = Math.max(0, sndWrapped.slice(0, 6).length * LINE_H);
-    const toBodyH = Math.max(0, rcvWrapped.slice(0, 7).length * LINE_H);
+    const fromBodyH = Math.max(0, (sndWrapped.slice(0, 6).length) * LINE_H);
+    const toBodyH   = Math.max(0, (rcvWrapped.slice(0, 7).length) * LINE_H);
 
-    const hdrH = 29;
+    // hdrH bumped from 25 -> 29 to make room for the website line under the date
+    const hdrH  = 29;
     const fromH = Math.max(24, 13 + fromBodyH + 3);
-    const toH = Math.max(28, 13 + toBodyH + 3);
-    const barH = 8;
-    const refH = 11;
-    const wH = 15;
-    const bcH = 17;
+    const toH   = Math.max(28, 13 + toBodyH   + 3);
+    const barH  = 8;
+    const refH  = 11;
+    const wH    = 15;
+    const bcH   = 17;   // barcode image height
     const H = hdrH + fromH + toH + barH + refH + wH + 4 + (bcH + 7) * 2 + 6;
 
-    // ── Create canvas at label design size (300 DPI for print quality) ──
-    const DPI = 300;
-    const PX_PER_MM = DPI / 25.4;
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.ceil(W * PX_PER_MM);
-    canvas.height = Math.ceil(H * PX_PER_MM);
-    const ctx = canvas.getContext("2d")!;
-    ctx.scale(PX_PER_MM, PX_PER_MM); // Work in mm coordinates
+    // ── Final scale, now that we know H (the design height) ──
+    // After 90° CCW rotation, the rotated label's page width = H * scale.
+    // We pick `scale` so this fits inside USABLE_W with breathing margin.
+    PDF_SCALE = (USABLE_W - 2 * ROTATED_BREATHING) / H;
 
-    // White background
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, W, H);
+    // ── Real doc ──
+    // A4 PORTRAIT page; label is drawn rotated 90° CCW inside it.
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [PAGE_W, PAGE_H] });
 
-    // ── Helper functions (Canvas 2D equivalents of jsPDF API) ──
+    // Re-wrap at the SCALED font size so the real rendered lines exactly
+    // match the pre-computed row counts (fromBodyH / toBodyH). Because the
+    // ratio text-width/wrap-width is scale-invariant, this re-wrap produces
+    // the same number of lines — but the lines themselves are computed at
+    // the actual font size used by the real doc, eliminating any drift.
+    tmp.setFontSize(PRE_WRAP_FONT * PDF_SCALE);
+    const sndWrappedScaled: string[] = sndLines.flatMap(ln =>
+      tmp.splitTextToSize(ln, (W - ORIGIN_W - pad - 3) * PDF_SCALE));
+    const rcvWrappedScaled: string[] = rcvLines.flatMap(ln =>
+      tmp.splitTextToSize(ln, addrMaxW * PDF_SCALE));
+    // Swap in the scaled wraps (line counts are identical to the unscaled
+    // versions, so fromBodyH / toBodyH are still valid).
+    while (sndWrapped.length) sndWrapped.pop();
+    sndWrapped.push(...sndWrappedScaled);
+    while (rcvWrapped.length) rcvWrapped.pop();
+    rcvWrapped.push(...rcvWrappedScaled);
+
+    // ── Rotation math (90° CCW) ──
+    // For a 90° counter-clockwise rotation around the design's top-left:
+    //   design top edge  (y=0) → page LEFT   edge of the rotated footprint
+    //   design right edge (x=W) → page TOP    edge of the rotated footprint
+    //   design bottom  edge (y=H) → page RIGHT  edge of the rotated footprint
+    //   design left edge  (x=0) → page BOTTOM edge of the rotated footprint
+    //
+    // Mapping a design point (x, y) to page coordinates:
+    //   page_x = _originX + y       * _scale      (design Y → page X)
+    //   page_y = _originY + (W - x) * _scale      (design X → page Y, flipped)
+    //
+    // After rotation, design's horizontal extents become vertical and vice
+    // versa, so for axis-aligned primitives we also swap (w, h):
+    //   design rect (x, y, w, h) → page rect at
+    //     (_originX + y*_scale, _originY + (W-x-w)*_scale)  size (h*_scale, w*_scale)
+    //   design horizontal line at y from x=0 to x=W → page VERTICAL line at
+    //     x = _originX + y*_scale, from y=_originY to y=_originY + W*_scale
+    const _scale = PDF_SCALE;
+    const rotatedW = H * _scale;                  // page horizontal extent
+    const rotatedH = W * _scale;                  // page vertical   extent
+    // Center horizontally inside the usable area.
+    const _originX = MARGIN + (USABLE_W - rotatedW) / 2;
+    // Anchor to BOTTOM of usable area, with a small breathing margin.
+    const _originY = MARGIN + (USABLE_H - rotatedH) - BOTTOM_BREATHING;
+
+    // Bind originals BEFORE installing overrides (so the overrides can call
+    // the originals with already-transformed coords without infinite
+    // recursion).
+    const _origLine = doc.line.bind(doc);
+    const _origRect = doc.rect.bind(doc);
+    const _origAddImage = doc.addImage.bind(doc);
+    const _origText = doc.text.bind(doc);
+
+    // Transform helpers: convert original-design (x, y, w, h) in mm into
+    // A4 page coordinates with rotation + scale.
+    // NOTE: page X depends on design Y, and page Y depends on design X
+    // (rotation couples them). All callers below pass BOTH x and y so the
+    // helpers can compute the correct page coordinate.
+    const pdfPx = (y: number) => _originX + y * _scale;            // design Y → page X
+    const pdfPy = (x: number) => _originY + (W - x) * _scale;     // design X → page Y
+    const pdfPs = (v: number) => v * _scale;                       // scalar scale
+
+    // Fill a design-space rectangle. After 90° CCW rotation it becomes a
+    // page rect at (pdfPx(y), pdfPy(x+w)) with swapped w/h.
     const fillRect = (x: number, y: number, w: number, h: number, r: number, g: number, b: number) => {
-      ctx.fillStyle = `rgb(${r},${g},${b})`;
-      ctx.fillRect(x, y, w, h);
+      doc.setFillColor(r, g, b);
+      // design top-left (x,   y) → page (pdfPx(y),         pdfPy(x))
+      // design top-right (x+w, y) → page (pdfPx(y),         pdfPy(x+w))
+      // → page rect top-left = (pdfPx(y), pdfPy(x+w)), size (h*scale, w*scale)
+      _origRect(pdfPx(y), pdfPy(x + w), h * _scale, w * _scale, "F");
     };
+    // Horizontal line in design → VERTICAL line on page (after rotation).
     const hline = (y: number, lw = 0.3, r = 0, g = 0, b = 0) => {
-      ctx.strokeStyle = `rgb(${r},${g},${b})`;
-      ctx.lineWidth = lw;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(W, y);
-      ctx.stroke();
+      doc.setDrawColor(r, g, b); doc.setLineWidth(lw * _scale);
+      // design (0, y) → page (pdfPx(y), pdfPy(0)   = _originY + W*scale)
+      // design (W, y) → page (pdfPx(y), pdfPy(W)   = _originY)
+      _origLine(pdfPx(y), _originY, pdfPx(y), _originY + W * _scale);
     };
-    const vline = (x: number, y1: number, y2: number, lw = 0.2, r = 200, g = 200, b = 200) => {
-      ctx.strokeStyle = `rgb(${r},${g},${b})`;
-      ctx.lineWidth = lw;
-      ctx.beginPath();
-      ctx.moveTo(x, y1);
-      ctx.lineTo(x, y2);
-      ctx.stroke();
-    };
+    // Text — positioned at the rotated page location, and rotated 90° CCW
+    // (angle = 90 in jsPDF) so glyphs read correctly when viewing the
+    // rotated label.
     const txt = (s: string | string[], x: number, y: number, opts?: any) => {
-      const align = opts?.align || "left";
-      ctx.textAlign = align as CanvasTextAlign;
-      ctx.textBaseline = "alphabetic";
-      if (Array.isArray(s)) {
-        s.forEach((line, i) => ctx.fillText(line, x, y + i * LINE_H));
-      } else {
-        ctx.fillText(s, x, y);
-      }
+      const pageX = pdfPx(y);
+      const pageY = pdfPy(x);
+      const newOpts = { ...(opts || {}), angle: 90 };
+      return _origText(s as any, pageX, pageY, newOpts);
     };
     const sf = (style: string, size: number, r = 0, g = 0, b = 0) => {
-      // Convert pt→mm for canvas (which works in mm after ctx.scale)
-      ctx.font = `${style === "bold" ? "bold" : "normal"} ${size * PT_TO_MM}px Arial, Helvetica, sans-serif`;
-      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      // Font size is scaled so text stays proportional with the drawing.
+      doc.setFont("helvetica", style); doc.setFontSize(size * _scale); doc.setTextColor(r, g, b);
     };
-    const getTextWidth = (s: string) => ctx.measureText(s).width;
-    const splitText = (text: string, maxWidth: number) => {
-      return measureWrap(text, maxWidth, ctx.font);
+    // Override addImage so existing barcode addImage calls get transformed
+    // AND rotated 90° CCW to match the rest of the label.
+    //
+    // EMPIRICALLY VERIFIED jsPDF behaviour for `addImage(x, y, w, h, ..., rotation=90)`:
+    //   - jsPDF uses (x, y+h) — the BOTTOM-LEFT corner of the original image —
+    //     as the rotation anchor (NOT (x, y)).
+    //   - The rotation matrix output to the PDF is `0 1 -1 0 0 0`,
+    //     which is a 90° counter-clockwise (visual CCW) rotation.
+    //   - After rotation, the on-page rect (jsPDF Y-DOWN coords) becomes:
+    //       x ∈ [x - h, x]            (image extends LEFT of anchor by h)
+    //       y ∈ [y + h - w, y + h]   (image extends UP from y+h-w to y+h)
+    //     i.e. width = h, height = w (swapped from original).
+    //
+    // For our design rotation (visual CCW), we want the rotated image to
+    // occupy the page rect:
+    //       x ∈ [pdfPx(y), pdfPx(y+h)]       width = h * scale
+    //       y ∈ [pdfPy(x+w), pdfPy(x)]       height = w * scale
+    //
+    // Matching against jsPDF's behaviour (anchor = (x_param, y_param + h_param)):
+    //   x_param            = pdfPx(y + h)                       (right edge of desired rect)
+    //   y_param + h_param  = pdfPy(x)        → y_param = pdfPy(x) - h * scale  (bottom edge)
+    //   w_param            = w * scale                          (unrotated image width)
+    //   h_param            = h * scale                          (unrotated image height)
+    doc.addImage = (data: any, format: string, x: number, y: number, w: number, h: number, alias?: any, compression?: any, _rotation?: any) => {
+      return _origAddImage(data, format, pdfPx(y + h), pdfPy(x) - h * _scale, w * _scale, h * _scale, alias, compression, 90);
     };
+    // Override line() and rect() so any direct calls elsewhere in the code
+    // (e.g. the vertical divider, outer border) also get transformed.
+    doc.line = (x1: number, y1: number, x2: number, y2: number, style?: string) => {
+      // design (x1,y1) → page (pdfPx(y1), pdfPy(x1))
+      // design (x2,y2) → page (pdfPx(y2), pdfPy(x2))
+      return _origLine(pdfPx(y1), pdfPy(x1), pdfPx(y2), pdfPy(x2), style);
+    };
+    doc.rect = (x: number, y: number, w: number, h: number, style?: string) => {
+      // Same as fillRect above, but respects the `style` argument.
+      return _origRect(pdfPx(y), pdfPy(x + w), h * _scale, w * _scale, style);
+    };
+    // getTextWidth depends on current font size — already scaled via sf().
+    // splitTextToSize is independent of scale (it works in mm units) so we
+    // leave it alone, but its results are interpreted in design-mm, which
+    // is what the original code expects.
 
-    // ── Load logo image ──
-    let logoImg: HTMLImageElement | null = null;
-    let logoAspect = 1;
+    // â”€â”€ logo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // FIX: previously the logo was force-fit into a fixed width AND fixed height
+    // box with doc.addImage(), which ignores the source image's real aspect
+    // ratio and stretches/squashes it â€” this is what produced the warped,
+    // "rotated-looking" logo in the PDF. Now we measure the real image
+    // dimensions and contain-fit it inside the box, centered, so it always
+    // keeps its correct proportions.
+    let logoDataUrl: string | null = null;
+    let logoAspect = 1; // width / height
     try {
-      logoImg = await new Promise<HTMLImageElement>((res, rej) => {
+      const resp = await fetch(skyxpressLogo);
+      const blob = await resp.blob();
+      logoDataUrl = await new Promise<string>((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result as string);
+        fr.onerror = () => rej(new Error("logo read failed"));
+        fr.readAsDataURL(blob);
+      });
+      const img = await new Promise<HTMLImageElement>((res, rej) => {
         const im = new Image();
         im.onload = () => res(im);
-        im.onerror = () => rej(new Error("logo load failed"));
-        im.src = skyxpressLogo;
+        im.onerror = () => rej(new Error("logo decode failed"));
+        im.src = logoDataUrl as string;
       });
-      if (logoImg.naturalWidth && logoImg.naturalHeight) {
-        logoAspect = logoImg.naturalWidth / logoImg.naturalHeight;
+      if (img.naturalWidth && img.naturalHeight) {
+        logoAspect = img.naturalWidth / img.naturalHeight;
       }
-    } catch { /* ok — no logo */ }
+    } catch { /* ok â€” falls back to no logo */ }
 
-    // ── Generate barcodes ──
-    const makeBC = (val: string): HTMLCanvasElement => {
+    // â”€â”€ barcodes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const makeBC = (val: string) => {
       const c = document.createElement("canvas");
-      try {
-        JsBarcode(c, val, {
-          format: "CODE128", height: 80, displayValue: false,
-          margin: 4, background: "#fff", lineColor: "#000",
-        });
-      } catch { /* */ }
-      return c;
+      try { JsBarcode(c, val, { format: "CODE128", height: 80, displayValue: false, margin: 4, background: "#fff", lineColor: "#000" }); } catch { /* */ }
+      return c.toDataURL("image/png");
     };
     const barcodeRef = parcel.reference_id || parcel.tracking_id;
     const refBC = makeBC(barcodeRef || "000000");
     const trkBC = makeBC(trackCode || "000000");
 
-    // ═══════════════════════════════════════════════════════════════
-    // DRAW LABEL (unrotated — same as original design)
-    // ═══════════════════════════════════════════════════════════════
+    // â”€â”€ outer border â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    doc.setDrawColor(0); doc.setLineWidth(0.4 * _scale); doc.rect(0, 0, W, H);
 
-    // Outer border
-    ctx.strokeStyle = "rgb(0,0,0)";
-    ctx.lineWidth = 0.4;
-    ctx.strokeRect(0, 0, W, H);
-
-    // ── HEADER ──
-    const doxW = dox === "DOX" ? 18 : 22;
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // HEADER
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    const doxW  = dox === "DOX" ? 18 : 22;
     const logoW = 26;
     const mainW = W - doxW - logoW;
 
@@ -439,35 +623,43 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     sf("bold", dox === "DOX" ? 13 : 9, 255, 255, 255);
     txt(dox, mainW + doxW / 2, hdrH / 2 + 2, { align: "center" });
 
-    if (logoImg) {
+    if (logoDataUrl) {
+      // contain-fit the logo inside its box, preserving aspect ratio
       const boxW = logoW - 2;
       const boxH = hdrH - 4;
       let drawW = boxW;
       let drawH = boxW / logoAspect;
-      if (drawH > boxH) { drawH = boxH; drawW = boxH * logoAspect; }
+      if (drawH > boxH) {
+        drawH = boxH;
+        drawW = boxH * logoAspect;
+      }
       const offX = mainW + doxW + 1 + (boxW - drawW) / 2;
       const offY = 2 + (boxH - drawH) / 2;
-      ctx.drawImage(logoImg, offX, offY, drawW, drawH);
+      doc.addImage(logoDataUrl, "PNG", offX, offY, drawW, drawH);
     }
 
     sf("bold", 13, 0, 0, 0);
     txt("EXPRESS WORLDWIDE", pad, 8);
 
+    // service type badge
     sf("bold", 7, 255, 255, 255);
-    const stBadgeW = Math.min(getTextWidth(serviceType) + 5, mainW - pad - 2);
+    const stBadgeW = Math.min((doc.getTextWidth(serviceType) / _scale) + 5, mainW - pad - 2);
     fillRect(pad, 11, stBadgeW, 5, 26, 26, 46);
     txt(serviceType, pad + 2.5, 15);
 
     sf("normal", 6.5, 90, 90, 90);
     txt(labelDate(createdDate), pad, hdrH - 6);
 
+    // small website line under EXPRESS WORLDWIDE
     sf("normal", 6, 0, 51, 160);
     txt(WEBSITE, pad, hdrH - 2);
 
     hline(hdrH, 0.6);
     let y = hdrH;
 
-    // ── FROM / ORIGIN ──
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // FROM / ORIGIN
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     sf("bold", 7, 60, 60, 60);
     txt("FROM:", pad, y + 5);
     sf("bold", 9.5, 0, 0, 0);
@@ -480,7 +672,9 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     sf("normal", 6.5, 90, 90, 90);
     txt("Contact:", W - ORIGIN_W + 1, y + 5);
     sf("bold", 8, 0, 0, 0);
-    const sndNameLines = splitText(parcel.sender_name, (ORIGIN_W - 2));
+    // Wrap at the SCALED width (in real page mm) so wrapped lines fit
+    // the rendered box; then draw at the transformed anchor.
+    const sndNameLines = doc.splitTextToSize(parcel.sender_name, (ORIGIN_W - 2) * _scale);
     txt(sndNameLines, W - ORIGIN_W + 1, y + 10);
     if (parcel.sender_phone) {
       sf("normal", 8, 30, 30, 30);
@@ -490,7 +684,9 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     hline(y + fromH, 0.3, 160, 160, 160);
     y += fromH;
 
-    // ── TO / CONTACT ──
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // TO / CONTACT
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     hline(y, 0.6);
     const cxLeft = W - CONTACT_W;
 
@@ -503,12 +699,15 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     let ty = y + 15;
     for (const ln of rcvWrapped.slice(0, 7)) { txt(ln, pad, ty); ty += LINE_H; }
 
-    vline(cxLeft - 1, y, y + toH);
+    // vertical divider between address and contact
+    doc.setDrawColor(200); doc.setLineWidth(0.2 * _scale);
+    doc.line(cxLeft - 1, y, cxLeft - 1, y + toH);
 
     sf("normal", 6.5, 90, 90, 90);
     txt("Contact:", cxLeft + 1, y + 5);
     sf("bold", 8, 0, 0, 0);
-    const cNameLines = splitText(parcel.receiver_name, (CONTACT_W - 2));
+    // wrap contact name if too long
+    const cNameLines = doc.splitTextToSize(parcel.receiver_name, (CONTACT_W - 2) * _scale);
     txt(cNameLines, cxLeft + 1, y + 10.5);
     if (parcel.receiver_phone) {
       sf("normal", 8, 30, 30, 30);
@@ -518,21 +717,27 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     hline(y + toH, 0.5);
     y += toH;
 
-    // ── SERVICE TYPE BAR ──
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // SERVICE TYPE BAR
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     fillRect(0, y, W, barH, 0, 0, 0);
     sf("bold", 11, 255, 255, 255);
     txt(serviceType, pad, y + barH - 2);
     y += barH;
 
-    // ── REF / DAY / TIME ──
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // REF / DAY / TIME
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     sf("normal", 8, 0, 0, 0);
     txt(`CNIC Shipper: ${cnicCode}`, pad, y + 7);
 
+    // day column
     sf("bold", 6.5, 80, 80, 80);
     txt("Day", W - 36, y + 3.5, { align: "center" });
     sf("normal", 7, 0, 0, 0);
     txt(dayStr, W - 36, y + 8.5, { align: "center" });
 
+    // time column
     sf("bold", 6.5, 80, 80, 80);
     txt("Time", W - 14, y + 3.5, { align: "center" });
     sf("normal", 7, 0, 0, 0);
@@ -541,79 +746,49 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
     hline(y + refH, 0.2, 200, 200, 200);
     y += refH;
 
-    // ── WEIGHT / PIECES ──
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // WEIGHT / PIECES  â€” labels on top, values below
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     const colW = (W - pad) / 3;
 
+    // Pce/Shpt  |  Weight  |  Piece
     sf("normal", 6.5, 90, 90, 90);
     txt("Pce/Shpt", pad + colW * 0 + 2, y + 5, { align: "left" });
-    txt("Weight", pad + colW * 1 + colW / 2, y + 5, { align: "center" });
-    txt("Piece", pad + colW * 2 + colW / 2, y + 5, { align: "center" });
+    txt("Weight",   pad + colW * 1 + colW / 2, y + 5, { align: "center" });
+    txt("Piece",    pad + colW * 2 + colW / 2, y + 5, { align: "center" });
 
     sf("bold", 15, 0, 0, 0);
     txt(`${weightKg} kg`, pad + colW * 1 + colW / 2, y + 13, { align: "center" });
-    txt(`1/${pieces}`, pad + colW * 2 + colW / 2, y + 13, { align: "center" });
+    txt(`1/${pieces}`,    pad + colW * 2 + colW / 2, y + 13, { align: "center" });
 
     hline(y + wH, 0.2, 200, 200, 200);
     y += wH + 4;
 
-    // ── BARCODES ──
-    const cntX = pad + 65 + 3;
-    const bcW = 63;
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // BARCODES
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    const cntX  = pad + 65 + 3;   // contents start x
+    const bcW   = 63;             // barcode image width
 
-    // Upper — reference ID
-    ctx.drawImage(refBC, pad, y, bcW, bcH);
+    // Upper â€” reference ID
+    doc.addImage(refBC, "PNG", pad, y, bcW, bcH);
     sf("normal", 7, 0, 0, 0);
     txt(barcodeRef, pad + bcW / 2, y + bcH + 3.5, { align: "center" });
 
     sf("bold", 6.5, 60, 60, 60);
     txt("Contents:", cntX, y + 5);
     sf("normal", 6.5, 30, 30, 30);
-    const cntWrapped = splitText(contentsText.toUpperCase().slice(0, 80), W - cntX - pad);
+    const cntWrapped = doc.splitTextToSize(contentsText.toUpperCase().slice(0, 80), (W - cntX - pad) * _scale);
     txt(cntWrapped, cntX, y + 9.5);
 
     y += bcH + 8;
 
-    // Lower — tracking ID (full width)
-    ctx.drawImage(trkBC, pad, y, W - pad * 2, bcH);
+    // Lower â€” tracking ID (full width for prominence)
+    doc.addImage(trkBC, "PNG", pad, y, W - pad * 2, bcH);
     sf("normal", 7, 0, 0, 0);
     txt(trackCode, W / 2, y + bcH + 3.5, { align: "center" });
 
-    // ═══════════════════════════════════════════════════════════════
-    // RENDER TO PDF (rotate canvas image 90° CCW, place at bottom of A4)
-    // ═══════════════════════════════════════════════════════════════
-
-    const pngData = canvas.toDataURL("image/png");
-
-    const PAGE_W = 210, PAGE_H = 297, MARGIN = 10;
-    const USABLE_W = PAGE_W - 2 * MARGIN;     // 190 mm
-    const USABLE_H = PAGE_H - 2 * MARGIN;     // 277 mm
-    const SIDE_BREATHING = 4;                  // mm breathing room each side
-    const BOTTOM_BREATHING = 4;               // mm below rotated label
-
-    // Scale: fit the label's design height H into the usable page width.
-    const scale = (USABLE_W - 2 * SIDE_BREATHING) / H;
-    const rotatedW = H * scale;   // page horizontal extent
-    const rotatedH = W * scale;   // page vertical extent
-
-    const offsetX = MARGIN + (USABLE_W - rotatedW) / 2;
-    const offsetY = MARGIN + (USABLE_H - rotatedH) - BOTTOM_BREATHING;
-
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [PAGE_W, PAGE_H] });
-
-    // addImage rotation=90 anchors at (x, y+h) = bottom-left of original image.
-    // After 90° CCW rotation, the image occupies:
-    //   x ∈ [x_param - h_param, x_param]
-    //   y ∈ [y_param + h_param - w_param, y_param + h_param]
-    // We want: x ∈ [offsetX, offsetX + rotatedW], y ∈ [offsetY, offsetY + rotatedH]
-    // So: x_param = offsetX + h_param, y_param = offsetY + h_param - w_param
-    // Where: w_param = W * scale (unrotated image width), h_param = H * scale (unrotated height)
-    const w_param = W * scale;
-    const h_param = H * scale;
-    const x_param = offsetX + h_param;
-    const y_param = offsetY + h_param - w_param;
-
-    doc.addImage(pngData, "PNG", x_param, y_param, w_param, h_param, undefined, undefined, 90);
-
+    // â”€â”€ save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     doc.save(`SkyXpress_Label_${trackCode}.pdf`);
   };
 
@@ -794,10 +969,14 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
 
           {/* â”€â”€ Ref / Day / Time row â”€â”€ */}
           <div style={{ display: "flex", alignItems: "center", padding: "4px 10px", borderBottom: "1px solid #ccc" }}>
-            <div style={{ flex: 1, fontSize: 10 }}>
+            <div style={{
+              flex: 1, minWidth: 0, fontSize: 10,
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              paddingRight: 8,
+            }}>
               CNIC Shipper: {cnicCode}
             </div>
-            <div style={{ display: "flex", gap: 20, fontSize: 9, color: "#555" }}>
+            <div style={{ display: "flex", flexShrink: 0, gap: 20, fontSize: 9, color: "#555" }}>
               <div style={{ textAlign: "center" }}>
                 <div style={{ fontWeight: 700 }}>Day</div>
                 <div style={{ fontSize: 9, marginTop: 2, whiteSpace: "nowrap" }}>{dayStr}</div>
@@ -814,14 +993,14 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
             display: "flex", alignItems: "center", justifyContent: "flex-end",
             padding: "4px 10px 6px", gap: 24, borderBottom: "1px solid #aaa",
           }}>
-            <div style={{ fontSize: 9, color: "#555" }}>Pce/Shpt</div>
-            <div>
+            <div style={{ flexShrink: 0, fontSize: 9, color: "#555" }}>Pce/Shpt</div>
+            <div style={{ flexShrink: 0, textAlign: "center" }}>
               <div style={{ fontSize: 9, color: "#555" }}>Weight</div>
-              <div style={{ fontSize: 20, fontWeight: 900 }}>{weightKg} kg</div>
+              <div style={{ fontSize: 20, fontWeight: 900, whiteSpace: "nowrap" }}>{weightKg} kg</div>
             </div>
-            <div>
+            <div style={{ flexShrink: 0, textAlign: "center" }}>
               <div style={{ fontSize: 9, color: "#555" }}>Piece</div>
-              <div style={{ fontSize: 20, fontWeight: 900 }}>1/{pieces}</div>
+              <div style={{ fontSize: 20, fontWeight: 900, whiteSpace: "nowrap" }}>1/{pieces}</div>
             </div>
           </div>
 
@@ -835,7 +1014,7 @@ export function ShippingLabel({ parcel, open, onClose, countryMap = {} }: Shippi
                   {parcel.reference_id || parcel.tracking_id}
                 </div>
               </div>
-              <div style={{ minWidth: 110, textAlign: "right", fontSize: 9, paddingTop: 4 }}>
+              <div style={{ flexShrink: 0, width: 110, maxWidth: 110, textAlign: "right", fontSize: 9, paddingTop: 4 }}>
                 <div style={{ fontWeight: 700, marginBottom: 2 }}>Contents:</div>
                 <div style={{ color: "#333", wordBreak: "break-word", textTransform: "uppercase" }}>
                   {contentsText.slice(0, 80)}
