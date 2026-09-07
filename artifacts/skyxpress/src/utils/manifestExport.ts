@@ -113,7 +113,7 @@ export function exportManifestToExcel(
     Number(parcel.weight ?? 0),
     Number(parcel.total_price ?? 0),
     getDescription(parcel),
-    parcel.reference_id || parcel.tracking_id || "",
+    parcel.tracking_id || parcel.reference_id || "", // FIX: was reference_id first, causing TRACKING I'D column to show the reference ID instead of the actual tracking ID
     parcel.service_type || "",
     "LABEL PASTED",
   ]);
