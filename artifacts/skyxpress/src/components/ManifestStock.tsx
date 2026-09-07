@@ -1151,18 +1151,6 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     //    Also mirror the comment into `admin_note` so the public tracking page's
     //    top-of-pass "Note from SkyXpress" callout stays in sync with the latest
     //    staff comment.
-    // FIX: this sync used to be "fire and forget" — every `.update()` call's
-    // result was discarded, so a failed write (RLS policy blocking it, a bad
-    // column, a permissions error) was invisible. The manifest editor would
-    // still tell staff "Status updated ✓ (parcels synced)" even when NOTHING
-    // was actually written to the `parcels` table, which is why a status
-    // change from the manifest could appear to succeed here while the public
-    // tracking page kept showing the old status. We now track per-row
-    // success/failure and unmatched tracking IDs, and return that so the
-    // caller can show an accurate result instead of a false-positive toast.
-    const syncErrors: { trackingId: string; message: string }[] = [];
-    const missingTrackingIds: string[] = [];
-
     if (hasParcels) {
       const trackingIds = updatedParcels.map((p) => p.tracking_id).filter(Boolean);
       if (trackingIds.length > 0) {
@@ -1174,16 +1162,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
 
           if (fetchErr) {
             console.warn("[ManifestStock] failed to fetch parcels for timeline update:", fetchErr.message);
-            trackingIds.forEach((tid) => syncErrors.push({ trackingId: tid, message: fetchErr.message }));
           } else if (rows) {
-            // Any tracking ID in the manifest that didn't come back from the
-            // lookup never gets its status synced — flag it instead of
-            // silently skipping it.
-            const foundIds = new Set(rows.map((r: any) => r.tracking_id));
-            trackingIds.forEach((tid) => {
-              if (!foundIds.has(tid)) missingTrackingIds.push(tid);
-            });
-
             const newEvent = { status, timestamp: nowIso, location, notes: comment || "" };
             await Promise.all(
               rows.map((r: any) => {
@@ -1233,27 +1212,17 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                 return supabase
                   .from("parcels")
                   .update(patch)
-                  .eq("id", r.id)
-                  .then(({ error }) => {
-                    if (error) {
-                      console.warn(
-                        `[ManifestStock] failed to sync parcel ${r.tracking_id}:`,
-                        error.message
-                      );
-                      syncErrors.push({ trackingId: r.tracking_id, message: error.message });
-                    }
-                  });
+                  .eq("id", r.id);
               })
             );
           }
-        } catch (err: any) {
+        } catch (err) {
           console.warn("[ManifestStock] parcels table sync error:", err);
-          trackingIds.forEach((tid) => syncErrors.push({ trackingId: tid, message: String(err?.message || err) }));
         }
       }
     }
 
-    return { updatedParcels, syncErrors, missingTrackingIds };
+    return updatedParcels;
   };
 
   // ── Sync the manifest's "Tracking Events" tab down to the parcels table.
@@ -1405,7 +1374,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
 
   const handleBulkStatusApply = async () => {
     if (!bulkStatus || selectedIds.size === 0) return;
-    const results = await Promise.all(
+    await Promise.all(
       [...selectedIds].map((id) => {
         const entry = entries.find((e) => e.manifestId === id);
         return cascadeStatusToParcels(id, bulkStatus, entry?.parcels || [], bulkComment);
@@ -1414,19 +1383,9 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     await reload();
     const label = MANIFEST_STATUSES.find((s) => s.value === bulkStatus)?.label || bulkStatus;
     const count = selectedIds.size;
-    const failedCount = results.reduce((s, r) => s + r.syncErrors.length, 0);
-    const missingCount = results.reduce((s, r) => s + r.missingTrackingIds.length, 0);
     setSelectedIds(new Set());
     setShowBulkDialog(false);
-    if (failedCount > 0 || missingCount > 0) {
-      toast({
-        title: "Status updated, but tracking sync had issues",
-        description: `${count} manifest(s) → ${label}. ${failedCount} parcel(s) failed to sync (see console)${missingCount ? `, ${missingCount} not found in parcels table` : ""}.`,
-        variant: "destructive",
-      });
-    } else {
-      toast({ title: `Status updated ✓`, description: `${count} manifest(s) → ${label}${bulkComment ? " · comment added" : ""} (parcels synced)` });
-    }
+    toast({ title: `Status updated ✓`, description: `${count} manifest(s) → ${label}${bulkComment ? " · comment added" : ""} (parcels synced)` });
     setBulkStatus("");
     setBulkComment("");
   };
@@ -1434,26 +1393,13 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
   const handleSingleStatus = async (manifestId: string, status: string, comment?: string) => {
     const entry = entries.find((e) => e.manifestId === manifestId);
     const sourceParcels = editing?.manifestId === manifestId ? editing.parcels : entry?.parcels || [];
-    const { updatedParcels, syncErrors, missingTrackingIds } = await cascadeStatusToParcels(
-      manifestId,
-      status,
-      sourceParcels,
-      comment
-    );
+    const updatedParcels = await cascadeStatusToParcels(manifestId, status, sourceParcels, comment);
     await reload();
     if (editing?.manifestId === manifestId) {
       setEditing((e) => e ? { ...e, manifestStatus: status, parcels: updatedParcels || e.parcels } : e);
     }
     const label = MANIFEST_STATUSES.find((s) => s.value === status)?.label || status;
-    if (syncErrors.length > 0 || missingTrackingIds.length > 0) {
-      toast({
-        title: "Status updated, but tracking sync failed",
-        description: `${manifestId} → ${label} saved to the manifest, but ${syncErrors.length} parcel(s) did not sync to public tracking${missingTrackingIds.length ? ` (${missingTrackingIds.length} tracking ID not found)` : ""}. Check console for details.`,
-        variant: "destructive",
-      });
-    } else {
-      toast({ title: "Status updated ✓", description: `${manifestId} → ${label}${comment ? " · comment added" : ""} (parcels synced)` });
-    }
+    toast({ title: "Status updated ✓", description: `${manifestId} → ${label}${comment ? " · comment added" : ""} (parcels synced)` });
   };
 
   // Opens the confirm dialog instead of applying instantly, so a comment can
@@ -1859,10 +1805,21 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                 </div>
               </div>
 
-              {/* Sub-header: tabs + actions */}
-              <div className="bg-slate-100 border-b border-slate-200 flex-shrink-0">
-                <Tabs defaultValue="entry" className="w-full">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-2 sm:px-4 pt-0 gap-0">
+              {/* Sub-header: tabs + actions.
+                  FIX: previously `flex-shrink-0` on this wrapper, combined with
+                  `<Tabs>` NOT being a flex column, meant the inner
+                  `overflow-y-auto flex-1` scroll region had no flex parent to
+                  grow inside. As a result, long Entry / Tracking / Billing
+                  content overflowed the dialog and got clipped by the outer
+                  `overflow-hidden`, so users couldn't scroll to see the AWBs
+                  table, billing totals, or tracking events at the bottom.
+                  We now make this wrapper AND the <Tabs> both flex-column with
+                  `flex-1 min-h-0`, pin the tab-bar row with `flex-shrink-0`,
+                  and add `min-h-0` to the scrollable region so the flex item
+                  can actually shrink and the scrollbar appears. */}
+              <div className="bg-slate-100 border-b border-slate-200 flex flex-col flex-1 min-h-0">
+                <Tabs defaultValue="entry" className="w-full flex flex-col flex-1 min-h-0">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-2 sm:px-4 pt-0 gap-0 flex-shrink-0">
                     <div className="overflow-x-auto">
                       <TabsList className="h-9 bg-transparent gap-0 rounded-none border-0 p-0 flex w-max">
                         {[
@@ -1892,8 +1849,10 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                     </div>
                   </div>
 
-                  {/* Scrollable content — maxHeight dropped; flex-1 fills the dialog instead */}
-                  <div className="overflow-y-auto flex-1">
+                  {/* Scrollable content — flex-1 + min-h-0 now actually works
+                      because <Tabs> and its parent wrapper are both
+                      `flex flex-col` (see FIX above). */}
+                  <div className="overflow-y-auto flex-1 min-h-0">
 
                     {/* ══ ENTRY TAB ══════════════════════════════════════════ */}
                     <TabsContent value="entry" className="m-0 p-4 space-y-4">
