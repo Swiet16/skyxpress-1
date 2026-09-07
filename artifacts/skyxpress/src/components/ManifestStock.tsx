@@ -1882,4 +1882,1028 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                         className="h-7 text-[11px] bg-blue-700 hover:bg-blue-800 text-white gap-1"
                         onClick={handleSave} disabled={saving || editing.isLocked}>
                         {saving ? <RefreshCw className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-              
+                        {saving ? "Saving…" : "Update Manifest"}
+                      </Button>
+                      <Button size="sm" variant="outline"
+                        className="h-7 text-[11px] border-slate-300 text-slate-600 gap-1"
+                        onClick={() => setShowHistory(true)}>
+                        <History className="h-3 w-3" /> History
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Scrollable content — maxHeight dropped; flex-1 fills the dialog instead */}
+                  <div className="overflow-y-auto flex-1">
+
+                    {/* ══ ENTRY TAB ══════════════════════════════════════════ */}
+                    <TabsContent value="entry" className="m-0 p-4 space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+                        {/* LEFT column — Manifest Info */}
+                        <div className="space-y-3 bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1.5">Manifest Info</p>
+                          <Field label="Booking From Date" type="date" value={editing.bookingFromDate}
+                            onChange={(v) => setEditField("bookingFromDate", v)} disabled={editing.isLocked} />
+                          <Field label="Booking Till Date" type="date" value={editing.bookingTillDate}
+                            onChange={(v) => setEditField("bookingTillDate", v)} disabled={editing.isLocked} />
+                          <Field label="Manifest No." value={editing.manifestId} readOnly />
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Forwarder</Label>
+                            <Input value={editing.forwarder ?? ""} onChange={(e) => setEditField("forwarder", e.target.value)}
+                              placeholder="Forwarder name" className="h-8 text-sm border-slate-200" disabled={editing.isLocked} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Service</Label>
+                            <Select value={editing.service ?? ""} onValueChange={(v) => setEditField("service", v)} disabled={editing.isLocked}>
+                              <SelectTrigger className="h-8 text-sm border-slate-200">
+                                <SelectValue placeholder="Select service" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {SERVICES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <Field label="Master No." value={editing.masterNo}
+                            onChange={(v) => setEditField("masterNo", v)} disabled={editing.isLocked} />
+                          <Field label="Master EDI Bag No" value={editing.masterEdiBagNo}
+                            onChange={(v) => setEditField("masterEdiBagNo", v)} disabled={editing.isLocked} />
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Remark</Label>
+                            <Textarea value={editing.remark ?? ""} onChange={(e) => setEditField("remark", e.target.value)}
+                              placeholder="Any remarks…" rows={2} className="text-sm border-slate-200 resize-none" disabled={editing.isLocked} />
+                          </div>
+                          {/* Created By — auto-filled from auth user */}
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1">
+                              <User className="h-3 w-3" /> Created By
+                            </Label>
+                            <div className="h-8 px-2 flex items-center gap-2 text-sm bg-blue-50 border border-blue-100 rounded text-blue-700 font-medium">
+                              <User className="h-3.5 w-3.5 text-blue-400 flex-shrink-0" />
+                              <span className="truncate">{currentUser?.email || editing.createdByUser || "—"}</span>
+                            </div>
+                            {currentUser?.name && currentUser.name !== currentUser?.email && (
+                              <p className="text-[10px] text-slate-400 mt-0.5">{currentUser.name}</p>
+                            )}
+                          </div>
+
+                          {/* Manifest Status picker */}
+                          <div className="space-y-1.5">
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1">
+                              <Tag className="h-3 w-3" /> Manifest Status
+                            </Label>
+                            <div className="grid grid-cols-1 gap-1.5 max-h-64 overflow-y-auto pr-1">
+                              {MANIFEST_STATUSES.map((s) => {
+                                const active = (editing.manifestStatus || "") === s.value;
+                                return (
+                                  <button key={s.value} disabled={editing.isLocked}
+                                    onClick={() => openSingleStatusDialog(editing.manifestId, s.value)}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border-2 transition-all text-left
+                                      ${active
+                                        ? `${s.tw} border-transparent shadow-md scale-[1.02]`
+                                        : "bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50"
+                                      }
+                                      ${editing.isLocked ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
+                                    <span className="text-base leading-none">{s.icon}</span>
+                                    <span>{s.label}</span>
+                                    {active && <CheckCircle2 className="h-3.5 w-3.5 ml-auto opacity-80" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* MIDDLE column — Flight & Shipment */}
+                        <div className="space-y-3 bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1.5">Flight & Shipment</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <Field label="Date" type="date" value={editing.manifestDate}
+                              onChange={(v) => setEditField("manifestDate", v)} disabled={editing.isLocked} />
+                            <Field label="Time" type="time" value={editing.manifestTime}
+                              onChange={(v) => setEditField("manifestTime", v)} disabled={editing.isLocked} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Run Number</Label>
+                            <Input value={editing.runNumber ?? ""} onChange={(e) => setEditField("runNumber", e.target.value)}
+                              placeholder="Run number" className="h-8 text-sm border-slate-200" disabled={editing.isLocked} />
+                          </div>
+                          <Field label="Flight No" value={editing.flightNo}
+                            onChange={(v) => setEditField("flightNo", v)} placeholder="e.g. PK-301" disabled={editing.isLocked} />
+                          <Field label="No. of Bags" type="number" value={editing.noOfBags ?? ""}
+                            onChange={(v) => setEditField("noOfBags", Number(v))} disabled={editing.isLocked} />
+                          <div className="grid grid-cols-2 gap-3">
+                            <Field label="Arrival Date" type="date" value={editing.arrivalDate}
+                              onChange={(v) => setEditField("arrivalDate", v)} disabled={editing.isLocked} />
+                            <Field label="Arrival Time" type="time" value={editing.arrivalTime}
+                              onChange={(v) => setEditField("arrivalTime", v)} disabled={editing.isLocked} />
+                          </div>
+                          <Field label="Company" value={editing.company}
+                            onChange={(v) => setEditField("company", v)} disabled={editing.isLocked} />
+
+                          {/* License — select from DB + inline create */}
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">License</Label>
+                            {!addingLicense ? (
+                              <div className="flex gap-1.5">
+                                <select
+                                  value={editing.license ?? ""}
+                                  disabled={editing.isLocked}
+                                  onChange={(e) => setEditField("license", e.target.value)}
+                                  className="h-8 flex-1 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <option value="">— Select license —</option>
+                                  {licenses.map((opt) => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                  ))}
+                                </select>
+                                {!editing.isLocked && (
+                                  <Button
+                                    type="button" size="sm" variant="outline"
+                                    className="h-8 px-2 border-blue-200 text-blue-600 hover:bg-blue-50"
+                                    onClick={() => { setAddingLicense(true); setNewLicenseCode(""); }}
+                                    title="Add new license"
+                                  >
+                                    <Plus className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex gap-1.5">
+                                <Input
+                                  autoFocus
+                                  value={newLicenseCode}
+                                  onChange={(e) => setNewLicenseCode(e.target.value.toUpperCase())}
+                                  placeholder="e.g. MCS-ISB-03"
+                                  className="h-8 flex-1 text-sm border-blue-300 focus-visible:ring-blue-500"
+                                  onKeyDown={async (e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      if (!newLicenseCode.trim()) return;
+                                      setSavingLicense(true);
+                                      try {
+                                        const saved = await createLicense(newLicenseCode);
+                                        const updated = await fetchLicenses();
+                                        setLicenses(updated);
+                                        setEditField("license", saved);
+                                        setAddingLicense(false);
+                                        toast({ title: "License saved", description: saved });
+                                      } catch (err: any) {
+                                        toast({ title: "Error", description: err.message, variant: "destructive" });
+                                      } finally { setSavingLicense(false); }
+                                    }
+                                    if (e.key === "Escape") { setAddingLicense(false); setNewLicenseCode(""); }
+                                  }}
+                                />
+                                <Button
+                                  type="button" size="sm"
+                                  disabled={savingLicense || !newLicenseCode.trim()}
+                                  className="h-8 px-2 bg-blue-600 hover:bg-blue-700 text-white"
+                                  onClick={async () => {
+                                    if (!newLicenseCode.trim()) return;
+                                    setSavingLicense(true);
+                                    try {
+                                      const saved = await createLicense(newLicenseCode);
+                                      const updated = await fetchLicenses();
+                                      setLicenses(updated);
+                                      setEditField("license", saved);
+                                      setAddingLicense(false);
+                                      toast({ title: "License saved", description: saved });
+                                    } catch (err: any) {
+                                      toast({ title: "Error", description: err.message, variant: "destructive" });
+                                    } finally { setSavingLicense(false); }
+                                  }}
+                                >
+                                  {savingLicense ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                                </Button>
+                                <Button
+                                  type="button" size="sm" variant="outline"
+                                  className="h-8 px-2 border-slate-200 text-slate-500"
+                                  onClick={() => { setAddingLicense(false); setNewLicenseCode(""); }}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+
+                          <Separator className="my-1" />
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Weight Summary</p>
+                          <Field label="Vendor Weight (kg)" type="number" value={editing.vendorWeight ?? ""}
+                            onChange={(v) => setEditField("vendorWeight", Number(v))} disabled={editing.isLocked} />
+                          <Field label="Total Actual Wt (kg)" value={computedActual} readOnly />
+                          <Field label="Total Volumetric Wt (kg)" type="number" value={editing.totalVolumetricWt ?? ""}
+                            onChange={(v) => setEditField("totalVolumetricWt", Number(v))} disabled={editing.isLocked} />
+                          <Field label="Total Chargeable Wt (kg)" value={
+                            editing.totalVolumetricWt && Number(editing.totalVolumetricWt) > Number(computedActual)
+                              ? editing.totalVolumetricWt : computedActual
+                          } readOnly />
+                          <div className="grid grid-cols-2 gap-3">
+                            <Field label="No. of AWB" value={computedAwb} readOnly />
+                            <Field label="No. of PCS" value={computedPcs} readOnly />
+                          </div>
+                        </div>
+
+                        {/* RIGHT column — Hubs & Files */}
+                        <div className="space-y-3 bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1.5">Hubs & Files</p>
+
+                          {/* Origin Hub — searchable */}
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
+                              Origin Hub <span className="text-red-500">*</span>
+                            </Label>
+                            <SearchableSelect
+                              value={editing.originHub ?? ""}
+                              onChange={(v) => setEditField("originHub", v)}
+                              options={ORIGIN_HUBS}
+                              placeholder="Search origin hub…"
+                              disabled={editing.isLocked}
+                            />
+                          </div>
+
+                          {/* Destination Hub — searchable, worldwide */}
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
+                              Destination Hub <span className="text-slate-400 font-normal normal-case">(worldwide)</span>
+                            </Label>
+                            <SearchableSelect
+                              value={editing.destinationHub ?? ""}
+                              onChange={(v) => setEditField("destinationHub", v)}
+                              options={DEST_HUBS}
+                              placeholder="Search destination worldwide…"
+                              disabled={editing.isLocked}
+                            />
+                          </div>
+
+                          {/* EDI Excel File upload */}
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">EDI Excel File</Label>
+                            <p className="text-[10px] text-orange-600 font-semibold">(UPLOAD EXCEL FILE ONLY)</p>
+                            <label className="block">
+                              <div className="h-8 px-3 flex items-center justify-between border border-slate-200 rounded text-sm cursor-pointer hover:border-blue-400 bg-white text-slate-500">
+                                <span className="truncate text-xs">{csvFile?.name || "Choose Excel file…"}</span>
+                                <UploadCloud className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                              </div>
+                              <input type="file" accept=".xlsx,.xls" className="hidden"
+                                onChange={(e) => setCsvFile(e.target.files?.[0] || null)} />
+                            </label>
+                          </div>
+
+                          <Separator />
+
+                          {/* Route summary */}
+                          <div className="bg-gradient-to-br from-blue-50 to-slate-50 rounded-xl border border-blue-100 p-3 space-y-2">
+                            <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Route Summary</p>
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[10px] text-slate-500">FROM</p>
+                                <p className="text-sm font-bold text-slate-800 truncate">{editing.originHub || editing.fromCountry || "—"}</p>
+                              </div>
+                              <Plane className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                              <div className="flex-1 min-w-0 text-right">
+                                <p className="text-[10px] text-slate-500">TO</p>
+                                <p className="text-sm font-bold text-slate-800 truncate">{editing.destinationHub || editing.toCountry || "—"}</p>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-1.5 pt-1">
+                              {[
+                                { label: "AWBs",   value: computedAwb },
+                                { label: "Weight", value: `${computedActual} kg` },
+                                { label: "Value",  value: `${editing.currency} ${editing.totalValue.toFixed(0)}` },
+                              ].map(({ label, value }) => (
+                                <div key={label} className="bg-white rounded-lg p-2 border border-blue-100 text-center">
+                                  <p className="text-[9px] text-slate-400 uppercase">{label}</p>
+                                  <p className="text-xs font-bold text-slate-700">{value}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Add Parcel by Reference ID */}
+                      <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                        <div className="bg-slate-800 px-4 py-2.5 flex items-center gap-3 flex-wrap">
+                          <span className="text-white font-bold text-xs uppercase tracking-widest flex items-center gap-2">
+                            <Search className="h-3.5 w-3.5 text-orange-400" /> Add Parcel by Reference / Tracking ID
+                          </span>
+                          <div className="flex items-center gap-2 ml-auto">
+                            <div className="relative">
+                              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+                              <input
+                                value={parcelSearchQuery}
+                                onChange={(e) => setParcelSearchQuery(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleParcelSearch(); } }}
+                                placeholder="Reference ID or Tracking ID…"
+                                disabled={editing.isLocked}
+                                className="pl-6 h-7 text-xs bg-white/10 border border-white/20 rounded text-white placeholder-slate-400 focus:outline-none focus:border-white/40 w-56 disabled:opacity-50"
+                              />
+                            </div>
+                            <Button size="sm" className="h-7 text-[11px] bg-blue-600 hover:bg-blue-700 text-white gap-1"
+                              disabled={editing.isLocked || searchingParcels || !parcelSearchQuery.trim()}
+                              onClick={handleParcelSearch}>
+                              {searchingParcels ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+                              Search
+                            </Button>
+                          </div>
+                        </div>
+                        {parcelSearchResults.length > 0 && (
+                          <div className="divide-y divide-slate-50 max-h-52 overflow-y-auto">
+                            {parcelSearchResults.map((p) => (
+                              <div key={p.id || p.tracking_id} className="flex items-center justify-between gap-3 px-4 py-2 hover:bg-blue-50/40">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono font-bold text-blue-600 text-xs">{p.tracking_id}</span>
+                                    {p.reference_id && <span className="text-[10px] text-slate-400">Ref: {p.reference_id}</span>}
+                                  </div>
+                                  <p className="text-xs text-slate-600 truncate">
+                                    {p.sender_name || "—"} → {p.receiver_name || "—"} · {p.weight ?? 0} kg
+                                  </p>
+                                </div>
+                                <Button size="sm" className="h-7 text-[11px] bg-green-600 hover:bg-green-700 text-white gap-1 shrink-0"
+                                  disabled={editing.isLocked}
+                                  onClick={() => handleAddParcelToManifest(p)}>
+                                  <Plus className="h-3 w-3" /> Add
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* AWBs table */}
+                      <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                        <div className="bg-slate-800 px-4 py-2.5 flex items-center justify-between gap-3">
+                          <span className="text-white font-bold text-xs uppercase tracking-widest flex items-center gap-2">
+                            <Package className="h-3.5 w-3.5 text-orange-400" /> AWBs in this Manifest
+                            <span className="bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{editing.parcels.length}</span>
+                          </span>
+                          <div className="relative">
+                            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+                            <input value={awbSearch} onChange={(e) => setAwbSearch(e.target.value)}
+                              placeholder="Search AWB…" className="pl-6 h-6 text-xs bg-white/10 border border-white/20 rounded text-white placeholder-slate-400 focus:outline-none focus:border-white/40 w-40" />
+                          </div>
+                        </div>
+                        <div className="overflow-x-auto max-h-56">
+                          <table className="w-full text-xs min-w-[640px]">
+                            <thead className="sticky top-0 z-10">
+                              <tr className="bg-slate-50 border-b border-slate-100">
+                                {["#","Tracking ID","Shipper","Receiver","Route","Pkgs","Weight","Status"].map(h => (
+                                  <th key={h} className="px-3 py-2 text-left font-bold text-blue-700 uppercase tracking-wide text-[10px]">{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {filteredAwbs.map((p, idx) => (
+                                <tr key={p.id || idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/30"}>
+                                  <td className="px-3 py-2 text-slate-400 font-mono">{idx + 1}</td>
+                                  <td className="px-3 py-2 font-mono font-bold text-blue-600">{p.tracking_id}</td>
+                                  <td className="px-3 py-2 text-slate-700">{p.sender_name}</td>
+                                  <td className="px-3 py-2 text-slate-700">{p.receiver_name}</td>
+                                  <td className="px-3 py-2 text-slate-500">
+                                    {countryMap[p.from_country] || p.from_country} → {countryMap[p.to_country] || p.to_country}
+                                  </td>
+                                  <td className="px-3 py-2 font-semibold">{p.pieces ?? 1}</td>
+                                  <td className="px-3 py-2 font-semibold">{p.weight} kg</td>
+                                  <td className="px-3 py-2">
+                                    <ManifestStatusBadge status={p.current_status} size="xs" />
+                                  </td>
+                                </tr>
+                              ))}
+                              {filteredAwbs.length === 0 && (
+                                <tr>
+                                  <td colSpan={8} className="px-3 py-8 text-center text-slate-400 text-xs">
+                                    {awbSearch ? "No AWBs match search" : "No AWBs in this manifest"}
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Bottom action bar */}
+                      <div className="bg-slate-900 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                          <input placeholder="Search AWB…" value={awbSearch} onChange={(e) => setAwbSearch(e.target.value)}
+                            className="pl-8 h-8 text-xs bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 w-36" />
+                        </div>
+
+                        <Button size="sm" className="h-8 text-xs bg-blue-700 hover:bg-blue-800 text-white gap-1.5"
+                          onClick={handleSave} disabled={saving || editing.isLocked}>
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Update Manifest
+                        </Button>
+
+                        {/* Bagging button */}
+                        <Button size="sm" variant="outline"
+                          className="h-8 text-xs border-orange-500 text-orange-400 hover:text-orange-200 hover:bg-orange-500/20 gap-1.5"
+                          onClick={() => setShowBagging(true)}>
+                          <Box className="h-3.5 w-3.5" /> Bagging
+                          {editing.baggingInfo?.bags?.length > 0 && (
+                            <span className="bg-orange-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                              {editing.baggingInfo.bags.length}
+                            </span>
+                          )}
+                        </Button>
+
+                        {/* CSV Import section */}
+                        <div className="flex items-center gap-2 ml-auto flex-wrap">
+                          <span className="text-slate-400 text-xs font-medium">CSV Import <span className="text-red-400">*</span></span>
+                          <label className="cursor-pointer">
+                            <div className="h-8 px-3 flex items-center gap-2 bg-slate-800 border border-slate-600 rounded text-slate-300 text-xs hover:border-slate-400 transition-colors max-w-[150px]">
+                              <span className="truncate">{csvFile?.name || "No file chosen"}</span>
+                            </div>
+                            <input
+                              ref={csvInputRef}
+                              type="file"
+                              accept=".csv"
+                              className="hidden"
+                              onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                            />
+                          </label>
+                          <Button size="sm"
+                            className={`h-8 text-xs gap-1.5 ${csvFile ? "bg-blue-600 hover:bg-blue-500" : "bg-slate-700 hover:bg-slate-600"} text-white`}
+                            disabled={!csvFile || importing || editing.isLocked}
+                            onClick={handleCSVImport}>
+                            {importing ? <RefreshCw className="h-3 w-3 animate-spin" /> : <UploadCloud className="h-3 w-3" />}
+                            {importing ? "Importing…" : "Import"}
+                          </Button>
+                          <Button size="sm" variant="outline"
+                            className="h-8 text-xs border-slate-600 text-slate-300 hover:text-white hover:bg-slate-700 gap-1"
+                            onClick={downloadSampleCSV}>
+                            <Download className="h-3.5 w-3.5" /> Sample
+                          </Button>
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    {/* ══ TRACKING EVENTS TAB ═══════════════════════════════ */}
+                    <TabsContent value="tracking" className="m-0 p-4 space-y-4">
+                      <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                        <div className="bg-slate-800 px-4 py-2.5 flex items-center justify-between">
+                          <span className="text-white font-bold text-xs uppercase tracking-widest flex items-center gap-2">
+                            <MapPin className="h-3.5 w-3.5 text-orange-400" /> Tracking Events
+                          </span>
+                          <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1" disabled={editing.isLocked}
+                            onClick={() => {
+                              const newEvent = { id: Date.now().toString(), awb: "", event: "", location: "", timestamp: new Date().toISOString().slice(0, 16), notes: "" };
+                              setEditField("trackingEvents", [...(editing.trackingEvents || []), newEvent]);
+                            }}>
+                            <Plus className="h-3 w-3" /> Add Event
+                          </Button>
+                        </div>
+                        {(!editing.trackingEvents || editing.trackingEvents.length === 0) ? (
+                          <div className="py-12 text-center">
+                            <MapPin className="h-8 w-8 text-slate-200 mx-auto mb-2" />
+                            <p className="text-sm text-slate-500">No tracking events yet</p>
+                            <p className="text-xs text-slate-400 mt-1">Click "Add Event" to add a tracking update for AWBs in this manifest</p>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-slate-50">
+                            {editing.trackingEvents.map((ev, i) => (
+                              <div key={ev.id} className="p-4 grid grid-cols-2 md:grid-cols-5 gap-3 items-end hover:bg-slate-50/50">
+                                <div className="space-y-1">
+                                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">AWB / Tracking ID</Label>
+                                  <Input value={ev.awb} placeholder="AWB number" className="h-8 text-sm" disabled={editing.isLocked}
+                                    onChange={(e) => {
+                                      const evs = [...editing.trackingEvents];
+                                      evs[i] = { ...evs[i], awb: e.target.value };
+                                      setEditField("trackingEvents", evs);
+                                    }} />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">Event</Label>
+                                  <Input value={ev.event} placeholder="e.g. In Transit" className="h-8 text-sm" disabled={editing.isLocked}
+                                    onChange={(e) => {
+                                      const evs = [...editing.trackingEvents];
+                                      evs[i] = { ...evs[i], event: e.target.value };
+                                      setEditField("trackingEvents", evs);
+                                    }} />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">Location</Label>
+                                  <Input value={ev.location} placeholder="City / Hub" className="h-8 text-sm" disabled={editing.isLocked}
+                                    onChange={(e) => {
+                                      const evs = [...editing.trackingEvents];
+                                      evs[i] = { ...evs[i], location: e.target.value };
+                                      setEditField("trackingEvents", evs);
+                                    }} />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">Timestamp</Label>
+                                  <Input type="datetime-local" value={ev.timestamp} className="h-8 text-sm" disabled={editing.isLocked}
+                                    onChange={(e) => {
+                                      const evs = [...editing.trackingEvents];
+                                      evs[i] = { ...evs[i], timestamp: e.target.value };
+                                      setEditField("trackingEvents", evs);
+                                    }} />
+                                </div>
+                                <Button variant="ghost" size="sm" className="h-8 text-red-400 hover:text-red-600 hover:bg-red-50 self-end" disabled={editing.isLocked}
+                                  onClick={() => setEditField("trackingEvents", editing.trackingEvents.filter((_, idx) => idx !== i))}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </TabsContent>
+
+                    {/* ══ BILLING TAB ════════════════════════════════════════ */}
+                    <TabsContent value="billing" className="m-0 p-4 space-y-4">
+                      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-4">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1.5 flex items-center gap-2">
+                          <DollarSign className="h-3.5 w-3.5 text-blue-600" /> Billing Summary
+                        </p>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                          {[
+                            { label: "Total AWBs",       value: String(computedAwb) },
+                            { label: "Total Pieces",      value: String(computedPcs) },
+                            { label: "Total Actual Wt",  value: `${computedActual} kg` },
+                            { label: "Total Volumetric", value: `${editing.totalVolumetricWt ?? 0} kg` },
+                            { label: "Total Chargeable", value: `${editing.totalVolumetricWt && Number(editing.totalVolumetricWt) > Number(computedActual) ? editing.totalVolumetricWt : computedActual} kg` },
+                            { label: "Total Value",      value: `${editing.currency} ${editing.totalValue.toFixed(2)}` },
+                          ].map(({ label, value }) => (
+                            <div key={label} className="bg-slate-50 rounded-xl border border-slate-100 p-3">
+                              <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">{label}</p>
+                              <p className="text-lg font-bold text-slate-800 mt-1">{value}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <Separator />
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-100">
+                                {["#","Tracking ID","Shipper","Weight","Value","Service","Chargeable"].map(h => (
+                                  <th key={h} className="px-3 py-2 text-left text-[11px] font-bold text-blue-700 uppercase tracking-wide">{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {editing.parcels.map((p, i) => (
+                                <tr key={p.id || i} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/30"}>
+                                  <td className="px-3 py-2 text-xs text-slate-400">{i + 1}</td>
+                                  <td className="px-3 py-2 font-mono text-xs font-bold text-blue-600">{p.tracking_id}</td>
+                                  <td className="px-3 py-2 text-xs text-slate-700">{p.sender_name}</td>
+                                  <td className="px-3 py-2 text-xs font-semibold">{p.weight} kg</td>
+                                  <td className="px-3 py-2 text-xs font-semibold">{p.currency} {Number(p.total_price).toFixed(2)}</td>
+                                  <td className="px-3 py-2 text-xs">{p.service_type || "—"}</td>
+                                  <td className="px-3 py-2 text-xs font-bold text-blue-700">{p.weight} kg</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr className="bg-gradient-to-r from-orange-500 to-orange-600">
+                                <td className="px-3 py-2 text-white font-bold text-xs" colSpan={3}>TOTALS</td>
+                                <td className="px-3 py-2 text-white font-bold text-xs">{computedActual} kg</td>
+                                <td className="px-3 py-2 text-white font-bold text-xs">{editing.currency} {editing.totalValue.toFixed(2)}</td>
+                                <td></td>
+                                <td className="px-3 py-2 text-white font-bold text-xs">{computedActual} kg</td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                  </div>{/* end scrollable */}
+                </Tabs>
+              </div>
+            </>
+          </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Bagging Dialog ────────────────────────────────────────────────────── */}
+      {editing && (
+        <BaggingDialog
+          open={showBagging}
+          onClose={() => setShowBagging(false)}
+          initialData={editing.baggingInfo}
+          disabled={editing.isLocked}
+          onSave={(data) => {
+            setEditField("baggingInfo", data);
+            toast({ title: "Bagging info saved ✓", description: `${data.bags.length} bag type(s) recorded. Click Update Manifest.` });
+          }}
+        />
+      )}
+
+      {/* ── Manifest History Dialog ───────────────────────────────────────────── */}
+      {editing && (
+        <ManifestHistoryDialog
+          open={showHistory}
+          onClose={() => setShowHistory(false)}
+          manifestId={editing.manifestId}
+        />
+      )}
+
+      {/* ── Find Parcel by Ref ID → New Manifest Dialog ───────────────────────── */}
+      <Dialog open={showFindParcelDialog} onOpenChange={setShowFindParcelDialog}>
+        <DialogContent className="max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5 text-blue-600" />
+              Find Parcel by Reference ID
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-slate-500">
+            Search any parcel by its Reference ID or Tracking ID. If it isn't already part of a
+            manifest, you can spin up a new manifest for it right here.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              autoFocus
+              value={findParcelQuery}
+              onChange={(e) => setFindParcelQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleFindParcelSearch(); } }}
+              placeholder="Reference ID or Tracking ID…"
+              className="h-9 text-sm"
+            />
+            <Button size="sm" className="h-9 bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
+              disabled={findingParcel || !findParcelQuery.trim()} onClick={handleFindParcelSearch}>
+              {findingParcel ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+              Search
+            </Button>
+          </div>
+          <div className="flex-1 overflow-y-auto space-y-2">
+            {findParcelResults.length === 0 && !findingParcel && (
+              <p className="text-xs text-slate-400 text-center py-6">No results yet — try a search above.</p>
+            )}
+            {findParcelResults.map((p) => (
+              <div key={p.id || p.tracking_id} className="border border-slate-100 rounded-lg p-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-blue-600 text-sm">{p.tracking_id}</span>
+                    {p.reference_id && <Badge variant="outline" className="text-[10px]">Ref: {p.reference_id}</Badge>}
+                  </div>
+                  <p className="text-xs text-slate-600 truncate mt-0.5">
+                    {p.sender_name || "—"} → {p.receiver_name || "—"} · {p.weight ?? 0} kg · {p.from_country || "—"} → {p.to_country || "—"}
+                  </p>
+                </div>
+                <Button size="sm" className="h-8 text-xs bg-green-600 hover:bg-green-700 text-white gap-1.5 shrink-0"
+                  disabled={creatingManifestFor === (p.id || p.tracking_id)}
+                  onClick={() => handleCreateManifestFromParcel(p)}>
+                  {creatingManifestFor === (p.id || p.tracking_id)
+                    ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    : <Plus className="h-3.5 w-3.5" />}
+                  Create Manifest
+                </Button>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Single Status Update Dialog (with comment) ────────────────────────── */}
+      <Dialog open={singleStatusDialog.open} onOpenChange={(o) => { if (!o) setSingleStatusDialog({ open: false, manifestId: "", status: "", comment: "" }); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tag className="h-5 w-5 text-blue-600" />
+              Update Status
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-slate-600">
+              Set <strong>{singleStatusDialog.manifestId}</strong> to:
+            </p>
+            {singleStatusDialog.status && (
+              <div className="flex justify-center">
+                <ManifestStatusBadge status={singleStatusDialog.status} />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
+                Comment <span className="text-slate-400 font-normal normal-case">(optional — shown on public tracking)</span>
+              </Label>
+              <Textarea
+                value={singleStatusDialog.comment}
+                onChange={(e) => setSingleStatusDialog((d) => ({ ...d, comment: e.target.value }))}
+                placeholder="e.g. Held for additional customs documentation"
+                rows={3}
+                className="text-sm resize-none"
+              />
+            </div>
+            <p className="text-xs text-slate-500">This updates the manifest and every parcel inside it.</p>
+            <div className="flex gap-3 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setSingleStatusDialog({ open: false, manifestId: "", status: "", comment: "" })}>Cancel</Button>
+              <Button size="sm" className="bg-blue-700 hover:bg-blue-800 text-white gap-1.5" onClick={confirmSingleStatus}>
+                <CheckCircle2 className="h-3.5 w-3.5" /> Apply
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Bulk Status Confirm Dialog ────────────────────────────────────────── */}
+      <Dialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ListChecks className="h-5 w-5 text-blue-600" />
+              Bulk Status Update
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-slate-600">
+              Update <strong>{selectedIds.size}</strong> selected manifest{selectedIds.size > 1 ? "s" : ""} to:
+            </p>
+            {bulkStatus && (
+              <div className="flex justify-center">
+                <ManifestStatusBadge status={bulkStatus} />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
+                Comment <span className="text-slate-400 font-normal normal-case">(optional — shown on public tracking)</span>
+              </Label>
+              <Textarea
+                value={bulkComment}
+                onChange={(e) => setBulkComment(e.target.value)}
+                placeholder="e.g. Delayed due to weather at origin hub"
+                rows={3}
+                className="text-sm resize-none"
+              />
+            </div>
+            <p className="text-xs text-slate-500 text-center">This will overwrite the current status of all selected manifests.</p>
+            <div className="flex gap-3 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setShowBulkDialog(false)}>Cancel</Button>
+              <Button size="sm" className="bg-blue-700 hover:bg-blue-800 text-white gap-1.5" onClick={handleBulkStatusApply}>
+                <CheckCircle2 className="h-3.5 w-3.5" /> Apply to {selectedIds.size} Manifest{selectedIds.size > 1 ? "s" : ""}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Create Manifest — Step 1: Add Parcels by Reference ID ──────────── */}
+      {/* Multi-add workflow: enter a Reference ID (or Tracking ID), click "Add" */}
+      {/* to queue it, then add another. Once done, click "Generate Manifest" */}
+      {/* to move to Step 2 where manifest-level fields are captured. */}
+      <Dialog open={showCreateManifestDialog} onOpenChange={(o) => { if (!o) resetCreateManifest(); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5 text-blue-600" />
+              Create Manifest — Add Parcels
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-slate-500">
+            Enter a <strong>Reference ID</strong> or <strong>Tracking ID</strong> and click <strong>Add</strong> to queue a parcel.
+            You can add multiple parcels at the same time before generating the manifest.
+          </p>
+
+          {/* Input + Add button */}
+          <div className="flex gap-2">
+            <Input
+              autoFocus
+              value={refIdInput}
+              onChange={(e) => setRefIdInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddPendingParcel(); } }}
+              placeholder="Reference ID or Tracking ID…"
+              className="h-9 text-sm"
+              disabled={searchingPending}
+            />
+            <Button
+              size="sm"
+              className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white gap-1.5 shrink-0"
+              disabled={searchingPending || !refIdInput.trim()}
+              onClick={handleAddPendingParcel}
+            >
+              {searchingPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+              Add
+            </Button>
+          </div>
+
+          {/* Pending parcels list */}
+          <div className="flex-1 overflow-y-auto space-y-2 min-h-[120px]">
+            {pendingParcels.length === 0 && !searchingPending && (
+              <div className="flex flex-col items-center justify-center py-8 text-center gap-1">
+                <Package className="h-8 w-8 text-slate-200" />
+                <p className="text-xs text-slate-400">No parcels added yet — enter a Reference ID above to start.</p>
+              </div>
+            )}
+            {pendingParcels.map((p) => (
+              <div key={p.id || p.tracking_id} className="border border-slate-200 rounded-lg p-3 flex items-center justify-between gap-3 bg-white">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono font-bold text-blue-600 text-sm">{p.tracking_id}</span>
+                    {p.reference_id && <Badge variant="outline" className="text-[10px]">Ref: {p.reference_id}</Badge>}
+                    <Badge variant="secondary" className="text-[10px] bg-orange-50 text-orange-700 border-orange-100">
+                      {p.weight ?? 0} kg
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-600 truncate mt-0.5">
+                    {p.sender_name || "—"} → {p.receiver_name || "—"} · {p.from_country || "—"} → {p.to_country || "—"}
+                  </p>
+                </div>
+                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
+                  onClick={() => removePendingParcel(p.tracking_id)}
+                  title="Remove from list">
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          {/* Summary + actions */}
+          <div className="border-t border-slate-100 pt-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Badge className="bg-blue-100 text-blue-700 border-blue-200">
+                {pendingParcels.length} parcel{pendingParcels.length !== 1 ? "s" : ""}
+              </Badge>
+              {pendingParcels.length > 0 && (
+                <Badge variant="outline" className="text-xs">
+                  {pendingParcels.reduce((s, p) => s + Number(p.weight || 0), 0).toFixed(2)} kg total
+                </Badge>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={resetCreateManifest}>Cancel</Button>
+              <Button
+                size="sm"
+                disabled={pendingParcels.length === 0}
+                onClick={() => setShowManifestFieldsDialog(true)}
+                className="gap-1.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Generate Manifest
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Create Manifest — Step 2: Manifest Details (other features) ─────── */}
+      {/* After "Generate Manifest" is clicked in Step 1, this dialog asks for the */}
+      {/* remaining manifest-level fields (origin/dest hub, flight, service, …) */}
+      {/* before the manifest is actually created. */}
+      <Dialog open={showManifestFieldsDialog} onOpenChange={(o) => { if (!o) setShowManifestFieldsDialog(false); }}>
+        <DialogContent className="max-w-4xl max-h-[88vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-blue-600" />
+              Manifest Details
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-slate-500">
+            Fill in the manifest-level details below. The {pendingParcels.length} parcel{pendingParcels.length !== 1 ? "s" : ""} you added
+            will be attached automatically. Click <strong>Create Manifest</strong> when done.
+          </p>
+
+          <div className="flex-1 overflow-y-auto pr-1">
+            <div className="grid md:grid-cols-3 gap-4">
+              {/* LEFT — Manifest Info */}
+              <div className="space-y-3 bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1.5">Manifest Info</p>
+                <Field label="Booking From Date" type="date" value={manifestDraft.bookingFromDate}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, bookingFromDate: v }))} />
+                <Field label="Booking Till Date" type="date" value={manifestDraft.bookingTillDate}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, bookingTillDate: v }))} />
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Forwarder</Label>
+                  <Input value={manifestDraft.forwarder} onChange={(e) => setManifestDraft((d) => ({ ...d, forwarder: e.target.value }))}
+                    placeholder="Forwarder name" className="h-8 text-sm border-slate-200" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Service</Label>
+                  <Select value={manifestDraft.service} onValueChange={(v) => setManifestDraft((d) => ({ ...d, service: v }))}>
+                    <SelectTrigger className="h-8 text-sm border-slate-200">
+                      <SelectValue placeholder="Select service" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SERVICES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Field label="Master No." value={manifestDraft.masterNo}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, masterNo: v }))} />
+                <Field label="Master EDI Bag No" value={manifestDraft.masterEdiBagNo}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, masterEdiBagNo: v }))} />
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Remark</Label>
+                  <Textarea value={manifestDraft.remark} onChange={(e) => setManifestDraft((d) => ({ ...d, remark: e.target.value }))}
+                    placeholder="Any remarks…" rows={2} className="text-sm border-slate-200 resize-none" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">License</Label>
+                  <select
+                    value={manifestDraft.license}
+                    onChange={(e) => setManifestDraft((d) => ({ ...d, license: e.target.value }))}
+                    className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">— Select license —</option>
+                    {licenses.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* MIDDLE — Flight & Shipment */}
+              <div className="space-y-3 bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1.5">Flight & Shipment</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Date" type="date" value={manifestDraft.manifestDate}
+                    onChange={(v) => setManifestDraft((d) => ({ ...d, manifestDate: v }))} />
+                  <Field label="Time" type="time" value={manifestDraft.manifestTime}
+                    onChange={(v) => setManifestDraft((d) => ({ ...d, manifestTime: v }))} />
+                </div>
+                <Field label="Run Number" value={manifestDraft.runNumber}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, runNumber: v }))} />
+                <Field label="Flight No" value={manifestDraft.flightNo} placeholder="e.g. PK-301"
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, flightNo: v }))} />
+                <Field label="No. of Bags" type="number" value={manifestDraft.noOfBags}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, noOfBags: v ? Number(v) : "" }))} />
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Arrival Date" type="date" value={manifestDraft.arrivalDate}
+                    onChange={(v) => setManifestDraft((d) => ({ ...d, arrivalDate: v }))} />
+                  <Field label="Arrival Time" type="time" value={manifestDraft.arrivalTime}
+                    onChange={(v) => setManifestDraft((d) => ({ ...d, arrivalTime: v }))} />
+                </div>
+                <Field label="Company" value={manifestDraft.company}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, company: v }))} />
+                <Separator className="my-1" />
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Weight Summary</p>
+                <Field label="Vendor Weight (kg)" type="number" value={manifestDraft.vendorWeight}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, vendorWeight: v ? Number(v) : "" }))} />
+                <Field label="Total Volumetric Wt (kg)" type="number" value={manifestDraft.totalVolumetricWt}
+                  onChange={(v) => setManifestDraft((d) => ({ ...d, totalVolumetricWt: v ? Number(v) : "" }))} />
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="No. of AWB" value={pendingParcels.length} readOnly />
+                  <Field label="Total Weight (kg)"
+                    value={pendingParcels.reduce((s, p) => s + Number(p.weight || 0), 0).toFixed(2)} readOnly />
+                </div>
+              </div>
+
+              {/* RIGHT — Hubs & Route */}
+              <div className="space-y-3 bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1.5">Hubs & Route</p>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
+                    Origin Hub <span className="text-red-500">*</span>
+                  </Label>
+                  <SearchableSelect
+                    value={manifestDraft.originHub}
+                    onChange={(v) => setManifestDraft((d) => ({ ...d, originHub: v }))}
+                    options={ORIGIN_HUBS}
+                    placeholder="Search origin hub…"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
+                    Destination Hub <span className="text-slate-400 font-normal normal-case">(worldwide)</span>
+                  </Label>
+                  <SearchableSelect
+                    value={manifestDraft.destinationHub}
+                    onChange={(v) => setManifestDraft((d) => ({ ...d, destinationHub: v }))}
+                    options={DEST_HUBS}
+                    placeholder="Search destination worldwide…"
+                  />
+                </div>
+
+                {/* Route summary */}
+                <div className="bg-gradient-to-br from-blue-50 to-slate-50 rounded-xl border border-blue-100 p-3 space-y-2">
+                  <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Route Preview</p>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-slate-500">FROM</p>
+                      <p className="text-sm font-bold text-slate-800 truncate">{manifestDraft.originHub || "—"}</p>
+                    </div>
+                    <Plane className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                    <div className="flex-1 min-w-0 text-right">
+                      <p className="text-[10px] text-slate-500">TO</p>
+                      <p className="text-sm font-bold text-slate-800 truncate">{manifestDraft.destinationHub || "—"}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 pt-3 flex items-center justify-between gap-3">
+            <p className="text-xs text-slate-500">
+              {pendingParcels.length} parcel{pendingParcels.length !== 1 ? "s" : ""} queued ·
+              {" "}{pendingParcels.reduce((s, p) => s + Number(p.weight || 0), 0).toFixed(2)} kg total
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowManifestFieldsDialog(false)}>Back</Button>
+              <Button
+                size="sm"
+                disabled={generating}
+                onClick={handleGenerateManifest}
+                className="gap-1.5 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white"
+              >
+                {generating ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                Create Manifest
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+
+    </div>
+  );
+};
