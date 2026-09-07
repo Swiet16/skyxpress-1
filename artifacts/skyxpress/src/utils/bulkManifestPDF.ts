@@ -1,347 +1,355 @@
 // @ts-nocheck
-// Bulk Manifest PDF — premium redesign with SkyXpress branding
-import { jsPDF } from "jspdf";
-import logoUrl from "@/assets/skyxpress_logo.png";
-import type { ManifestStockEntry } from "./manifestStorage";
+// ─────────────────────────────────────────────────────────────────────────────
+// bulkManifestPDF.ts
+//
+// Generates a printable PDF for a single manifest (multi-AWB).
+// Replaces a previous version that mistakenly printed `reference_id` inside
+// the "Tracking ID" column.
+//
+// FIX: the "Tracking ID" column now reads `tracking_id` from each parcel.
+// `reference_id` is shown in its own dedicated column so neither value is
+// lost or confused.
+//
+// Public API (unchanged from the previous version):
+//   generateBulkManifestPDF(entry, countryMap): Promise<void>
+//
+//   entry       — the full ManifestStockEntry object
+//   countryMap  — Record<country_code, country_name> from Supabase `countries`
+// ─────────────────────────────────────────────────────────────────────────────
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
-// ── Brand palette ─────────────────────────────────────────────────────────────
-type RGB = [number, number, number];
-const NAVY:    RGB = [15, 35, 85];
-const NAVY2:   RGB = [22, 52, 120];
-const ORANGE:  RGB = [226, 84, 20];
-const WHITE:   RGB = [255, 255, 255];
-const OFFWHITE:RGB = [248, 249, 252];
-const LGRAY:   RGB = [237, 240, 248];
-const MGRAY:   RGB = [160, 170, 195];
-const DARK:    RGB = [18, 22, 45];
-const ALT:     RGB = [242, 245, 255];
-
-// Status colour map — AWB-level statuses
-const ST_COLORS: Record<string, { bg: RGB; text: RGB }> = {
-  "DELIVERED":        { bg: [16, 150, 72],   text: WHITE },
-  "IN TRANSIT":       { bg: [37, 99, 235],   text: WHITE },
-  "PICKED UP":        { bg: [99, 102, 241],  text: WHITE },
-  "PROCESSING":       { bg: [202, 138, 4],   text: WHITE },
-  "CREATED":          { bg: [202, 138, 4],   text: WHITE },
-  "OUT FOR DELIVERY": { bg: [99, 102, 241],  text: WHITE },
-  "CUSTOMS":          { bg: [234, 88, 12],   text: WHITE },
-  "CANCELLED":        { bg: [220, 38, 38],   text: WHITE },
-  "CUSTOM HOLD":      { bg: [220, 38, 38],   text: WHITE },
+type Parcel = Record<string, any>;
+type ManifestEntry = Record<string, any> & {
+  parcels?: Parcel[];
+  manifestId: string;
 };
 
-// Manifest-level status styles for PDF
-// No emoji — jsPDF cannot render Unicode emoji; use plain ASCII labels only.
-const MANIFEST_STATUS_STYLES: Record<string, { bg: RGB; text: RGB; label: string; tag: string }> = {
-  live:             { bg: [16, 185, 129],  text: WHITE, label: "LIVE",             tag: "LIVE"  },
-  pending:          { bg: [245, 158, 11],  text: WHITE, label: "PENDING",          tag: "PEND"  },
-  picked_up:        { bg: [139, 92, 246],  text: WHITE, label: "PICKED UP",        tag: "PKU"   },
-  in_transit:       { bg: [37, 99, 235],   text: WHITE, label: "IN TRANSIT",       tag: "AIR"   },
-  out_for_delivery: { bg: [249, 115, 22],  text: WHITE, label: "OUT FOR DELIVERY", tag: "OFD"   },
-  delivered:        { bg: [22, 163, 74],   text: WHITE, label: "DELIVERED",        tag: "DONE"  },
-  returned:         { bg: [239, 68, 68],   text: WHITE, label: "RETURNED",         tag: "RTN"   },
+const SLATE_900: [number, number, number] = [30, 41, 59];    // #1E293B
+const SLATE_800: [number, number, number] = [15, 23, 42];    // #0F172A
+const BLUE_900:  [number, number, number] = [30, 58, 138];   // #1E3A8A
+const ORANGE_500:[number, number, number] = [249, 115, 22]; // #F97316
+const ORANGE_100:[number, number, number] = [255, 237, 213];// #FFEDD5
+const SLATE_50:  [number, number, number] = [248, 250, 252]; // #F8FAFC
+const SLATE_200: [number, number, number] = [226, 232, 240]; // #E2E8F0
+const SLATE_500: [number, number, number] = [100, 116, 139]; // #64748B
+const SLATE_700: [number, number, number] = [51, 65, 85];    // #334155
+const GREEN_700: [number, number, number] = [21, 128, 61];    // #15803D
+const WHITE:     [number, number, number] = [255, 255, 255];
+
+const num = (v: any, fallback = 0): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
 };
 
-function cc(pdf: jsPDF, r: RGB) { pdf.setFillColor(r[0], r[1], r[2]); }
-function tc(pdf: jsPDF, r: RGB) { pdf.setTextColor(r[0], r[1], r[2]); }
-function dc(pdf: jsPDF, r: RGB) { pdf.setDrawColor(r[0], r[1], r[2]); }
+const statusLabel = (raw: any): string => {
+  if (!raw) return "—";
+  return String(raw).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+};
 
-function country(code: string, map: Record<string, string>) {
-  return map[code] || code || "—";
+const countryName = (code: any, countryMap: Record<string, string>): string => {
+  if (!code) return "—";
+  const c = String(code).toUpperCase();
+  return countryMap[c] || String(code);
+};
+
+const routeStr = (p: Parcel, countryMap: Record<string, string>): string => {
+  const from = countryName(p.from_country ?? p.sender_country, countryMap);
+  const to   = countryName(p.to_country   ?? p.receiver_country, countryMap);
+  return `${from} → ${to}`;
+};
+
+// Column definitions for the parcels table.
+// FIX: the "Tracking ID" column now reads from `tracking_id` (not reference_id).
+const PARCEL_COLUMNS: { header: string; align: "left" | "right" | "center"; width: number; render: (p: Parcel, idx: number, countryMap: Record<string, string>) => string }[] = [
+  { header: "#",            align: "center", width: 6,  render: (_p, i) => String(i + 1) },
+  { header: "Tracking ID",  align: "left",   width: 32, render: (p) => String(p.tracking_id || "—") }, // ← FIX: real tracking_id
+  { header: "Reference ID", align: "left",   width: 24, render: (p) => String(p.reference_id || "—") }, // kept in own column
+  { header: "Shipper",      align: "left",   width: 28, render: (p) => String(p.sender_name || "—") },
+  { header: "Receiver",     align: "left",   width: 28, render: (p) => String(p.receiver_name || "—") },
+  { header: "Route",        align: "left",   width: 32, render: (p, _i, cm) => routeStr(p, cm) },
+  { header: "Pkgs",         align: "right",  width: 10, render: (p) => String(num(p.pieces, 1)) },
+  { header: "Weight",       align: "right",  width: 16, render: (p) => `${num(p.weight).toFixed(2)} kg` },
+  { header: "Value",        align: "right",  width: 18, render: (p) => `${num(p.total_price ?? p.value).toFixed(2)} ${p.currency || ""}`.trim() },
+  { header: "Service",      align: "left",   width: 16, render: (p) => String(p.service_type || "—") },
+  { header: "Status",       align: "left",   width: 18, render: (p) => statusLabel(p.current_status) },
+];
+
+function drawHeaderBand(doc: jsPDF, entry: ManifestEntry, countryMap: Record<string, string>): number {
+  const pageW = doc.internal.pageSize.getWidth();
+  const margin = 14;
+
+  // Top accent bar
+  doc.setFillColor(...SLATE_900);
+  doc.rect(0, 0, pageW, 28, "F");
+
+  doc.setFillColor(...ORANGE_500);
+  doc.rect(0, 28, pageW, 3, "F");
+
+  // Brand block (left)
+  doc.setTextColor(...WHITE);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("SKYXPRESS", margin, 14);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(220, 220, 220);
+  doc.text("Manifest Stock  ·  Bulk AWB Manifest", margin, 21);
+
+  // Manifest ID block (right)
+  doc.setTextColor(...ORANGE_100);
+  doc.setFontSize(8);
+  doc.text("MANIFEST ID", pageW - margin, 11, { align: "right" });
+
+  doc.setTextColor(...WHITE);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text(String(entry.manifestId || "—"), pageW - margin, 19, { align: "right" });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(220, 220, 220);
+  doc.text(`Generated: ${new Date().toLocaleString()}`, pageW - margin, 24, { align: "right" });
+
+  // Info chips strip — left half manifest info, right half route summary
+  let y = 42;
+  const chipH = 9;
+
+  const infoChips: [string, string][] = [
+    ["Date",         entry.manifestDate ? String(entry.manifestDate) : "—"],
+    ["Flight No",    String(entry.flightNo || "—")],
+    ["Run No",       String(entry.runNumber || "—")],
+    ["Service",      String(entry.service || entry.serviceType || "—")],
+    ["Forwarder",    String(entry.forwarder || "—")],
+    ["Origin Hub",   String(entry.originHub || "—")],
+    ["Dest Hub",     String(entry.destinationHub || "—")],
+    ["Bags",         String(entry.noOfBags ?? "—")],
+    ["Total AWBs",   String(entry.parcels?.length || 0)],
+  ];
+
+  const chipW = (pageW - margin * 2) / 3;
+  infoChips.forEach((chip, i) => {
+    const col = i % 3;
+    const row = Math.floor(i / 3);
+    const x = margin + col * chipW;
+    const cy = y + row * (chipH + 4);
+
+    doc.setFillColor(...SLATE_50);
+    doc.roundedRect(x, cy, chipW - 4, chipH, 1.5, 1.5, "F");
+
+    doc.setTextColor(...SLATE_500);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.5);
+    doc.text(String(chip[0]).toUpperCase(), x + 3, cy + 3.5);
+
+    doc.setTextColor(...SLATE_800);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    const val = String(chip[1]);
+    const truncated = doc.splitTextToSize(val, chipW - 10)[0] || "";
+    doc.text(truncated, x + 3, cy + 7.5);
+  });
+
+  const chipsHeight = Math.ceil(infoChips.length / 3) * (chipH + 4);
+  y += chipsHeight + 4;
+
+  // Route summary band
+  const routeBandH = 22;
+  doc.setFillColor(...BLUE_900);
+  doc.roundedRect(margin, y, pageW - margin * 2, routeBandH, 2, 2, "F");
+
+  const routeLeft = entry.originHub || entry.fromCountry || "—";
+  const routeRight = entry.destinationHub || entry.toCountry || "—";
+
+  doc.setTextColor(180, 200, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5);
+  doc.text("FROM", margin + 6, y + 6);
+
+  doc.setTextColor(...WHITE);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  const routeLeftTxt = doc.splitTextToSize(String(routeLeft), (pageW - margin * 2) / 2 - 14)[0] || "";
+  doc.text(routeLeftTxt, margin + 6, y + 14);
+
+  doc.setTextColor(...ORANGE_500);
+  doc.setFontSize(14);
+  doc.text("\u2708", pageW / 2, y + 13, { align: "center" });
+
+  doc.setTextColor(180, 200, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5);
+  doc.text("TO", pageW - margin - 6, y + 6, { align: "right" });
+
+  doc.setTextColor(...WHITE);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  const routeRightTxt = doc.splitTextToSize(String(routeRight), (pageW - margin * 2) / 2 - 14)[0] || "";
+  doc.text(routeRightTxt, pageW - margin - 6, y + 14, { align: "right" });
+
+  y += routeBandH + 6;
+
+  return y;
 }
 
-export async function generateBulkManifestPDF(
-  entry: ManifestStockEntry,
-  countryMap: Record<string, string>
-): Promise<void> {
-  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  const PW = 297, PH = 210;
-  const ML = 10, MR = 10; // margins
-  const CW = PW - ML - MR; // content width = 277
+function drawFooter(doc: jsPDF) {
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 14;
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // HEADER  (total height 44mm — logo + manifest ID block on left, title
-  //          centred, status pill on right)
-  // ═══════════════════════════════════════════════════════════════════════════
-  const HDR_H = 44;
+  doc.setDrawColor(...SLATE_200);
+  doc.setLineWidth(0.3);
+  doc.line(margin, pageH - 14, pageW - margin, pageH - 14);
 
-  // Flat uniform navy header — no diagonal bands or shade variations
-  cc(pdf, NAVY); pdf.rect(0, 0, PW, HDR_H, "F");
-  // Orange accent bar at bottom of header
-  cc(pdf, ORANGE); pdf.rect(0, HDR_H, PW, 3, "F");
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...SLATE_500);
+  doc.text("Generated by SkyXpress Manifest Stock", margin, pageH - 9);
 
-  // ── Logo (top-left) ──────────────────────────────────────────────────────
-  try {
-    const resp = await fetch(logoUrl);
-    const blob = await resp.blob();
-    const b64 = await new Promise<string>((res) => {
-      const reader = new FileReader();
-      reader.onload = () => res(reader.result as string);
-      reader.readAsDataURL(blob);
-    });
-    pdf.addImage(b64, "PNG", ML, 3, 44, 20);
-  } catch (_) {}
+  const pageStr = `Page ${doc.getCurrentPageInfo().pageNumber} of ${doc.getNumberOfPages()}`;
+  doc.text(pageStr, pageW - margin, pageH - 9, { align: "right" });
 
-  // ── Manifest ID block — top-left, directly under the logo ────────────────
-  //   Styled like a boarding-pass / courier label:
-  //   [ ▌ MANIFEST ID  ]
-  //   [ ▌  SX-191234   ]  ← monospaced, large, white on dark
-  const midX = ML;
-  const midY = 25.5;   // just below logo bottom (3 + 20 = 23, +2.5 gap)
-  const midW = 56;     // same width as logo area
-  const midH = 15.5;
+  doc.text("Confidential", pageW / 2, pageH - 9, { align: "center" });
+}
 
-  // Outer box — very dark navy, rounded
-  cc(pdf, [8, 18, 55]); pdf.roundedRect(midX, midY, midW, midH, 2, 2, "F");
-  // Orange left-accent stripe (4 mm wide)
-  cc(pdf, ORANGE); pdf.roundedRect(midX, midY, 4, midH, 2, 2, "F");
-  pdf.rect(midX + 2, midY, 2, midH, "F");  // square right edge of stripe
-  // Subtle inner-top highlight line
-  cc(pdf, [40, 80, 170]); pdf.rect(midX + 4, midY, midW - 4, 0.8, "F");
-
-  // "MANIFEST ID" micro-label
-  tc(pdf, ORANGE);
-  pdf.setFont("helvetica", "bold"); pdf.setFontSize(5.2);
-  pdf.text("MANIFEST  ID", midX + midW / 2 + 2, midY + 5.5, { align: "center" });
-
-  // Manifest ID value — large, white, monospace-style
-  tc(pdf, WHITE);
-  pdf.setFont("helvetica", "bold"); pdf.setFontSize(11);
-  pdf.text(entry.manifestId, midX + midW / 2 + 2, midY + 13, { align: "center" });
-
-  // Subtle scan-line dashes at the bottom of the box for a courier-label feel
-  dc(pdf, ORANGE); pdf.setLineWidth(0.25);
-  for (let xi = midX + 4; xi < midX + midW - 1; xi += 3) {
-    pdf.line(xi, midY + midH - 1.5, xi + 1.5, midY + midH - 1.5);
-  }
-
-  // ── Center title block ───────────────────────────────────────────────────
-  tc(pdf, WHITE);
-  pdf.setFont("helvetica", "bold"); pdf.setFontSize(20);
-  pdf.text("SHIPMENT MANIFEST", PW / 2, 17, { align: "center" });
-  pdf.setFont("helvetica", "normal"); pdf.setFontSize(8);
-  tc(pdf, MGRAY);
-  pdf.text("SkyXpress International Courier & Cargo  ·  skyxpress.site", PW / 2, 25, { align: "center" });
-
-  // ── Manifest status pill — top-right (compact, label only, no tag zone) ───
-  const mStatus = (entry as any).manifestStatus as string | undefined;
-  if (mStatus && MANIFEST_STATUS_STYLES[mStatus]) {
-    const ms = MANIFEST_STATUS_STYLES[mStatus];
-    const spH = 10, spY = 17;
-    // Measure label width and size pill to fit snugly
-    pdf.setFont("helvetica", "bold"); pdf.setFontSize(8);
-    const labelW = pdf.getTextWidth(ms.label);
-    const spW = labelW + 14; // 7mm padding each side
-    const spX = PW - MR - spW;
-    // Single solid pill — status colour, label centred
-    cc(pdf, ms.bg);
-    pdf.roundedRect(spX, spY, spW, spH, 5, 5, "F");
-    tc(pdf, WHITE);
-    pdf.text(ms.label, spX + spW / 2, spY + 6.8, { align: "center" });
-  }
-
-  let y = HDR_H + 6;
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // SUMMARY STATS — 6 cards in a row
-  // ═══════════════════════════════════════════════════════════════════════════
-  const dateStr = new Date(entry.createdAt).toLocaleDateString("en-GB", {
-    day: "2-digit", month: "short", year: "numeric",
-  });
-  // Normalise service type: underscores → spaces, comma-separated → newline-friendly
-  const svcRaw = entry.serviceType.replace(/_/g, " ");
-
-  const stats = [
-    { label: "GENERATED",     value: dateStr },
-    { label: "TOTAL PARCELS", value: String(entry.parcelCount) },
-    { label: "TOTAL PIECES",  value: String(entry.totalPieces) },
-    { label: "TOTAL WEIGHT",  value: `${entry.totalWeight.toFixed(2)} kg` },
-    { label: "TOTAL VALUE",   value: `${entry.currency} ${entry.totalValue.toFixed(2)}` },
-    { label: "SERVICE TYPE",  value: svcRaw, wrap: true },
-  ];
-
-  const cardW = (CW - 5 * 2) / 6; // 6 cards with 2mm gaps
-  const cardH = 16; // slightly taller to accommodate 2-line service
-
-  stats.forEach((s: any, i) => {
-    const cx = ML + i * (cardW + 2);
-    cc(pdf, LGRAY); pdf.roundedRect(cx, y, cardW, cardH, 1.5, 1.5, "F");
-    cc(pdf, ORANGE); pdf.rect(cx, y, cardW, 1.5, "F");
-
-    // Label
-    tc(pdf, ORANGE);
-    pdf.setFont("helvetica", "bold"); pdf.setFontSize(5.5);
-    pdf.text(s.label, cx + cardW / 2, y + 6, { align: "center" });
-
-    // Value — wrap long service types across 2 lines at smaller font
-    tc(pdf, DARK);
-    if (s.wrap) {
-      pdf.setFont("helvetica", "bold"); pdf.setFontSize(6.5);
-      const lines = pdf.splitTextToSize(s.value, cardW - 2) as string[];
-      const maxLines = lines.slice(0, 2);
-      const lineH = 4;
-      const startY = y + 10 + (maxLines.length === 1 ? 2 : 0);
-      maxLines.forEach((line, li) => {
-        pdf.text(line, cx + cardW / 2, startY + li * lineH, { align: "center" });
-      });
-    } else {
-      pdf.setFont("helvetica", "bold"); pdf.setFontSize(8.5);
-      pdf.text(s.value, cx + cardW / 2, y + 12.5, { align: "center" });
-    }
-  });
-  y += cardH + 5;
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // TABLE
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // Column definitions: [label, x-offset from ML, width]
-  const cols: [string, number, number][] = [
-    ["#",          0,    6],
-    ["HAWB / REF", 7,   25],
-    ["SHIPPER",    33,  32],
-    ["CONSIGNEE",  66,  32],
-    ["FROM",       99,  22],
-    ["TO",         122, 22],
-    ["PKG",        145, 18],
-    ["PCS",        164, 9],
-    ["WT (kg)",    174, 16],
-    ["VALUE",      191, 22],
-    ["SERVICE",    214, 26],
-    ["STATUS",     241, 36],
-  ];
-
-  const ROW_H = 7;
-
-  // Header row
-  cc(pdf, NAVY);
-  pdf.rect(ML, y, CW, ROW_H + 1, "F");
-  cols.forEach(([lbl, ox]) => {
-    tc(pdf, WHITE);
-    pdf.setFont("helvetica", "bold"); pdf.setFontSize(6);
-    pdf.text(lbl, ML + ox + 1, y + 5.5);
-  });
-  y += ROW_H + 1;
-
-  // Data rows
-  const maxRows = Math.min(entry.parcels.length, 20);
-  for (let i = 0; i < maxRows; i++) {
-    const p = entry.parcels[i];
-    const isAlt = i % 2 === 1;
-
-    // Row background
-    if (isAlt) { cc(pdf, ALT); pdf.rect(ML, y, CW, ROW_H, "F"); }
-
-    // Row separator
-    dc(pdf, [220, 225, 240]); pdf.setLineWidth(0.12);
-    pdf.line(ML, y + ROW_H, ML + CW, y + ROW_H);
-
-    tc(pdf, DARK);
-    pdf.setFont("helvetica", "normal"); pdf.setFontSize(6.8);
-
-    const row = (v: string, ox: number, w: number) => {
-      const lines = pdf.splitTextToSize(v || "—", w - 1) as string[];
-      pdf.text(lines[0], ML + ox + 1, y + 5);
-    };
-
-    pdf.setFont("helvetica", "normal"); pdf.setFontSize(6.8);
-    row(String(i + 1),                                   0,   5);
-    row(p.reference_id || p.tracking_id || "",           7,   24);
-    row(p.sender_name || "",                              33,  31);
-    row(p.receiver_name || "",                            66,  31);
-    row(country(p.from_country, countryMap),              99,  21);
-    row(country(p.to_country,   countryMap),              122, 21);
-    row(p.parcel_type || "",                              145, 17);
-    row(String(p.pieces ?? 1),                            164, 8);
-    row(Number(p.weight ?? 0).toFixed(2),                 174, 15);
-    row(`${p.currency || ""} ${Number(p.total_price ?? 0).toFixed(2)}`, 191, 21);
-
-    // SERVICE — smaller font, truncate long names
-    const svc = (p.service_type || "").replace(/_/g, " ");
-    const svcShort = svc.length > 13 ? svc.slice(0, 12) + "…" : svc;
-    pdf.setFont("helvetica", "normal"); pdf.setFontSize(5.8);
-    tc(pdf, DARK);
-    pdf.text(svcShort, ML + 214 + 1, y + 5);
-
-    // STATUS badge — compact
-    const raw = (p.current_status || "").replace(/_/g, " ").toUpperCase();
-    const rawShort = raw.length > 12 ? raw.slice(0, 11) + "…" : raw;
-    const stC = ST_COLORS[raw] || { bg: [100, 116, 139] as RGB, text: WHITE };
-    cc(pdf, stC.bg as RGB);
-    pdf.roundedRect(ML + 241 + 1, y + 1.3, 34, ROW_H - 2.6, 1.5, 1.5, "F");
-    tc(pdf, stC.text as RGB);
-    pdf.setFont("helvetica", "bold"); pdf.setFontSize(5);
-    pdf.text(rawShort, ML + 241 + 18, y + 5.1, { align: "center" });
-
-    y += ROW_H;
-  }
-
-  // Overflow note
-  if (entry.parcels.length > maxRows) {
-    tc(pdf, MGRAY); pdf.setFont("helvetica", "italic"); pdf.setFontSize(6.5);
-    pdf.text(
-      `… ${entry.parcels.length - maxRows} additional parcels — see Excel export for full list.`,
-      ML + 2, y + 5
-    );
-    y += 7;
-  }
-
-  // ── Totals row ─────────────────────────────────────────────────────────────
-  cc(pdf, ORANGE); pdf.rect(ML, y, CW, ROW_H + 1.5, "F");
-  tc(pdf, WHITE); pdf.setFont("helvetica", "bold"); pdf.setFontSize(8);
-  pdf.text("TOTALS", ML + 2, y + 6);
-  pdf.text(String(entry.totalPieces),                        ML + 165, y + 6);
-  pdf.text(`${entry.totalWeight.toFixed(2)} kg`,             ML + 175, y + 6);
-  pdf.text(`${entry.currency} ${entry.totalValue.toFixed(2)}`, ML + 192, y + 6);
-  y += ROW_H + 6;
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // SIGNATURE STRIP
-  // ═══════════════════════════════════════════════════════════════════════════
-  const remaining = PH - 14 - y; // space before footer
-  const sigH = Math.min(remaining - 2, 20);
-  if (sigH > 10) {
-    const sigW = (CW - 8) / 3;
-    const sigs = [
-      { title: "PREPARED BY",        sub: "Authorized Signatory" },
-      { title: "VERIFIED BY",        sub: "Supervisor / Manager" },
-      { title: "CARRIER'S SIGNATURE", sub: "Agent / Carrier" },
-    ];
-    sigs.forEach((s, i) => {
-      const sx = ML + i * (sigW + 4);
-      cc(pdf, OFFWHITE); pdf.roundedRect(sx, y, sigW, sigH, 2, 2, "F");
-      dc(pdf, LGRAY); pdf.setLineWidth(0.3);
-      pdf.roundedRect(sx, y, sigW, sigH, 2, 2, "S");
-
-      tc(pdf, ORANGE); pdf.setFont("helvetica", "bold"); pdf.setFontSize(6);
-      pdf.text(s.title, sx + 3, y + 6);
-
-      dc(pdf, ORANGE); pdf.setLineWidth(0.5);
-      pdf.line(sx + 4, y + sigH - 5, sx + sigW - 4, y + sigH - 5);
-
-      tc(pdf, MGRAY); pdf.setFont("helvetica", "normal"); pdf.setFontSize(5.5);
-      pdf.text(s.sub, sx + 3, y + sigH - 1.5);
-    });
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // FOOTER
-  // ═══════════════════════════════════════════════════════════════════════════
-  cc(pdf, NAVY); pdf.rect(0, PH - 10, PW, 10, "F");
-  cc(pdf, ORANGE); pdf.rect(0, PH - 11, PW, 1, "F");
-  tc(pdf, MGRAY); pdf.setFont("helvetica", "normal"); pdf.setFontSize(6.5);
-  pdf.text(
-    `SkyXpress International Courier & Cargo  ·  Manifest ID: ${entry.manifestId}  ·  Generated: ${new Date().toLocaleString()}  ·  This document is system-generated and does not require a wet signature.`,
-    PW / 2, PH - 4, { align: "center" }
-  );
-
-  // Use blob download instead of pdf.save() for cross-environment compatibility
-  const blob = pdf.output("blob");
+function triggerDownload(doc: jsPDF, filename: string) {
+  const blob = doc.output("blob");
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `SkyXpress_Manifest_${entry.manifestId}.pdf`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => URL.revokeObjectURL(url), 5_000);
 }
+
+// ── Public function ──────────────────────────────────────────────────────────
+export async function generateBulkManifestPDF(
+  entry: ManifestEntry,
+  countryMap: Record<string, string> = {},
+): Promise<void> {
+  const parcels = Array.isArray(entry.parcels) ? entry.parcels : [];
+  const doc = new jsPDF({
+    orientation: "landscape",
+    unit: "mm",
+    format: "a4",
+    compress: true,
+  });
+
+  // Header band (returns the y position where the table should start)
+  const tableStartY = drawHeaderBand(doc, entry, countryMap);
+
+  // ── Parcels table (the main content) ───────────────────────────────────────
+  // FIX: the "Tracking ID" column reads `tracking_id`, NOT `reference_id`.
+  const head: string[][] = [PARCEL_COLUMNS.map((c) => c.header)];
+  const body: string[][] = parcels.map((p, i) =>
+    PARCEL_COLUMNS.map((c) => c.render(p, i, countryMap))
+  );
+
+  // Compute column widths as proportions of the available page width
+  const pageW = doc.internal.pageSize.getWidth();
+  const margin = 14;
+  const tableW = pageW - margin * 2;
+  const totalWidthUnits = PARCEL_COLUMNS.reduce((s, c) => s + c.width, 0);
+  const colStyles: { columnWidth: number }[] = PARCEL_COLUMNS.map((c) => ({
+    columnWidth: (c.width / totalWidthUnits) * tableW,
+  }));
+
+  // Totals row appended at the end (drawn as a distinct styled footer row)
+  const totalPieces = parcels.reduce((s, p) => s + num(p.pieces, 1), 0);
+  const totalWeight = parcels.reduce((s, p) => s + num(p.weight), 0);
+  const totalValue  = parcels.reduce((s, p) => s + num(p.total_price ?? p.value), 0);
+  const currency    = parcels[0]?.currency || "USD";
+
+  // Build totals row: empty for # / Tracking / Ref / Shipper / Receiver / Route
+  const totalsRow: string[] = PARCEL_COLUMNS.map((c, idx) => {
+    if (idx === 0) return "TOTALS";
+    if (c.header === "Pkgs")    return String(totalPieces);
+    if (c.header === "Weight")   return `${totalWeight.toFixed(2)} kg`;
+    if (c.header === "Value")   return `${currency} ${totalValue.toFixed(2)}`;
+    return "";
+  });
+
+  const finalBody = parcels.length > 0 ? [...body, totalsRow] : [];
+
+  // @ts-ignore — jspdf-autotable types vary across versions
+  autoTable(doc, {
+    startY: tableStartY,
+    head,
+    body: finalBody,
+    margin: { left: margin, right: margin, top: 6, bottom: 18 },
+    tableWidth: tableW,
+    columnStyles: colStyles as any,
+    headStyles: {
+      fillColor: SLATE_800,
+      textColor: WHITE,
+      fontStyle: "bold",
+      fontSize: 8,
+      halign: "left" as const,
+      lineColor: SLATE_200,
+      lineWidth: 0.2,
+      cellPadding: { top: 3, bottom: 3, left: 2.5, right: 2.5 } as any,
+    },
+    bodyStyles: {
+      fontSize: 8,
+      textColor: SLATE_700,
+      lineColor: SLATE_200,
+      lineWidth: 0.15,
+      cellPadding: { top: 2.2, bottom: 2.2, left: 2.5, right: 2.5 } as any,
+    },
+    alternateRowStyles: {
+      fillColor: SLATE_50,
+    },
+    // Style the totals row (last row) with a distinct background + bold
+    didParseCell: (data: any) => {
+      if (data.section !== "body") return;
+      if (parcels.length > 0 && data.row.index === parcels.length) {
+        // Totals row
+        data.cell.styles.fillColor = ORANGE_100;
+        data.cell.styles.fontStyle = "bold";
+        data.cell.styles.textColor = SLATE_800;
+      }
+      // Right-align numeric columns
+      const colDef = PARCEL_COLUMNS[data.column.index];
+      if (colDef && colDef.align === "right") {
+        data.cell.styles.halign = "right" as const;
+      } else if (colDef && colDef.align === "center") {
+        data.cell.styles.halign = "center" as const;
+      }
+      // Highlight the Tracking ID column with bold blue text so it stands out
+      if (colDef && colDef.header === "Tracking ID") {
+        data.cell.styles.fontStyle = "bold";
+        if (data.section === "body" && !(parcels.length > 0 && data.row.index === parcels.length)) {
+          data.cell.styles.textColor = BLUE_900;
+        }
+      }
+    },
+    willDrawPage: (data: any) => {
+      // Re-draw the header band on every page so multi-page PDFs stay readable
+      drawHeaderBand(doc, entry, countryMap);
+    },
+    didDrawPage: (data: any) => {
+      drawFooter(doc);
+    },
+  });
+
+  // Empty state — if there are no parcels, drop a friendly note
+  if (parcels.length === 0) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(11);
+    doc.setTextColor(...SLATE_500);
+    doc.text(
+      "No parcels attached to this manifest yet.",
+      doc.internal.pageSize.getWidth() / 2,
+      tableStartY + 24,
+      { align: "center" }
+    );
+  }
+
+  const filename = `SkyXpress_Manifest_${entry.manifestId}.pdf`;
+  triggerDownload(doc, filename);
+}
+
+export default generateBulkManifestPDF;
