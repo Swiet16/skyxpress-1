@@ -44,6 +44,65 @@ import { exportManifestToExcel } from "@/utils/manifestExport";
 import { generateBulkManifestPDF } from "@/utils/bulkManifestPDF";
 import { supabase } from "@/integrations/supabase/client";
 
+// ── Resilient parcel row update (manifest → parcels status sync) ─────────────
+// ROOT CAUSE of "manifest status changes never reach the parcels": the sync
+// writes optional columns (admin_note, status_notes, current_location,
+// last_location, detailed_status) that many production databases do not have
+// yet. PostgREST rejects the WHOLE update with PGRST204 ("Could not find the
+// 'x' column of 'parcels' in the schema cache"), so `current_status` never
+// landed and parcels kept showing "processing".
+//
+// Fix: try the full patch first. If the database is missing one of the
+// optional columns, retry with the CORE patch (current_status + updated_at +
+// status_timeline — present on every schema) so the status itself ALWAYS
+// syncs. The caller is told a fallback happened so it can advise running
+// `supabase-parcels-status-sync.sql` to unlock comment/location mirroring.
+const PARCEL_CORE_PATCH_KEYS = ["current_status", "updated_at", "status_timeline"];
+
+function isSchemaColumnError(error: { code?: string | number; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  const code = String(error.code ?? "");
+  const msg = (error.message ?? "").toLowerCase();
+  return (
+    code === "PGRST204" ||
+    code === "42703" ||
+    msg.includes("could not find the") ||
+    (msg.includes("column") && msg.includes("does not exist")) ||
+    msg.includes("schema cache")
+  );
+}
+
+async function updateParcelRowResilient(
+  rowId: string,
+  patch: Record<string, any>
+): Promise<{ ok: boolean; error?: string; schemaFallback: boolean }> {
+  const { error } = await supabase.from("parcels").update(patch).eq("id", rowId);
+  if (!error) return { ok: true, schemaFallback: false };
+
+  // Non-schema errors (RLS denial, network, etc.) are reported as-is — the
+  // toast will surface them and the admin can fix permissions.
+  if (!isSchemaColumnError(error)) {
+    return { ok: false, error: error.message || "Unknown parcels update error", schemaFallback: false };
+  }
+
+  console.warn(
+    `[ManifestStock] parcels table is missing optional sync columns — retrying with core columns only. ` +
+    `Run supabase-parcels-status-sync.sql in the Supabase SQL Editor to enable comment/location mirroring. ` +
+    `Original error: ${error.message}`
+  );
+
+  const core: Record<string, any> = {};
+  PARCEL_CORE_PATCH_KEYS.forEach((k) => {
+    if (k in patch) core[k] = patch[k];
+  });
+  const { error: coreErr } = await supabase.from("parcels").update(core).eq("id", rowId);
+  if (coreErr) {
+    return { ok: false, error: coreErr.message || "Core status sync failed", schemaFallback: true };
+  }
+  return { ok: true, schemaFallback: true };
+}
+
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ORIGIN_HUBS = [
   "GRT - GUJRAT", "LHE - LAHORE", "KHI - KARACHI", "ISB - ISLAMABAD",
@@ -642,6 +701,8 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
   const [showBagging, setShowBagging]         = useState(false);
   const [showHistory, setShowHistory]         = useState(false);
   const [currentUser, setCurrentUser]         = useState<{ email: string; name: string } | null>(null);
+  // ROLE: resolved from profiles for the logged-in user — drives permission gating
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [licenses, setLicenses]               = useState<string[]>([]);
   const [addingLicense, setAddingLicense]     = useState(false);
   const [newLicenseCode, setNewLicenseCode]   = useState("");
@@ -705,14 +766,28 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
 
   // ── Auth user ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       const u = data?.session?.user;
       if (u) {
         const name = u.user_metadata?.full_name || u.user_metadata?.name || u.email?.split("@")[0] || "Admin";
         setCurrentUser({ email: u.email || "", name });
+        // ROLE GATE support: resolve the logged-in user's role from profiles
+        const { data: prof } = await supabase.from("profiles").select("role").eq("user_id", u.id).single();
+        setCurrentUserRole(prof?.role ?? null);
       }
     });
   }, []);
+
+  // ── ROLE-BASED PERMISSIONS (enforced by logged-in role) ────────────────────
+  // Partner scope   = this component renders one partner's own manifests
+  //                   (PartnerDashboard passes filterUserId / filterEmail).
+  // Restricted role = any role that is not admin / staff (partner, user, …).
+  // Partners can VIEW the manifest list, download Excel/PDF and set status,
+  // but CANNOT open the manifest editor (no editing) and CANNOT delete.
+  const isPartnerScope   = !!(filterUserId || filterEmail);
+  const isRestrictedRole = !!currentUserRole && currentUserRole !== "admin" && currentUserRole !== "staff";
+  const canEditManifest   = !isPartnerScope && !isRestrictedRole; // open / edit manifest
+  const canDeleteManifest = currentUserRole === "admin";          // ONLY admin can delete manifests
 
   const reload = useCallback(async () => {
     const data = await loadManifestStockDB();
@@ -769,7 +844,14 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     })();
   }, [isAdminView]);
 
-  const openDetail = (entry: ManifestStockEntry) => {
+  const openDetail = (entry: ManifestStockEntry, opts?: { force?: boolean }) => {
+    // ROLE GATE: partners / restricted roles cannot open or edit manifests.
+    // The create-manifest flows call this with { force: true } so a freshly
+    // generated manifest can still be filled in once by its creator.
+    if (!opts?.force && !canEditManifest) {
+      toast({ title: "Not allowed", description: "Your role cannot edit manifests.", variant: "destructive" });
+      return;
+    }
     setSelected(entry);
     setEditing({
       ...entry,
@@ -842,6 +924,11 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
   };
 
   const handleDelete = async (manifestId: string) => {
+    // ROLE GATE: only admins can delete manifests.
+    if (!canDeleteManifest) {
+      toast({ title: "Not allowed", description: "Only admins can delete manifests.", variant: "destructive" });
+      return;
+    }
     if (!window.confirm(`Delete manifest ${manifestId}? This cannot be undone.`)) return;
     await deleteManifestFromStockDB(manifestId);
     await reload();
@@ -999,7 +1086,8 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
       setFindParcelResults([]);
       setFindParcelQuery("");
       toast({ title: "Manifest created ✓", description: `${manifestId} · ${parcel.tracking_id}` });
-      openDetail(newEntry);
+      // force: the creator may fill in the manifest they just created once
+      openDetail(newEntry, { force: true });
     } catch (e: any) {
       toast({ title: "Failed to create manifest", description: e.message, variant: "destructive" });
     } finally {
@@ -1104,7 +1192,8 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
         title: "Manifest created ✓",
         description: `${manifestId} · ${count} parcel${count > 1 ? "s" : ""}`,
       });
-      openDetail(newEntry);
+      // force: the creator may fill in the manifest they just created once
+      openDetail(newEntry, { force: true });
     } catch (e: any) {
       toast({ title: "Failed to create manifest", description: e.message, variant: "destructive" });
     } finally {
@@ -1151,6 +1240,19 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     //    Also mirror the comment into `admin_note` so the public tracking page's
     //    top-of-pass "Note from SkyXpress" callout stays in sync with the latest
     //    staff comment.
+    // FIX: this sync used to be "fire and forget" — every `.update()` call's
+    // result was discarded, so a failed write (RLS policy blocking it, a bad
+    // column, a permissions error) was invisible. The manifest editor would
+    // still tell staff "Status updated ✓ (parcels synced)" even when NOTHING
+    // was actually written to the `parcels` table, which is why a status
+    // change from the manifest could appear to succeed here while the public
+    // tracking page kept showing the old status. We now track per-row
+    // success/failure and unmatched tracking IDs, and return that so the
+    // caller can show an accurate result instead of a false-positive toast.
+    const syncErrors: { trackingId: string; message: string }[] = [];
+    const missingTrackingIds: string[] = [];
+    let schemaFallback = false;
+
     if (hasParcels) {
       const trackingIds = updatedParcels.map((p) => p.tracking_id).filter(Boolean);
       if (trackingIds.length > 0) {
@@ -1162,10 +1264,19 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
 
           if (fetchErr) {
             console.warn("[ManifestStock] failed to fetch parcels for timeline update:", fetchErr.message);
+            trackingIds.forEach((tid) => syncErrors.push({ trackingId: tid, message: fetchErr.message }));
           } else if (rows) {
+            // Any tracking ID in the manifest that didn't come back from the
+            // lookup never gets its status synced — flag it instead of
+            // silently skipping it.
+            const foundIds = new Set(rows.map((r: any) => r.tracking_id));
+            trackingIds.forEach((tid) => {
+              if (!foundIds.has(tid)) missingTrackingIds.push(tid);
+            });
+
             const newEvent = { status, timestamp: nowIso, location, notes: comment || "" };
             await Promise.all(
-              rows.map((r: any) => {
+              rows.map(async (r: any) => {
                 const existing = Array.isArray(r.status_timeline) ? r.status_timeline : [];
                 // Build the update payload. Always set current_status, updated_at,
                 // and append the timeline event. Conditionally also push the
@@ -1209,20 +1320,31 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                   patch.detailed_status = existingDetailed;
                 }
 
-                return supabase
-                  .from("parcels")
-                  .update(patch)
-                  .eq("id", r.id);
+                // Resilient write: on a missing-column schema error this
+                // retries with current_status/updated_at/status_timeline only,
+                // so the parcel status ALWAYS syncs even if the database has
+                // not been migrated yet (see supabase-parcels-status-sync.sql).
+                const result = await updateParcelRowResilient(r.id, patch);
+                if (!result.ok) {
+                  console.warn(
+                    `[ManifestStock] failed to sync parcel ${r.tracking_id}:`,
+                    result.error
+                  );
+                  syncErrors.push({ trackingId: r.tracking_id, message: result.error || "unknown error" });
+                } else if (result.schemaFallback) {
+                  schemaFallback = true;
+                }
               })
             );
           }
-        } catch (err) {
+        } catch (err: any) {
           console.warn("[ManifestStock] parcels table sync error:", err);
+          trackingIds.forEach((tid) => syncErrors.push({ trackingId: tid, message: String(err?.message || err) }));
         }
       }
     }
 
-    return updatedParcels;
+    return { updatedParcels, syncErrors, missingTrackingIds, schemaFallback };
   };
 
   // ── Sync the manifest's "Tracking Events" tab down to the parcels table.
@@ -1269,7 +1391,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
       if (!rows || rows.length === 0) return;
 
       await Promise.all(
-        rows.map((r: any) => {
+        rows.map(async (r: any) => {
           const incoming = byAwb[r.tracking_id] || [];
           if (incoming.length === 0) return null;
 
@@ -1364,7 +1486,22 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
             }
           }
 
-          return supabase.from("parcels").update(update).eq("id", r.id);
+          // Resilient write (same fallback as cascadeStatusToParcels): if the
+          // database is missing the optional note/location columns, retry with
+          // status_timeline/current_status/updated_at only so tracking events
+          // still land on the public tracking page.
+          const result = await updateParcelRowResilient(r.id, update);
+          if (!result.ok) {
+            console.warn(
+              `[ManifestStock] failed to sync tracking events to parcel ${r.tracking_id}:`,
+              result.error
+            );
+          } else if (result.schemaFallback) {
+            console.warn(
+              `[ManifestStock] tracking-event note/location columns missing for ${r.tracking_id} — ` +
+              `event synced to timeline without note mirroring. Run supabase-parcels-status-sync.sql.`
+            );
+          }
         })
       );
     } catch (err) {
@@ -1374,7 +1511,7 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
 
   const handleBulkStatusApply = async () => {
     if (!bulkStatus || selectedIds.size === 0) return;
-    await Promise.all(
+    const results = await Promise.all(
       [...selectedIds].map((id) => {
         const entry = entries.find((e) => e.manifestId === id);
         return cascadeStatusToParcels(id, bulkStatus, entry?.parcels || [], bulkComment);
@@ -1383,9 +1520,27 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
     await reload();
     const label = MANIFEST_STATUSES.find((s) => s.value === bulkStatus)?.label || bulkStatus;
     const count = selectedIds.size;
+    const failedCount = results.reduce((s, r) => s + r.syncErrors.length, 0);
+    const missingCount = results.reduce((s, r) => s + r.missingTrackingIds.length, 0);
+    const schemaFallbackCount = results.reduce((s, r) => s + (r.schemaFallback ? 1 : 0), 0);
     setSelectedIds(new Set());
     setShowBulkDialog(false);
-    toast({ title: `Status updated ✓`, description: `${count} manifest(s) → ${label}${bulkComment ? " · comment added" : ""} (parcels synced)` });
+    if (failedCount > 0 || missingCount > 0) {
+      toast({
+        title: "Status updated, but tracking sync had issues",
+        description: `${count} manifest(s) → ${label}. ${failedCount} parcel(s) failed to sync (see console)${missingCount ? `, ${missingCount} not found in parcels table` : ""}.`,
+        variant: "destructive",
+      });
+    } else if (schemaFallbackCount > 0) {
+      // Status DID sync for these manifests, but the database is missing the
+      // optional note/location columns so comments weren't mirrored.
+      toast({
+        title: `Status updated ✓ (${count} manifest(s) → ${label})`,
+        description: "Parcel statuses synced. Note: your database is missing optional columns (admin_note, current_location, …) so comments/locations weren't mirrored — run supabase-parcels-status-sync.sql in the Supabase SQL Editor to enable full sync.",
+      });
+    } else {
+      toast({ title: `Status updated ✓`, description: `${count} manifest(s) → ${label}${bulkComment ? " · comment added" : ""} (parcels synced)` });
+    }
     setBulkStatus("");
     setBulkComment("");
   };
@@ -1393,13 +1548,33 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
   const handleSingleStatus = async (manifestId: string, status: string, comment?: string) => {
     const entry = entries.find((e) => e.manifestId === manifestId);
     const sourceParcels = editing?.manifestId === manifestId ? editing.parcels : entry?.parcels || [];
-    const updatedParcels = await cascadeStatusToParcels(manifestId, status, sourceParcels, comment);
+    const { updatedParcels, syncErrors, missingTrackingIds, schemaFallback } = await cascadeStatusToParcels(
+      manifestId,
+      status,
+      sourceParcels,
+      comment
+    );
     await reload();
     if (editing?.manifestId === manifestId) {
       setEditing((e) => e ? { ...e, manifestStatus: status, parcels: updatedParcels || e.parcels } : e);
     }
     const label = MANIFEST_STATUSES.find((s) => s.value === status)?.label || status;
-    toast({ title: "Status updated ✓", description: `${manifestId} → ${label}${comment ? " · comment added" : ""} (parcels synced)` });
+    if (syncErrors.length > 0 || missingTrackingIds.length > 0) {
+      toast({
+        title: "Status updated, but tracking sync failed",
+        description: `${manifestId} → ${label} saved to the manifest, but ${syncErrors.length} parcel(s) did not sync to public tracking${missingTrackingIds.length ? ` (${missingTrackingIds.length} tracking ID not found)` : ""}. Check console for details.`,
+        variant: "destructive",
+      });
+    } else if (schemaFallback) {
+      // The status DID reach the parcels table via the core-column fallback —
+      // only the optional comment/location mirroring was skipped.
+      toast({
+        title: "Status updated ✓ (parcels synced)",
+        description: `${manifestId} → ${label}. Note: your database is missing optional columns (admin_note, current_location, …) so the comment/location weren't mirrored — run supabase-parcels-status-sync.sql in the Supabase SQL Editor to enable full sync.`,
+      });
+    } else {
+      toast({ title: "Status updated ✓", description: `${manifestId} → ${label}${comment ? " · comment added" : ""} (parcels synced)` });
+    }
   };
 
   // Opens the confirm dialog instead of applying instantly, so a comment can
@@ -1660,7 +1835,9 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                           <div className="flex items-center gap-1 justify-end">
                             <Button variant="ghost" size="sm" title="Excel" className="gap-1 text-green-700 hover:bg-green-50 h-7 px-2" onClick={() => handleExcelDownload(entry)} disabled={downloading === entry.manifestId + "-xls"}><FileSpreadsheet className="h-3.5 w-3.5" /></Button>
                             <Button variant="ghost" size="sm" title="PDF" className="gap-1 text-blue-700 hover:bg-blue-50 h-7 px-2" onClick={() => handlePDFDownload(entry)} disabled={downloading === entry.manifestId + "-pdf"}><FileDown className="h-3.5 w-3.5" /></Button>
-                            <Button variant="ghost" size="sm" title="Delete" className="text-red-400 hover:text-red-600 hover:bg-red-50 h-7 px-2" onClick={() => handleDelete(entry.manifestId)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                            {canDeleteManifest && (
+                              <Button variant="ghost" size="sm" title="Delete" className="text-red-400 hover:text-red-600 hover:bg-red-50 h-7 px-2" onClick={() => handleDelete(entry.manifestId)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1737,7 +1914,9 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                           </Select>
                           <Button variant="ghost" size="sm" title="Excel" className="h-7 px-2 text-green-700 hover:bg-green-50" onClick={() => handleExcelDownload(entry)} disabled={downloading === entry.manifestId + "-xls"}><FileSpreadsheet className="h-4 w-4" /></Button>
                           <Button variant="ghost" size="sm" title="PDF" className="h-7 px-2 text-blue-700 hover:bg-blue-50" onClick={() => handlePDFDownload(entry)} disabled={downloading === entry.manifestId + "-pdf"}><FileDown className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="sm" title="Delete" className="h-7 px-2 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleDelete(entry.manifestId)}><Trash2 className="h-4 w-4" /></Button>
+                          {canDeleteManifest && (
+                            <Button variant="ghost" size="sm" title="Delete" className="h-7 px-2 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleDelete(entry.manifestId)}><Trash2 className="h-4 w-4" /></Button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1805,21 +1984,10 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                 </div>
               </div>
 
-              {/* Sub-header: tabs + actions.
-                  FIX: previously `flex-shrink-0` on this wrapper, combined with
-                  `<Tabs>` NOT being a flex column, meant the inner
-                  `overflow-y-auto flex-1` scroll region had no flex parent to
-                  grow inside. As a result, long Entry / Tracking / Billing
-                  content overflowed the dialog and got clipped by the outer
-                  `overflow-hidden`, so users couldn't scroll to see the AWBs
-                  table, billing totals, or tracking events at the bottom.
-                  We now make this wrapper AND the <Tabs> both flex-column with
-                  `flex-1 min-h-0`, pin the tab-bar row with `flex-shrink-0`,
-                  and add `min-h-0` to the scrollable region so the flex item
-                  can actually shrink and the scrollbar appears. */}
-              <div className="bg-slate-100 border-b border-slate-200 flex flex-col flex-1 min-h-0">
-                <Tabs defaultValue="entry" className="w-full flex flex-col flex-1 min-h-0">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-2 sm:px-4 pt-0 gap-0 flex-shrink-0">
+              {/* Sub-header: tabs + actions */}
+              <div className="bg-slate-100 border-b border-slate-200 flex-shrink-0">
+                <Tabs defaultValue="entry" className="w-full">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-2 sm:px-4 pt-0 gap-0">
                     <div className="overflow-x-auto">
                       <TabsList className="h-9 bg-transparent gap-0 rounded-none border-0 p-0 flex w-max">
                         {[
@@ -1849,10 +2017,8 @@ export const ManifestStock = ({ filterUserId, filterEmail }: { filterUserId?: st
                     </div>
                   </div>
 
-                  {/* Scrollable content — flex-1 + min-h-0 now actually works
-                      because <Tabs> and its parent wrapper are both
-                      `flex flex-col` (see FIX above). */}
-                  <div className="overflow-y-auto flex-1 min-h-0">
+                  {/* Scrollable content — maxHeight dropped; flex-1 fills the dialog instead */}
+                  <div className="overflow-y-auto flex-1">
 
                     {/* ══ ENTRY TAB ══════════════════════════════════════════ */}
                     <TabsContent value="entry" className="m-0 p-4 space-y-4">
