@@ -1,273 +1,238 @@
-// @ts-nocheck
-import * as XLSX from "xlsx";
+// src/lib/manifestExport.ts
+//
+// Generates a courier-style Manifest (.xlsx) for a set of selected parcels,
+// matching the layout, fonts, borders and column widths of the provided
+// DMMY.XLSX template exactly (SR / HAWB / SHIPPER / ... / LABEL).
+//
+// Requires the "exceljs" package:
+//   npm install exceljs
 
-interface Parcel {
-  id: string;
+import ExcelJS from "exceljs";
+
+// Minimal shape this module needs from a Parcel — kept separate from the
+// app-wide Parcel type so this file has no compile-time dependency on it.
+export interface ManifestParcel {
   tracking_id: string;
   reference_id?: string;
   sender_name: string;
   sender_company?: string;
-  sender_phone: string;
   sender_city?: string;
   sender_country?: string;
   receiver_name: string;
-  receiver_company?: string;
-  receiver_phone: string;
   receiver_address?: string;
   receiver_address_2?: string;
   receiver_city?: string;
-  receiver_state?: string;
   receiver_postal_code?: string;
   receiver_country?: string;
-  parcel_type: string;
-  weight: number;
+  receiver_phone: string;
   pieces?: number;
+  weight: number;
   total_price: number;
-  currency: string;
+  parcel_type: string;
   service_type?: string;
-  current_status: string;
-  from_country: string;
-  to_country: string;
-  created_at: string;
-  items?: Array<{ description: string; quantity: number; unit_price: number; total?: number }>;
+  items?: Array<{ description: string; quantity?: number; unit_price?: number }>;
 }
 
-function getBagLabel(parcel: Parcel): string {
-  const pieces = parcel.pieces ?? 1;
-  if (pieces <= 1) return "1";
-  return `1 To ${pieces}`;
+// --- Template constants, extracted from DMMY.XLSX -------------------------
+
+const HEADERS = [
+  "SR",
+  "HAWB",
+  "SHIPPER",
+  "CITY",
+  "COUNTRY",
+  "ConsigneeName",
+  "Consignee  Address",
+  "CITY",
+  "POST CODE",
+  "COUNTRY",
+  "CONTACT",
+  "BAG",
+  "PKGS",
+  "Wt KGS",
+  "VALUE $",
+  "Description",
+  "TRACKING I'D",
+  "SERVICE",
+  "LABEL",
+] as const;
+
+// Column widths (Excel character units), column-for-column from the template
+const COLUMN_WIDTHS = [
+  4, 10.29, 10.71, 9.71, 11.71, 19.29, 31.71, 11.43, 13.14, 31.29, 15.57, 7.57,
+  6.86, 9, 10.14, 102.71, 25, 10.14, 16.71,
+];
+
+const HEADER_FILL_ARGB = "FFBFBFBF";
+const VALUE_NUMFMT =
+  '_-[$$-409]* #,##0.00_ ;_-[$$-409]* \\-#,##0.00\\ ;_-[$$-409]* "-"??_ ;_-@_ ';
+
+const thin = { style: "thin" as const };
+const medium = { style: "medium" as const };
+
+/** Box border: medium on the outer top/left edges of the table, thin elsewhere. */
+function cellBorder(isFirstRow: boolean, isFirstCol: boolean) {
+  return {
+    top: isFirstRow ? medium : thin,
+    left: isFirstCol ? medium : thin,
+    right: thin,
+    bottom: thin,
+  };
 }
 
-function getDescription(parcel: Parcel): string {
-  if (parcel.items && parcel.items.length > 0) {
-    return parcel.items.map((i) => i.description).filter(Boolean).join(", ");
-  }
-  return parcel.parcel_type || "";
+function joinNonEmpty(parts: Array<string | undefined | null>, sep = " ") {
+  return parts.filter((p) => p && String(p).trim().length > 0).join(sep);
 }
 
-function getCountryDisplay(code: string, countryMap: Record<string, string>): string {
-  if (!code) return "";
-  return countryMap[code] || code;
-}
+/**
+ * Builds the manifest workbook for the given (already-selected) parcels,
+ * in the order provided, and returns it as a downloadable Blob.
+ */
+export async function generateManifestExcel(
+  parcels: ManifestParcel[],
+  countryName: (code?: string) => string,
+  sheetName = "MANIFEST"
+): Promise<Blob> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Parcel Management";
+  workbook.created = new Date();
 
-export function exportManifestToExcel(
-  parcels: Parcel[],
-  countryMap: Record<string, string>,
-  filename?: string,
-  manifestId?: string
-): void {
-  const wb = XLSX.utils.book_new();
-
-  // ── Title / branding row ──────────────────────────────────────────────────
-  const companyName = "SKYXPRESS INTERNATIONAL COURIER & CARGO";
-  const manifestDate = new Date().toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
+  const ws = workbook.addWorksheet(sheetName, {
+    views: [{ state: "frozen", ySplit: 3 }], // keep header visible while scrolling
   });
-  const idPart = manifestId ? `   Manifest ID: ${manifestId}` : "";
 
-  const titleRow = [
-    `${companyName} — SHIPMENT MANIFEST${idPart}   Date: ${manifestDate}   Total Parcels: ${parcels.length}`,
-    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
-  ];
+  ws.columns = COLUMN_WIDTHS.map((width) => ({ width }));
 
-  // ── Column headers (matching the supplied template exactly) ───────────────
-  const headers = [
-    "SR",
-    "HAWB",
-    "SHIPPER",
-    "CITY",
-    "COUNTRY",
-    "Consignee Name",
-    "Consignee Address",
-    "CITY",
-    "POST CODE",
-    "COUNTRY",
-    "CONTACT",
-    "BAG",
-    "PKGS",
-    "Wt KGS",
-    "VALUE $",
-    "Description",
-    "TRACKING I'D",
-    "SERVICE",
-    "LABEL",
-  ];
+  // Rows 1–2 left blank (matches template spacing above the header table)
+  ws.getRow(1).height = 15.75;
+  ws.getRow(2).height = 15.75;
 
-  // ── Data rows ─────────────────────────────────────────────────────────────
-  const dataRows = parcels.map((parcel, index) => [
-    index + 1,
-    parcel.reference_id || parcel.tracking_id || "",
-    parcel.sender_name || "",
-    parcel.sender_city || "",
-    getCountryDisplay(parcel.from_country, countryMap),
-    parcel.receiver_name || "",
-    [parcel.receiver_address, parcel.receiver_address_2].filter(Boolean).join(", "),
-    parcel.receiver_city || "",
-    parcel.receiver_postal_code || "",
-    getCountryDisplay(parcel.to_country, countryMap),
-    parcel.receiver_phone || "",
-    getBagLabel(parcel),
-    parcel.pieces ?? 1,
-    Number(parcel.weight ?? 0),
-    Number(parcel.total_price ?? 0),
-    getDescription(parcel),
-    parcel.tracking_id || parcel.reference_id || "", // FIX: was reference_id first, causing TRACKING I'D column to show the reference ID instead of the actual tracking ID
-    parcel.service_type || "",
-    "LABEL PASTED",
-  ]);
+  // --- Header row (row 3) --------------------------------------------------
+  const headerRow = ws.getRow(3);
+  headerRow.height = 15.75;
+  HEADERS.forEach((label, i) => {
+    const cell = headerRow.getCell(i + 1);
+    cell.value = label;
+    cell.font = { name: "Cambria", size: 12, bold: true, color: { argb: "FF000000" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL_ARGB } };
+    cell.alignment = { horizontal: "left", vertical: "middle" };
+    cell.border = cellBorder(true, i === 0);
+  });
 
-  // ── Totals row ─────────────────────────────────────────────────────────────
-  const totalWeight = parcels.reduce((s, p) => s + Number(p.weight ?? 0), 0);
-  const totalValue  = parcels.reduce((s, p) => s + Number(p.total_price ?? 0), 0);
-  const totalPkgs   = parcels.reduce((s, p) => s + (p.pieces ?? 1), 0);
+  // --- Data rows (starting row 4) -----------------------------------------
+  let totalPkgs = 0;
+  let totalWeight = 0;
+  let totalValue = 0;
 
-  const totalsRow = [
-    "TOTAL", "", "", "", "", "", "", "", "", "", "",
-    "",
-    totalPkgs,
-    Number(totalWeight.toFixed(2)),
-    Number(totalValue.toFixed(2)),
-    "", "", "", "",
-  ];
+  parcels.forEach((p, idx) => {
+    const rowNum = 4 + idx;
+    const row = ws.getRow(rowNum);
+    row.height = 15.75;
 
-  // ── Build sheet ────────────────────────────────────────────────────────────
-  const sheetData = [titleRow, headers, ...dataRows, totalsRow];
-  const ws = XLSX.utils.aoa_to_sheet(sheetData);
+    const description =
+      p.items && p.items.length > 0
+        ? joinNonEmpty(p.items.map((it) => it.description), ", ")
+        : p.parcel_type || "";
 
-  // Column widths (characters)
-  ws["!cols"] = [
-    { wch: 5  }, // SR
-    { wch: 14 }, // HAWB
-    { wch: 22 }, // SHIPPER
-    { wch: 14 }, // CITY
-    { wch: 22 }, // COUNTRY
-    { wch: 22 }, // Consignee Name
-    { wch: 38 }, // Consignee Address
-    { wch: 14 }, // CITY
-    { wch: 10 }, // POST CODE
-    { wch: 24 }, // COUNTRY
-    { wch: 16 }, // CONTACT
-    { wch: 8  }, // BAG
-    { wch: 6  }, // PKGS
-    { wch: 8  }, // Wt KGS
-    { wch: 10 }, // VALUE $
-    { wch: 40 }, // Description
-    { wch: 22 }, // TRACKING I'D
-    { wch: 12 }, // SERVICE
-    { wch: 14 }, // LABEL
-  ];
+    const consigneeAddress = joinNonEmpty([p.receiver_address, p.receiver_address_2]);
+    const pkgs = p.pieces ?? 1;
 
-  // Merge title row across all 19 columns (A1:S1)
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 18 } }];
+    totalPkgs += pkgs;
+    totalWeight += p.weight ?? 0;
+    totalValue += p.total_price ?? 0;
 
-  // ── Cell styles ───────────────────────────────────────────────────────────
-  const totalRows = sheetData.length;
-  const totalCols = headers.length;
+    const values: Array<string | number> = [
+      idx + 1, // SR
+      p.reference_id || p.tracking_id, // HAWB
+      p.sender_company || p.sender_name, // SHIPPER
+      p.sender_city || "", // CITY
+      countryName(p.sender_country), // COUNTRY
+      p.receiver_name, // ConsigneeName
+      consigneeAddress, // Consignee Address
+      p.receiver_city || "", // CITY
+      p.receiver_postal_code || "", // POST CODE
+      countryName(p.receiver_country), // COUNTRY
+      p.receiver_phone || "", // CONTACT
+      "", // BAG (assigned manually at packing time)
+      pkgs, // PKGS
+      p.weight ?? 0, // Wt KGS
+      p.total_price ?? 0, // VALUE $
+      description, // Description
+      // FIX: TRACKING I'D must show the tracking id (was `reference_id ||
+      // tracking_id`, which always displayed the reference id here).
+      p.tracking_id || p.reference_id, // TRACKING I'D
+      p.service_type || "", // SERVICE
+      "", // LABEL (checked off manually)
+    ];
 
-  const titleStyle = {
-    font: { bold: true, sz: 13, color: { rgb: "FFFFFF" } },
-    fill: { fgColor: { rgb: "1A3A6B" } },           // SkyXpress navy
-    alignment: { horizontal: "center", vertical: "center", wrapText: false },
-  };
+    values.forEach((v, i) => {
+      const cell = row.getCell(i + 1);
+      cell.value = v;
+      cell.font = { name: "Cambria", size: 12 };
+      cell.alignment = {
+        horizontal: "left",
+        vertical: "top",
+        wrapText: i === 6 || i === 15, // Address & Description columns wrap
+      };
+      cell.border = cellBorder(false, i === 0);
+      if (i === 14) cell.numFmt = VALUE_NUMFMT; // VALUE $
+    });
+  });
 
-  const headerStyle = {
-    font: { bold: true, sz: 10, color: { rgb: "FFFFFF" } },
-    fill: { fgColor: { rgb: "1A3A6B" } },
-    alignment: { horizontal: "center", vertical: "center", wrapText: true },
-    border: {
-      top:    { style: "thin", color: { rgb: "FFFFFF" } },
-      bottom: { style: "thin", color: { rgb: "FFFFFF" } },
-      left:   { style: "thin", color: { rgb: "FFFFFF" } },
-      right:  { style: "thin", color: { rgb: "FFFFFF" } },
-    },
-  };
+  // --- Totals row -----------------------------------------------------------
+  const totalsRowNum = 4 + parcels.length;
+  const totalsRow = ws.getRow(totalsRowNum);
+  totalsRow.height = 15.75;
+  const totalsLabelCell = totalsRow.getCell(12); // under BAG, spanning into PKGS
+  totalsLabelCell.value = "TOTAL";
+  totalsLabelCell.font = { name: "Cambria", size: 12, bold: true };
+  totalsLabelCell.border = cellBorder(false, false);
 
-  const evenRowStyle = {
-    font: { sz: 9 },
-    fill: { fgColor: { rgb: "EBF2FF" } },
-    alignment: { vertical: "center", wrapText: false },
-    border: {
-      top:    { style: "hair", color: { rgb: "C7D8F5" } },
-      bottom: { style: "hair", color: { rgb: "C7D8F5" } },
-      left:   { style: "hair", color: { rgb: "C7D8F5" } },
-      right:  { style: "hair", color: { rgb: "C7D8F5" } },
-    },
-  };
-
-  const oddRowStyle = {
-    font: { sz: 9 },
-    fill: { fgColor: { rgb: "FFFFFF" } },
-    alignment: { vertical: "center", wrapText: false },
-    border: {
-      top:    { style: "hair", color: { rgb: "C7D8F5" } },
-      bottom: { style: "hair", color: { rgb: "C7D8F5" } },
-      left:   { style: "hair", color: { rgb: "C7D8F5" } },
-      right:  { style: "hair", color: { rgb: "C7D8F5" } },
-    },
-  };
-
-  const totalsStyle = {
-    font: { bold: true, sz: 10, color: { rgb: "FFFFFF" } },
-    fill: { fgColor: { rgb: "F97316" } },           // SkyXpress orange
-    alignment: { horizontal: "center", vertical: "center" },
-    border: {
-      top:    { style: "medium", color: { rgb: "EA6900" } },
-      bottom: { style: "medium", color: { rgb: "EA6900" } },
-      left:   { style: "medium", color: { rgb: "EA6900" } },
-      right:  { style: "medium", color: { rgb: "EA6900" } },
-    },
-  };
-
-  const numStyle = {
-    ...oddRowStyle,
-    alignment: { horizontal: "right", vertical: "center" },
-    numFmt: "0.00",
-  };
-
-  function cellAddr(r: number, c: number) {
-    return XLSX.utils.encode_cell({ r, c });
+  [
+    { col: 13, val: totalPkgs },
+    { col: 14, val: totalWeight },
+    { col: 15, val: totalValue, fmt: VALUE_NUMFMT },
+  ].forEach(({ col, val, fmt }) => {
+    const cell = totalsRow.getCell(col);
+    cell.value = val;
+    cell.font = { name: "Cambria", size: 12, bold: true };
+    cell.alignment = { horizontal: "left", vertical: "top" };
+    cell.border = cellBorder(false, false);
+    if (fmt) cell.numFmt = fmt;
+  });
+  // fill remaining totals-row cells with a matching border so the box stays closed
+  for (let c = 1; c <= HEADERS.length; c++) {
+    if (c === 12 || c === 13 || c === 14 || c === 15) continue;
+    const cell = totalsRow.getCell(c);
+    cell.border = cellBorder(false, c === 1);
+    cell.font = { name: "Cambria", size: 12 };
   }
 
-  // Apply title style to row 0 (merged)
-  ws[cellAddr(0, 0)] = { v: sheetData[0][0], t: "s", s: titleStyle };
-  ws["!rows"] = [{ hpt: 24 }, { hpt: 28 }];
+  const arrayBuffer = await workbook.xlsx.writeBuffer();
+  return new Blob([arrayBuffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}
 
-  // Apply header style to row 1
-  for (let c = 0; c < totalCols; c++) {
-    ws[cellAddr(1, c)] = { v: headers[c], t: "s", s: headerStyle };
-  }
+/** Triggers a browser download of the given blob. */
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
-  // Apply alternating row styles to data rows (rows 2 .. totalRows-2)
-  for (let r = 2; r < totalRows - 1; r++) {
-    const isEven = (r - 2) % 2 === 0;
-    const rowStyle = isEven ? evenRowStyle : oddRowStyle;
-    for (let c = 0; c < totalCols; c++) {
-      const cellVal = sheetData[r][c];
-      const addr = cellAddr(r, c);
-      const isNumber = typeof cellVal === "number";
-      // Special numeric formatting for weight / value columns
-      if (c === 13 || c === 14) {
-        ws[addr] = { v: cellVal, t: "n", s: { ...numStyle, fill: isEven ? { fgColor: { rgb: "EBF2FF" } } : { fgColor: { rgb: "FFFFFF" } } } };
-      } else {
-        ws[addr] = { v: cellVal, t: isNumber ? "n" : "s", s: rowStyle };
-      }
-    }
-  }
-
-  // Apply totals style to last row
-  const lastRow = totalRows - 1;
-  for (let c = 0; c < totalCols; c++) {
-    const cellVal = sheetData[lastRow][c];
-    const isNumber = typeof cellVal === "number";
-    ws[cellAddr(lastRow, c)] = { v: cellVal, t: isNumber ? "n" : "s", s: totalsStyle };
-  }
-
-  XLSX.utils.book_append_sheet(wb, ws, "MANIFEST");
-
-  const outputName =
-    filename ||
-    `SkyXpress_Manifest_${new Date().toISOString().slice(0, 10)}.xlsx`;
-  XLSX.writeFile(wb, outputName);
+/** Convenience helper: build + download in one call. */
+export async function exportManifest(
+  parcels: ManifestParcel[],
+  countryName: (code?: string) => string,
+  filename?: string
+) {
+  const blob = await generateManifestExcel(parcels, countryName);
+  const stamp = new Date().toISOString().slice(0, 10);
+  downloadBlob(blob, filename || `Manifest_${stamp}.xlsx`);
 }
