@@ -269,18 +269,33 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
   //   partner: view + create only — NO edit / delete / email buttons, and
   //            Reference ID + Tracking ID are NOT editable
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [roleLoaded, setRoleLoaded] = useState(false);
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
       const u = data?.session?.user;
       if (u) {
         setCurrentUserId(u.id); setCurrentUserEmail(u.email ?? null);
-        const { data: prof } = await supabase.from("profiles").select("role").eq("user_id", u.id).single();
-        setCurrentUserRole(prof?.role ?? null);
+        let resolvedRole: string | null = null;
+        try {
+          const { data: prof } = await supabase.from("profiles").select("role").eq("user_id", u.id).single();
+          resolvedRole = prof?.role ?? null;
+        } catch {}
+        if (!resolvedRole && u.user_metadata) {
+          resolvedRole = u.user_metadata.role || u.user_metadata.role_id || u.user_metadata.userRole || null;
+        }
+        setCurrentUserRole(resolvedRole);
+        setRoleLoaded(true);
       }
     });
   }, []);
 
-  const isAdminUser = currentUserRole === "admin";
+  const normalizeRole = (r: string | null | undefined): string =>
+    (r || "").toString().trim().toLowerCase();
+  const isAdminUser =
+    normalizeRole(currentUserRole) === "admin" ||
+    normalizeRole(currentUserRole) === "administrator" ||
+    normalizeRole(currentUserRole) === "super_admin" ||
+    normalizeRole(currentUserRole) === "superadmin";
   // Partner (and any other non-privileged role) gets the restricted view.
   // While the role is still loading (null) we keep the neutral staff-level
   // view so admins don't see a flicker — every action handler re-checks.
@@ -667,9 +682,17 @@ export const ParcelManagement = ({ filterUserId, isPartnerView = false }: { filt
   const startEditingCell = (parcel: Parcel, field: EditableField) => {
     if (savingCell) return;
     if (!isAdminUser) {
+      if (!roleLoaded) {
+        toast({
+          title: "Still loading",
+          description: "Your role is still loading — please wait 2 seconds and try again.",
+          variant: "default",
+        });
+        return;
+      }
       toast({
         title: "Not allowed",
-        description: "Only admins can edit Tracking ID / Reference ID.",
+        description: "Only admins can edit Tracking ID / Reference ID. Your current role: " + (currentUserRole || "unknown"),
         variant: "destructive",
       });
       return;
